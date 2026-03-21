@@ -67,12 +67,7 @@
   "entity": {
     "sensor": {
       "tariff": {
-        "name": "Grupa taryfowa",
-        "extra_state_attributes": {
-          "zones": {
-            "name": "Strefy"
-          }
-        }
+        "name": "Grupa taryfowa"
       },
       "capacity": {
         "name": "Moc umowna"
@@ -81,44 +76,13 @@
         "name": "Status"
       },
       "address": {
-        "name": "Adres",
-        "extra_state_attributes": {
-          "street": {
-            "name": "Ulica"
-          },
-          "house_number": {
-            "name": "Numer domu"
-          },
-          "apartment_number": {
-            "name": "Numer mieszkania"
-          },
-          "post_code": {
-            "name": "Kod pocztowy"
-          },
-          "city": {
-            "name": "Miasto"
-          },
-          "district": {
-            "name": "Dzielnica"
-          },
-          "parcel_number": {
-            "name": "Numer działki"
-          }
-        }
+        "name": "Adres"
       },
       "reading_date": {
         "name": "Ostatni odczyt"
       },
       "meter_model": {
-        "name": "Model licznika",
-        "extra_state_attributes": {
-          "assembly_date": {
-            "name": "Data montażu"
-          },
-          "disassembly_date": {
-            "name": "Data demontażu"
-          }
-        }
+        "name": "Model licznika"
       },
       "consumption_total": {
         "name": "Energia pobrana"

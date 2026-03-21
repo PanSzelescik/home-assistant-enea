@@ -1,7 +1,7 @@
 {
   "domain": "enea",
   "name": "Enea Licznik",
-  "codeowners": ["PanSzelescik"],
+  "codeowners": ["@PanSzelescik"],
   "config_flow": true,
   "documentation": "https://github.com/PanSzelescik/home-assistant-enea",
   "iot_class": "cloud_polling",

@@ -67,12 +67,7 @@
   "entity": {
     "sensor": {
       "tariff": {
-        "name": "Tariff Group",
-        "extra_state_attributes": {
-          "zones": {
-            "name": "Zones"
-          }
-        }
+        "name": "Tariff Group"
       },
       "capacity": {
         "name": "Contractual Capacity"
@@ -81,44 +76,13 @@
         "name": "Status"
       },
       "address": {
-        "name": "Address",
-        "extra_state_attributes": {
-          "street": {
-            "name": "Street"
-          },
-          "house_number": {
-            "name": "House Number"
-          },
-          "apartment_number": {
-            "name": "Apartment Number"
-          },
-          "post_code": {
-            "name": "Post Code"
-          },
-          "city": {
-            "name": "City"
-          },
-          "district": {
-            "name": "District"
-          },
-          "parcel_number": {
-            "name": "Parcel Number"
-          }
-        }
+        "name": "Address"
       },
       "reading_date": {
         "name": "Last Reading"
       },
       "meter_model": {
-        "name": "Meter Model",
-        "extra_state_attributes": {
-          "assembly_date": {
-            "name": "Assembly Date"
-          },
-          "disassembly_date": {
-            "name": "Disassembly Date"
-          }
-        }
+        "name": "Meter Model"
       },
       "consumption_total": {
         "name": "Energy Consumed"

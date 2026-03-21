@@ -1,0 +1,25 @@
+name: Propozycja funkcji (PL)
+description: Zaproponuj nową funkcję lub ulepszenie
+labels: ["enhancement", "lang: pl"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Opis propozycji
+      description: Co chciałbyś dodać lub zmienić?
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motywacja
+      description: Dlaczego ta funkcja byłaby przydatna?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatywy
+      description: Czy rozważałeś inne rozwiązania?

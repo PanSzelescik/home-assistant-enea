@@ -1,0 +1,12 @@
+refresh:
+  name: Refresh meter
+  icon: mdi:refresh
+  description: Manually fetch the latest data from the Portal Odbiorcy Enea. If no device is specified, all configured meters are refreshed.
+  fields:
+    device_id:
+      name: Device
+      description: The meter to refresh. Leave empty to refresh all meters.
+      required: false
+      selector:
+        device:
+          integration: enea

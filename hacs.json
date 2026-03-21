@@ -1,0 +1,6 @@
+{
+  "name": "Enea Licznik",
+  "render_readme": true,
+  "country": ["PL"],
+  "homeassistant": "2025.3.0"
+}

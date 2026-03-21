@@ -1,0 +1,25 @@
+name: Feature Request (EN)
+description: Suggest a new feature or improvement
+labels: ["enhancement", "lang: en"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What would you like to add or change?
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why would this feature be useful?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Have you considered any other solutions?

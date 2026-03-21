@@ -1,0 +1,131 @@
+{
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcje Enea",
+        "data": {
+          "update_interval": "Interwał odświeżania"
+        },
+        "data_description": {
+          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 8h 30min."
+        }
+      }
+    },
+    "error": {
+      "interval_too_short": "Minimalny interwał to 30 minut."
+    }
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Połącz z Portal Odbiorcy Enea",
+        "description": "Wprowadź dane logowania do portalodbiorcy.operator.enea.pl",
+        "data": {
+          "username": "Adres e-mail",
+          "password": "Hasło"
+        }
+      },
+      "select_meter": {
+        "title": "Wybierz licznik energii",
+        "description": "Wybierz licznik energii (PPE) do monitorowania",
+        "data": {
+          "meter_id": "Licznik energii",
+          "backfill_days": "Ile dni historii pobrać"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Ponowna autoryzacja z Enea",
+        "description": "Dane logowania są nieprawidłowe (np. hasło zostało zmienione). Wprowadź aktualne dane logowania.",
+        "data": {
+          "username": "Adres e-mail",
+          "password": "Hasło"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Nieprawidłowy adres e-mail lub hasło",
+      "cannot_connect": "Nie można połączyć się z Portalem Odbiorcy Enea. Sprawdź połączenie z internetem.",
+      "unknown": "Wystąpił nieoczekiwany błąd"
+    },
+    "abort": {
+      "already_configured": "Ten licznik jest już skonfigurowany",
+      "reauth_successful": "Ponowna autoryzacja zakończyła się sukcesem"
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Odśwież licznik",
+      "description": "Ręcznie pobiera najnowsze dane z Portalu Odbiorcy Enea. Jeśli nie wybrano licznika, odświeżane są wszystkie skonfigurowane liczniki.",
+      "fields": {
+        "device_id": {
+          "name": "Licznik",
+          "description": "Licznik do odświeżenia. Pozostaw puste, aby odświeżyć wszystkie."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "tariff": {
+        "name": "Grupa taryfowa",
+        "extra_state_attributes": {
+          "zones": {
+            "name": "Strefy"
+          }
+        }
+      },
+      "capacity": {
+        "name": "Moc umowna"
+      },
+      "status": {
+        "name": "Status"
+      },
+      "address": {
+        "name": "Adres",
+        "extra_state_attributes": {
+          "street": {
+            "name": "Ulica"
+          },
+          "house_number": {
+            "name": "Numer domu"
+          },
+          "apartment_number": {
+            "name": "Numer mieszkania"
+          },
+          "post_code": {
+            "name": "Kod pocztowy"
+          },
+          "city": {
+            "name": "Miasto"
+          },
+          "district": {
+            "name": "Dzielnica"
+          },
+          "parcel_number": {
+            "name": "Numer działki"
+          }
+        }
+      },
+      "reading_date": {
+        "name": "Ostatni odczyt"
+      },
+      "meter_model": {
+        "name": "Model licznika",
+        "extra_state_attributes": {
+          "assembly_date": {
+            "name": "Data montażu"
+          },
+          "disassembly_date": {
+            "name": "Data demontażu"
+          }
+        }
+      },
+      "consumption_total": {
+        "name": "Energia pobrana"
+      },
+      "generation_total": {
+        "name": "Energia oddana"
+      }
+    }
+  }
+}

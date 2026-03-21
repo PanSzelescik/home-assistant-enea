@@ -13,12 +13,12 @@ Pozwala na monitorowanie danych licznika bezpośrednio z Portalu Odbiorcy Enea.
 
 ### Przez HACS (zalecane)
 
-1. Otwórz HACS w Home Assistant
-2. Przejdź do **Integracje**
-3. Kliknij menu (⋮) → **Własne repozytoria**
-4. Dodaj URL: `https://github.com/PanSzelescik/home-assistant-enea` z kategorią **Integration**
-5. Znajdź **Enea Licznik** na liście i kliknij **Pobierz**
-6. Uruchom ponownie Home Assistant
+[![Otwórz Home Assistant i dodaj repozytorium w HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=PanSzelescik&repository=home-assistant-enea)
+
+1. Kliknij przycisk powyżej lub otwórz HACS → **Integracje** → menu (⋮) → **Własne repozytoria**
+2. Dodaj URL: `https://github.com/PanSzelescik/home-assistant-enea` z kategorią **Integration**
+3. Znajdź **Enea Licznik** na liście i kliknij **Pobierz**
+4. Uruchom ponownie Home Assistant
 
 ### Ręczna instalacja
 

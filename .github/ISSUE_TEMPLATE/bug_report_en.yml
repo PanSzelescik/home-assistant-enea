@@ -1,0 +1,56 @@
+name: Bug Report (EN)
+description: Report a problem with the Enea Licznik integration
+labels: ["bug", "lang: en"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please check if a similar issue already exists before submitting.
+
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant Version
+      placeholder: "e.g. 2026.3.2"
+    validations:
+      required: true
+
+  - type: input
+    id: integration_version
+    attributes:
+      label: Enea Licznik Version
+      placeholder: "e.g. 0.0.1"
+    validations:
+      required: true
+
+  - type: input
+    id: tariff
+    attributes:
+      label: Tariff Group
+      placeholder: "e.g. G11, G12, G13"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem Description
+      description: What is happening? What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Home Assistant Logs
+      description: |
+        Paste logs from the `enea` domain (Settings → System → Logs, filter by "enea").
+      render: text
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics Report
+      description: |
+        Optionally attach the diagnostics report (Settings → Devices & Services → Enea → menu ⋮ → Download Diagnostics).
+      render: json

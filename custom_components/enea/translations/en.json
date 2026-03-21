@@ -1,0 +1,131 @@
+{
+  "options": {
+    "step": {
+      "init": {
+        "title": "Enea options",
+        "data": {
+          "update_interval": "Refresh interval"
+        },
+        "data_description": {
+          "update_interval": "How often to fetch data from the Portal Odbiorcy Enea. Minimum 30 minutes, default 8h 30min."
+        }
+      }
+    },
+    "error": {
+      "interval_too_short": "Minimum interval is 30 minutes."
+    }
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Portal Odbiorcy Enea",
+        "description": "Enter your login credentials for portalodbiorcy.operator.enea.pl",
+        "data": {
+          "username": "Email address",
+          "password": "Password"
+        }
+      },
+      "select_meter": {
+        "title": "Select Energy Meter",
+        "description": "Choose the energy meter (PPE) to monitor",
+        "data": {
+          "meter_id": "Energy meter",
+          "backfill_days": "History to import (days)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate with Enea",
+        "description": "Your credentials are no longer valid (e.g. password was changed). Please enter your current login details.",
+        "data": {
+          "username": "Email address",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email address or password",
+      "cannot_connect": "Cannot connect to the Portal Odbiorcy Enea. Please check your internet connection.",
+      "unknown": "An unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This meter is already configured",
+      "reauth_successful": "Re-authentication was successful"
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Refresh meter",
+      "description": "Manually fetch the latest data from the Portal Odbiorcy Enea. If no device is specified, all configured meters are refreshed.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The meter to refresh. Leave empty to refresh all meters."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "tariff": {
+        "name": "Tariff Group",
+        "extra_state_attributes": {
+          "zones": {
+            "name": "Zones"
+          }
+        }
+      },
+      "capacity": {
+        "name": "Contractual Capacity"
+      },
+      "status": {
+        "name": "Status"
+      },
+      "address": {
+        "name": "Address",
+        "extra_state_attributes": {
+          "street": {
+            "name": "Street"
+          },
+          "house_number": {
+            "name": "House Number"
+          },
+          "apartment_number": {
+            "name": "Apartment Number"
+          },
+          "post_code": {
+            "name": "Post Code"
+          },
+          "city": {
+            "name": "City"
+          },
+          "district": {
+            "name": "District"
+          },
+          "parcel_number": {
+            "name": "Parcel Number"
+          }
+        }
+      },
+      "reading_date": {
+        "name": "Last Reading"
+      },
+      "meter_model": {
+        "name": "Meter Model",
+        "extra_state_attributes": {
+          "assembly_date": {
+            "name": "Assembly Date"
+          },
+          "disassembly_date": {
+            "name": "Disassembly Date"
+          }
+        }
+      },
+      "consumption_total": {
+        "name": "Energy Consumed"
+      },
+      "generation_total": {
+        "name": "Energy Returned"
+      }
+    }
+  }
+}

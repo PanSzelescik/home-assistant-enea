@@ -1,0 +1,12 @@
+{
+  "domain": "enea",
+  "name": "Enea Licznik",
+  "codeowners": ["PanSzelescik"],
+  "config_flow": true,
+  "documentation": "https://github.com/PanSzelescik/home-assistant-enea",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/PanSzelescik/home-assistant-enea/issues",
+  "dependencies": ["recorder"],
+  "requirements": [],
+  "version": "1.0.0"
+}

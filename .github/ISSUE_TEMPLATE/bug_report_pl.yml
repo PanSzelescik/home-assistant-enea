@@ -1,0 +1,56 @@
+name: Zgłoszenie błędu (PL)
+description: Zgłoś problem z integracją Enea Licznik
+labels: ["bug", "lang: pl"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Dziękujemy za zgłoszenie! Przed wypełnieniem sprawdź czy podobny issue już istnieje.
+
+  - type: input
+    id: ha_version
+    attributes:
+      label: Wersja Home Assistant
+      placeholder: "np. 2026.3.2"
+    validations:
+      required: true
+
+  - type: input
+    id: integration_version
+    attributes:
+      label: Wersja integracji Enea Licznik
+      placeholder: "np. 0.0.1"
+    validations:
+      required: true
+
+  - type: input
+    id: tariff
+    attributes:
+      label: Grupa taryfowa
+      placeholder: "np. G11, G12, G13"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Opis problemu
+      description: Co się dzieje? Czego się spodziewałeś?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logi Home Assistant
+      description: |
+        Skopiuj logi z domeny `enea` (Ustawienia → System → Logi, filtruj po "enea").
+      render: text
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Raport diagnostyczny
+      description: |
+        Opcjonalnie załącz raport diagnostyczny (Ustawienia → Urządzenia i usługi → Enea → menu ⋮ → Pobierz diagnostyki).
+      render: json

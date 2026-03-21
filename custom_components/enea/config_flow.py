@@ -1,0 +1,282 @@
+"""Config flow for the Enea Energy Meter integration."""
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any
+
+import voluptuous as vol
+
+from homeassistant import config_entries
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.selector import (
+    DurationSelector,
+    DurationSelectorConfig,
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
+
+from .connector import EneaApiClient, EneaAuthError, EneaApiError, format_address
+from .const import (
+    CONF_BACKFILL_DAYS,
+    CONF_METER_ID,
+    CONF_METER_NAME,
+    CONF_TARIFF,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_BACKFILL_DAYS,
+    DEFAULT_UPDATE_INTERVAL_DICT,
+    DOMAIN,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+STEP_USER_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_USERNAME): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.EMAIL, autocomplete="username")
+        ),
+        vol.Required(CONF_PASSWORD): TextSelector(
+            TextSelectorConfig(
+                type=TextSelectorType.PASSWORD, autocomplete="current-password"
+            )
+        ),
+    }
+)
+
+
+class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Config flow for Enea Energy Meter."""
+
+    VERSION = 1
+
+    @staticmethod
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> EneaOptionsFlow:
+        """Return the options flow."""
+        return EneaOptionsFlow()
+
+    def __init__(self) -> None:
+        self._username: str | None = None
+        self._password: str | None = None
+        self._meters: list[dict[str, Any]] = []
+        self._connector: EneaApiClient | None = None
+        self._dashboards: dict[int, dict[str, Any]] = {}
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle the initial credentials step."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            session = async_create_clientsession(self.hass)
+            connector = EneaApiClient(
+                session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+            )
+            try:
+                await connector.authenticate()
+                meters = await connector.get_meters()
+                dashboards = await asyncio.gather(
+                    *[connector.get_ppe_dashboard(m["id"]) for m in meters],
+                    return_exceptions=True,
+                )
+            except EneaAuthError:
+                errors["base"] = "invalid_auth"
+            except EneaApiError:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected error during Enea login")
+                errors["base"] = "unknown"
+            else:
+                self._username = user_input[CONF_USERNAME]
+                self._password = user_input[CONF_PASSWORD]
+                self._meters = meters
+                self._connector = connector
+                self._dashboards = {
+                    m["id"]: d
+                    for m, d in zip(meters, dashboards)
+                    if isinstance(d, dict)
+                }
+                return await self.async_step_select_meter()
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=STEP_USER_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_select_meter(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle meter selection step."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            selected_id = int(user_input[CONF_METER_ID])
+            meter = next(
+                (m for m in self._meters if m["id"] == selected_id), None
+            )
+            if meter is None:
+                errors["base"] = "unknown"
+            else:
+                await self.async_set_unique_id(meter["code"])
+                self._abort_if_unique_id_configured()
+
+                return self.async_create_entry(
+                    title=f"Enea {meter['code']}",
+                    data={
+                        CONF_USERNAME: self._username,
+                        CONF_PASSWORD: self._password,
+                        CONF_METER_ID: meter["id"],
+                        CONF_METER_NAME: meter["code"],
+                        CONF_TARIFF: meter.get("tariffGroup", {}).get("name", ""),
+                        CONF_BACKFILL_DAYS: int(user_input[CONF_BACKFILL_DAYS]),
+                    },
+                )
+
+        options = [
+            SelectOptionDict(
+                value=str(m["id"]),
+                label=self._meter_label(m),
+            )
+            for m in self._meters
+        ]
+
+        backfill_options = [
+            SelectOptionDict(value="7", label="7 dni"),
+            SelectOptionDict(value="30", label="30 dni"),
+            SelectOptionDict(value="60", label="60 dni"),
+            SelectOptionDict(value="90", label="90 dni"),
+            SelectOptionDict(value="0", label="Maksymalnie (ile się da)"),
+        ]
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_METER_ID): SelectSelector(
+                    SelectSelectorConfig(
+                        options=options,
+                        mode=SelectSelectorMode.LIST,
+                    )
+                ),
+                vol.Required(
+                    CONF_BACKFILL_DAYS, default=str(DEFAULT_BACKFILL_DAYS)
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=backfill_options,
+                        mode=SelectSelectorMode.LIST,
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="select_meter",
+            data_schema=schema,
+            errors=errors,
+        )
+
+    def _meter_label(self, meter: dict[str, Any]) -> str:
+        """Build the dropdown label for a meter."""
+        tariff = meter.get("tariffGroup", {}).get("name", "?")
+        dashboard = self._dashboards.get(meter["id"], {})
+        address = format_address(dashboard.get("address"))
+        if address:
+            return f"{meter['code']} ({tariff}) – {address}"
+        return f"{meter['code']} ({tariff})"
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> config_entries.ConfigFlowResult:
+        """Handle re-authentication."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle re-authentication confirmation."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            entry = self._get_reauth_entry()
+            session = async_create_clientsession(self.hass)
+            connector = EneaApiClient(
+                session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+            )
+            try:
+                await connector.authenticate()
+            except EneaAuthError:
+                errors["base"] = "invalid_auth"
+            except EneaApiError:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected error during Enea re-auth")
+                errors["base"] = "unknown"
+            else:
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    data={
+                        **entry.data,
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    },
+                )
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=STEP_USER_SCHEMA,
+            errors=errors,
+        )
+
+
+class EneaOptionsFlow(config_entries.OptionsFlow):
+    """Options flow for Enea Energy Meter."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle options."""
+        if user_input is not None:
+            duration = user_input[CONF_UPDATE_INTERVAL]
+            total_minutes = (
+                int(duration.get("hours", 0)) * 60
+                + int(duration.get("minutes", 0))
+            )
+            if total_minutes < 30:
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=vol.Schema(
+                        {
+                            vol.Required(
+                                CONF_UPDATE_INTERVAL,
+                                default=user_input[CONF_UPDATE_INTERVAL],
+                            ): DurationSelector(DurationSelectorConfig(enable_day=False)),
+                        }
+                    ),
+                    errors={CONF_UPDATE_INTERVAL: "interval_too_short"},
+                )
+            return self.async_create_entry(data=user_input)
+
+        current = self.config_entry.options.get(
+            CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_DICT
+        )
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_UPDATE_INTERVAL, default=current
+                ): DurationSelector(
+                    DurationSelectorConfig(enable_day=False)
+                ),
+            }
+        )
+
+        return self.async_show_form(step_id="init", data_schema=schema)

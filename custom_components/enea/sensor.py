@@ -1,0 +1,312 @@
+"""Sensor platform for the Enea Energy Meter integration."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
+
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
+from homeassistant.const import UnitOfEnergy, UnitOfPower
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from . import EneaConfigEntry
+from .connector import format_address
+from .const import (
+    CONF_METER_NAME,
+    DEFAULT_NAME,
+    DOMAIN,
+    MEASUREMENT_ID_CONSUMPTION,
+    MEASUREMENT_ID_GENERATION,
+)
+from .coordinator import EneaUpdateCoordinator
+
+
+def _get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the currently installed physical meter (no disassembly date)."""
+    for m in data.get("meters", []):
+        if m.get("disassemblyDate") is None:
+            return m
+    return None
+
+
+def _get_device_info(meter_code: str, data: dict[str, Any] | None) -> DeviceInfo:
+    """Build DeviceInfo, enriched with physical meter details when data is available."""
+    active = _get_active_meter(data) if data else None
+    return DeviceInfo(
+        identifiers={(DOMAIN, meter_code)},
+        name=f"{DEFAULT_NAME} {meter_code}",
+        manufacturer="Enea",
+        model=active["typeName"] if active else None,
+        serial_number=active["serialNumber"] if active else None,
+        configuration_url="https://portalodbiorcy.operator.enea.pl",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Static diagnostic sensors (always created, data from dashboard endpoint)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, kw_only=True)
+class EneaSensorEntityDescription(SensorEntityDescription):
+    """Extended sensor description for Enea diagnostic sensors."""
+
+    value_fn: Any = None
+    attr_fn: Any = None
+
+
+SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
+    EneaSensorEntityDescription(
+        key="tariff",
+        translation_key="tariff",
+        icon="mdi:tag-text",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.get("tariffGroupName"),
+        attr_fn=lambda data: {
+            "zones": [
+                cv["ppeZones"]
+                for cv in data.get("currentValues", [])
+                if cv.get("measurementId") == 1
+            ][:1][0]
+            if data.get("currentValues")
+            else [],
+        },
+    ),
+    EneaSensorEntityDescription(
+        key="capacity",
+        translation_key="capacity",
+        icon="mdi:flash-triangle",
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        device_class=SensorDeviceClass.POWER,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.get("agreementPower"),
+    ),
+    EneaSensorEntityDescription(
+        key="status",
+        translation_key="status",
+        icon="mdi:information-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.get("detailedStatus"),
+    ),
+    EneaSensorEntityDescription(
+        key="address",
+        translation_key="address",
+        icon="mdi:map-marker",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: format_address(data.get("address")),
+        attr_fn=lambda data: (
+            {
+                k: v
+                for k, v in {
+                    "street": addr.get("street"),
+                    "house_number": addr.get("houseNum"),
+                    "apartment_number": addr.get("apartmentNum"),
+                    "post_code": addr.get("postCode"),
+                    "city": addr.get("city"),
+                    "district": addr.get("district"),
+                    "parcel_number": addr.get("parcelNum"),
+                }.items()
+                if v is not None
+            }
+            if (addr := data.get("address"))
+            else {}
+        ),
+    ),
+    EneaSensorEntityDescription(
+        key="reading_date",
+        translation_key="reading_date",
+        icon="mdi:clock-outline",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: (
+            datetime.fromtimestamp(
+                ts / 1000,
+                tz=timezone.utc,
+            )
+            if (
+                ts := next(
+                    (cv["readingDate"] for cv in data.get("currentValues", [])
+                     if cv.get("measurementId") == 1 and cv.get("readingDate")),
+                    None,
+                )
+            )
+            else None
+        ),
+    ),
+    EneaSensorEntityDescription(
+        key="meter_model",
+        translation_key="meter_model",
+        icon="mdi:meter-electric-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: (
+            _get_active_meter(data) or {}
+        ).get("typeName"),
+        attr_fn=lambda data: (
+            {
+                k: datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
+                for k, ts in {
+                    "assembly_date": m.get("assemblyDate"),
+                    "disassembly_date": m.get("disassemblyDate"),
+                }.items()
+                if ts is not None
+            }
+            if (m := _get_active_meter(data))
+            else {}
+        ),
+    ),
+)
+
+
+
+
+# ---------------------------------------------------------------------------
+# Energy sensors (static total + dynamic per-zone)
+# ---------------------------------------------------------------------------
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: EneaConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up Enea sensors from a config entry."""
+    coordinator = entry.runtime_data.coordinator
+    meter_code = entry.data[CONF_METER_NAME]
+    data = coordinator.data or {}
+
+    sensors: list[SensorEntity] = []
+
+    # Diagnostic sensors
+    sensors.extend(
+        EneaSensor(coordinator, meter_code, description)
+        for description in SENSOR_DESCRIPTIONS
+    )
+
+    # Energy sensors — total (always) + per-zone (dynamic)
+    for cv in data.get("currentValues", []):
+        measurement_id: int = cv["measurementId"]
+        is_consumption = measurement_id == MEASUREMENT_ID_CONSUMPTION
+        prefix = "consumption" if is_consumption else "generation"
+        type_label = "pobrana" if is_consumption else "oddana"
+
+        # Total (sum of all zones)
+        sensors.append(
+            EneaEnergySensor(
+                coordinator=coordinator,
+                meter_code=meter_code,
+                measurement_id=measurement_id,
+                zone_key="valueNoZones",
+                unique_key=f"{prefix}_total",
+                sensor_name=None,  # uses translation_key
+                translation_key=f"{prefix}_total",
+            )
+        )
+
+        # Per-zone — name includes type to distinguish consumption vs generation
+        for i, zone_label in enumerate(cv.get("ppeZones", []), start=1):
+            zone_key = f"valueZone{i}"
+            if cv.get(zone_key) is not None:
+                short_name = zone_label.split(" ")[0]  # "Dzień 1.8.1" → "Dzień"
+                sensors.append(
+                    EneaEnergySensor(
+                        coordinator=coordinator,
+                        meter_code=meter_code,
+                        measurement_id=measurement_id,
+                        zone_key=zone_key,
+                        unique_key=f"{prefix}_zone{i}",
+                        sensor_name=f"Energia {type_label} – {short_name}",
+                        translation_key=None,
+                    )
+                )
+
+    async_add_entities(sensors)
+
+
+class EneaSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
+    """Diagnostic sensor entity for an Enea meter."""
+
+    entity_description: EneaSensorEntityDescription
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: EneaUpdateCoordinator,
+        meter_code: str,
+        description: EneaSensorEntityDescription,
+    ) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._meter_code = meter_code
+        self._attr_unique_id = f"enea-{meter_code}-{description.key}"
+        self._attr_device_info = _get_device_info(meter_code, coordinator.data)
+
+    @property
+    def native_value(self) -> Any:
+        if self.coordinator.data is None:
+            return None
+        return self.entity_description.value_fn(self.coordinator.data)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        if self.entity_description.attr_fn is None:
+            return None
+        if self.coordinator.data is None:
+            return None
+        return self.entity_description.attr_fn(self.coordinator.data)
+
+
+class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
+    """Energy sensor for a specific measurement/zone of an Enea meter."""
+
+    _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 3
+
+    def __init__(
+        self,
+        coordinator: EneaUpdateCoordinator,
+        meter_code: str,
+        measurement_id: int,
+        zone_key: str,
+        unique_key: str,
+        sensor_name: str | None,
+        translation_key: str | None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._meter_code = meter_code
+        self._measurement_id = measurement_id
+        self._zone_key = zone_key
+        self._attr_unique_id = f"enea-{meter_code}-{unique_key}"
+        self._attr_device_info = _get_device_info(meter_code, coordinator.data)
+
+        if translation_key:
+            self._attr_translation_key = translation_key
+        else:
+            self._attr_name = sensor_name
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the energy value in kWh."""
+        data = self.coordinator.data
+        if not data:
+            return None
+        for cv in data.get("currentValues", []):
+            if cv.get("measurementId") == self._measurement_id:
+                zone_data = cv.get(self._zone_key)
+                if zone_data is None:
+                    return None
+                return zone_data.get("value")
+        return None
+

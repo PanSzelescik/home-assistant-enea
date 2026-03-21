@@ -1,9 +1,6 @@
 refresh:
   name: Refresh meter
   description: Manually fetch the latest data from the Portal Odbiorcy Enea. If no device is specified, all configured meters are refreshed.
-  target:
-    device:
-      integration: enea
   fields:
     device_id:
       name: Device

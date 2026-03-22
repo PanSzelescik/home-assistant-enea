@@ -3,16 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from homeassistant.util import dt as dt_util
 
 import aiohttp
 
-from .const import CONST_URL_CONSUMPTION, CONST_URL_LOGIN, CONST_URL_PPE_DASHBOARD, CONST_URL_PPES
-
-METERS_CACHE_TTL = timedelta(minutes=5)
+from .const import CONST_URL_CONSUMPTION, CONST_URL_LOGIN, CONST_URL_PPE_DASHBOARD, CONST_URL_PPES, METERS_CACHE_TTL
 
 _LOGGER = logging.getLogger(__name__)
 

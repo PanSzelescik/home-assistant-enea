@@ -223,7 +223,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         day_data: dict[str, Any] = {}
         any_data = False
         for (key, mtype), result in zip(keys_and_types, results):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 _LOGGER.debug(
                     "No stats data for %s type %d: %s", date_str, mtype, result
                 )

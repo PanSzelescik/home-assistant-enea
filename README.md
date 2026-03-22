@@ -34,7 +34,8 @@ Pozwala na monitorowanie danych licznika bezpośrednio z Portalu Odbiorcy Enea.
 2. Wprowadź adres e-mail i hasło z Portalu Odbiorcy Enea
 3. Wybierz licznik (PPE) z listy — każdy pokazuje kod PPE, taryfę i adres
 4. Wybierz ile dni historii pobrać (7 / 30 / 60 / 90 dni lub **Maksymalnie — ile się da**)
-5. Gotowe!
+5. Ustaw interwał odświeżania (domyślnie 8h 30min, minimum 30 min)
+6. Gotowe!
 
 ## Statystyki historyczne godzinowe
 
@@ -94,13 +95,17 @@ Widoczne w panelu **Energia** Home Assistant. Liczba sensorów strefowych zależ
 | Ostatni odczyt | Data i godzina ostatniego odczytu z licznika | 2 marca 2026, 14:32         |
 | Model licznika | Model aktualnie zamontowanego licznika | OTUS3                       |
 
-## Częstotliwość odświeżania
+## Opcje
 
-Integracja odpytuje Portal Odbiorcy Enea domyślnie **co 8 godzin 30 minut**. Interwał można zmienić przez options flow:
+Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**:
 
-**Ustawienia → Urządzenia i usługi → Enea → Konfiguruj** → wpisz żądany czas (minimum 30 minut).
+| Opcja | Domyślnie | Opis |
+|-------|-----------|------|
+| Interwał odświeżania | 8h 30min | Jak często odpytywać Portal Odbiorcy Enea (minimum 30 min) |
+| Pobieraj statystyki energii pobranej | Tak | Wyłącz jeśli chcesz oszczędzić requesty do API |
+| Pobieraj statystyki energii oddanej | Tak | Wyłącz jeśli nie masz fotowoltaiki ani innego źródła generacji |
 
-Timer jest resetowany po restarcie Home Assistant, przeładowaniu integracji lub zmianie opcji.
+Zmiana opcji powoduje natychmiastowe przeładowanie integracji. Wyłączenie danego kierunku ukrywa też odpowiednie sensory energii.
 
 Jeśli masz kilka liczników na tym samym koncie, integracja loguje się tylko raz i współdzieli sesję między licznikami.
 
@@ -111,6 +116,28 @@ Możesz wymusić natychmiastowe pobranie danych przez akcję **`enea.refresh`**:
 **Narzędzia deweloperskie → Akcje → `enea.refresh`** → wybierz urządzenie → Wywołaj
 
 Jeśli nie wybierzesz urządzenia, zostaną odświeżone wszystkie skonfigurowane liczniki.
+
+### Uzupełnianie historii (backfill)
+
+Jeśli chcesz zaimportować statystyki dla konkretnego zakresu dat (np. dosięgnąć dalej niż początkowy backfill lub ponownie zaimportować problematyczny okres), użyj akcji **`enea.backfill`**:
+
+**Narzędzia deweloperskie → Akcje → `enea.backfill`**
+
+Dostępne parametry (wszystkie opcjonalne):
+
+| Parametr | Opis |
+|----------|------|
+| Urządzenie | Konkretny licznik; puste = wszystkie |
+| Data początkowa | Pierwsza data do zaimportowania (YYYY-MM-DD) |
+| Data końcowa | Ostatnia data (domyślnie: wczoraj) |
+| Liczba dni wstecz | Alternatywa dla dat — ile dni wstecz od wczoraj |
+| *(brak parametrów)* | Domyślnie importuje ostatnie 30 dni |
+
+### Zmiana danych logowania
+
+Aby zmienić adres e-mail lub hasło bez usuwania integracji:
+
+**Ustawienia → Urządzenia i usługi → Enea → menu (⋮) → Zmień konfigurację**
 
 ### Diagnostyki
 

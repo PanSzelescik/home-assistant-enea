@@ -1,5 +1,16 @@
 # CLAUDE.md — Enea Licznik Integration
 
+## Konwencje ogólne
+
+- Wszystkie stałe konfiguracyjne i behawioralne trzymaj w **`const.py`** — nie definiuj stałych modułowych w innych plikach, jeśli mają szerszy kontekst.
+- Zachowuj w `const.py` następującą kolejność sekcji:
+  1. **Integration identity** — `DOMAIN`, `PLATFORMS`, `DEFAULT_NAME`
+  2. **API URLs** — `CONST_BASE_URL`, `CONST_URL_*`
+  3. **Config entry keys** — `CONF_*`
+  4. **Defaults** — `DEFAULT_*`
+  5. **Statistics API** — `MEASUREMENT_ID_*`, `STATS_*`, `BACKFILL_*`
+- Każda nowa funkcja, metoda i klasa musi mieć **docstring**.
+
 ## Konwencje nazewnictwa
 
 - Zawsze używaj **"Portal Odbiorcy Enea"** (z wielkiej litery) — nigdy "portal Enea" ani "portal". Dotyczy tekstów UI, tłumaczeń, komentarzy i dokumentacji.

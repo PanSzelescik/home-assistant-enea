@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util
 from .connector import EneaApiClient, EneaAuthError, EneaApiError
 from .const import (
     BACKFILL_DAYS_MAX,
+    BACKFILL_MAX_CONSECUTIVE_EMPTY,
     DOMAIN,
     STATS_ENERGY_CONSUMED,
     STATS_ENERGY_RETURNED,
@@ -26,9 +27,6 @@ from .const import (
 from .statistics import async_insert_historical_statistics, get_statistic_id, has_data
 
 _LOGGER = logging.getLogger(__name__)
-
-# Stop searching further back after this many consecutive days with no data.
-_MAX_CONSECUTIVE_EMPTY = 7
 
 
 class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -188,7 +186,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 consecutive_empty = 0
             else:
                 consecutive_empty += 1
-                if consecutive_empty >= _MAX_CONSECUTIVE_EMPTY:
+                if consecutive_empty >= BACKFILL_MAX_CONSECUTIVE_EMPTY:
                     _LOGGER.debug(
                         "Stopping backfill after %d consecutive empty days (reached %s)",
                         consecutive_empty,

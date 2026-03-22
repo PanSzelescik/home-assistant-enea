@@ -111,7 +111,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
                 start_date = yesterday - timedelta(days=int(days_back) - 1)
             else:
                 end_date = yesterday
-                start_date = yesterday - timedelta(days=29)
+                start_date = yesterday - timedelta(days=DEFAULT_BACKFILL_DAYS - 1)
 
             dev_reg = dr.async_get(hass)
             for config_entry in hass.config_entries.async_entries(DOMAIN):

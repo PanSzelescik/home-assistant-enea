@@ -80,6 +80,28 @@
           "description": "Licznik do odświeżenia. Pozostaw puste, aby odświeżyć wszystkie."
         }
       }
+    },
+    "backfill": {
+      "name": "Uzupełnij statystyki historyczne",
+      "description": "Importuje historyczne statystyki z Portalu Odbiorcy Enea dla wybranego zakresu dat. Użyj start_date/end_date dla konkretnego zakresu lub days_back dla zakresu względnego od wczoraj. Domyślnie pobiera ostatnie 30 dni.",
+      "fields": {
+        "device_id": {
+          "name": "Licznik",
+          "description": "Licznik do uzupełnienia. Pozostaw puste, aby uzupełnić wszystkie."
+        },
+        "start_date": {
+          "name": "Data początkowa",
+          "description": "Pierwszy dzień do zaimportowania (włącznie). Użyj razem z end_date. Ma pierwszeństwo przed days_back."
+        },
+        "end_date": {
+          "name": "Data końcowa",
+          "description": "Ostatni dzień do zaimportowania (włącznie). Domyślnie wczoraj gdy podano start_date."
+        },
+        "days_back": {
+          "name": "Liczba dni wstecz",
+          "description": "Ile dni wstecz od wczoraj pobrać. Ignorowane gdy podano start_date."
+        }
+      }
     }
   },
   "entity": {

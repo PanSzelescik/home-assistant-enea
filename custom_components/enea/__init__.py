@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
@@ -15,6 +16,7 @@ from .const import CONF_BACKFILL_DAYS, CONF_FETCH_CONSUMPTION, CONF_FETCH_GENERA
 from .coordinator import EneaUpdateCoordinator
 
 SERVICE_REFRESH = "refresh"
+SERVICE_BACKFILL = "backfill"
 
 
 @dataclass
@@ -87,6 +89,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
 
         hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh)
 
+    if not hass.services.has_service(DOMAIN, SERVICE_BACKFILL):
+
+        async def _handle_backfill(call: ServiceCall) -> None:
+            device_ids: list[str] = call.data.get("device_id", [])
+            if isinstance(device_ids, str):
+                device_ids = [device_ids]
+
+            today = dt_util.now().date()
+            yesterday = today - timedelta(days=1)
+
+            start_date_str: str | None = call.data.get("start_date")
+            end_date_str: str | None = call.data.get("end_date")
+            days_back: int | None = call.data.get("days_back")
+
+            if start_date_str:
+                start_date = date.fromisoformat(start_date_str)
+                end_date = date.fromisoformat(end_date_str) if end_date_str else yesterday
+            elif days_back:
+                end_date = yesterday
+                start_date = yesterday - timedelta(days=int(days_back) - 1)
+            else:
+                end_date = yesterday
+                start_date = yesterday - timedelta(days=29)
+
+            dev_reg = dr.async_get(hass)
+            for config_entry in hass.config_entries.async_entries(DOMAIN):
+                if not hasattr(config_entry, "runtime_data"):
+                    continue
+                meter_code = config_entry.data.get(CONF_METER_NAME)
+                device = dev_reg.async_get_device(
+                    identifiers={(DOMAIN, meter_code)}
+                )
+                if device and (not device_ids or device.id in device_ids):
+                    await config_entry.runtime_data.coordinator.async_backfill(
+                        start_date, end_date
+                    )
+
+        hass.services.async_register(DOMAIN, SERVICE_BACKFILL, _handle_backfill)
+
     return True
 
 
@@ -119,5 +160,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> boo
         ]
         if not remaining:
             hass.services.async_remove(DOMAIN, SERVICE_REFRESH)
+            hass.services.async_remove(DOMAIN, SERVICE_BACKFILL)
 
     return unload_ok

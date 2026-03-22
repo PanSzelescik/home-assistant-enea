@@ -80,6 +80,28 @@
           "description": "The meter to refresh. Leave empty to refresh all meters."
         }
       }
+    },
+    "backfill": {
+      "name": "Backfill statistics",
+      "description": "Import historical statistics from the Portal Odbiorcy Enea for a custom date range. Use start_date/end_date for an explicit range, or days_back for a relative range from yesterday. Defaults to the last 30 days if no range is specified.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The meter to backfill. Leave empty to backfill all meters."
+        },
+        "start_date": {
+          "name": "Start date",
+          "description": "First day to import (inclusive). Use with end_date. Takes precedence over days_back."
+        },
+        "end_date": {
+          "name": "End date",
+          "description": "Last day to import (inclusive). Defaults to yesterday when start_date is provided."
+        },
+        "days_back": {
+          "name": "Days back",
+          "description": "Number of days to go back from yesterday. Ignored when start_date is provided."
+        }
+      }
     }
   },
   "entity": {

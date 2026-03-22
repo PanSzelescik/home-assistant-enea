@@ -233,3 +233,22 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 any_data = True
 
         return day_data, any_data
+
+    async def async_backfill(self, start_date: date, end_date: date) -> int:
+        """Fetch and inject statistics for a custom date range.
+
+        Returns the number of days for which data was found and injected.
+        """
+        all_days = await self._fetch_days_forward(start_date, end_date)
+        if all_days:
+            await async_insert_historical_statistics(
+                self.hass, self._meter_code, all_days
+            )
+            _LOGGER.info(
+                "Backfill injected %d day(s) for meter %s (%s – %s)",
+                len(all_days),
+                self._meter_code,
+                start_date,
+                end_date,
+            )
+        return len(all_days)

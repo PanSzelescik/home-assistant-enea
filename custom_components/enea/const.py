@@ -37,6 +37,19 @@ CONF_FETCH_CONSUMPTION = "fetch_consumption"
 CONF_FETCH_GENERATION = "fetch_generation"
 
 # ---------------------------------------------------------------------------
+# Config flow — error and abort reason keys (must match translation files)
+# ---------------------------------------------------------------------------
+
+ERROR_INVALID_AUTH = "invalid_auth"
+ERROR_CANNOT_CONNECT = "cannot_connect"
+ERROR_UNKNOWN = "unknown"
+ERROR_AT_LEAST_ONE_FETCH_TYPE = "at_least_one_fetch_type"
+ERROR_INTERVAL_TOO_SHORT = "interval_too_short"
+
+ABORT_REAUTH_SUCCESSFUL = "reauth_successful"
+ABORT_RECONFIGURE_SUCCESSFUL = "reconfigure_successful"
+
+# ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
 

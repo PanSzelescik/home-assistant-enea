@@ -25,6 +25,8 @@ from homeassistant.helpers.selector import (
 
 from .connector import EneaApiClient, EneaAuthError, EneaApiError, format_address
 from .const import (
+    ABORT_REAUTH_SUCCESSFUL,
+    ABORT_RECONFIGURE_SUCCESSFUL,
     CONF_BACKFILL_DAYS,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
@@ -35,6 +37,11 @@ from .const import (
     DEFAULT_BACKFILL_DAYS,
     DEFAULT_UPDATE_INTERVAL_DICT,
     DOMAIN,
+    ERROR_AT_LEAST_ONE_FETCH_TYPE,
+    ERROR_CANNOT_CONNECT,
+    ERROR_INVALID_AUTH,
+    ERROR_INTERVAL_TOO_SHORT,
+    ERROR_UNKNOWN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -92,12 +99,12 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return_exceptions=True,
                 )
             except EneaAuthError:
-                errors["base"] = "invalid_auth"
+                errors["base"] = ERROR_INVALID_AUTH
             except EneaApiError:
-                errors["base"] = "cannot_connect"
+                errors["base"] = ERROR_CANNOT_CONNECT
             except Exception as err:
                 _LOGGER.error("Unexpected error during Enea login", exc_info=err)
-                errors["base"] = "unknown"
+                errors["base"] = ERROR_UNKNOWN
             else:
                 self._username = user_input[CONF_USERNAME]
                 self._password = user_input[CONF_PASSWORD]
@@ -128,9 +135,9 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 (m for m in self._meters if m["id"] == selected_id), None
             )
             if meter is None:
-                errors["base"] = "unknown"
+                errors["base"] = ERROR_UNKNOWN
             elif not user_input.get(CONF_FETCH_CONSUMPTION) and not user_input.get(CONF_FETCH_GENERATION):
-                errors["base"] = "at_least_one_fetch_type"
+                errors["base"] = ERROR_AT_LEAST_ONE_FETCH_TYPE
             else:
                 await self.async_set_unique_id(meter["code"])
                 self._abort_if_unique_id_configured()
@@ -228,12 +235,12 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 await connector.authenticate()
             except EneaAuthError:
-                errors["base"] = "invalid_auth"
+                errors["base"] = ERROR_INVALID_AUTH
             except EneaApiError:
-                errors["base"] = "cannot_connect"
+                errors["base"] = ERROR_CANNOT_CONNECT
             except Exception as err:
                 _LOGGER.error("Unexpected error during Enea reconfigure", exc_info=err)
-                errors["base"] = "unknown"
+                errors["base"] = ERROR_UNKNOWN
             else:
                 self.hass.config_entries.async_update_entry(
                     entry,
@@ -244,7 +251,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
                 await self.hass.config_entries.async_reload(entry.entry_id)
-                return self.async_abort(reason="reconfigure_successful")
+                return self.async_abort(reason=ABORT_RECONFIGURE_SUCCESSFUL)
 
         return self.async_show_form(
             step_id="reconfigure_confirm",
@@ -273,12 +280,12 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 await connector.authenticate()
             except EneaAuthError:
-                errors["base"] = "invalid_auth"
+                errors["base"] = ERROR_INVALID_AUTH
             except EneaApiError:
-                errors["base"] = "cannot_connect"
+                errors["base"] = ERROR_CANNOT_CONNECT
             except Exception as err:
                 _LOGGER.error("Unexpected error during Enea re-auth", exc_info=err)
-                errors["base"] = "unknown"
+                errors["base"] = ERROR_UNKNOWN
             else:
                 self.hass.config_entries.async_update_entry(
                     entry,
@@ -289,7 +296,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
                 await self.hass.config_entries.async_reload(entry.entry_id)
-                return self.async_abort(reason="reauth_successful")
+                return self.async_abort(reason=ABORT_REAUTH_SUCCESSFUL)
 
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -315,9 +322,9 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
                 + int(duration.get("minutes", 0))
             )
             if total_minutes < 30:
-                errors[CONF_UPDATE_INTERVAL] = "interval_too_short"
+                errors[CONF_UPDATE_INTERVAL] = ERROR_INTERVAL_TOO_SHORT
             elif not user_input.get(CONF_FETCH_CONSUMPTION) and not user_input.get(CONF_FETCH_GENERATION):
-                errors["base"] = "at_least_one_fetch_type"
+                errors["base"] = ERROR_AT_LEAST_ONE_FETCH_TYPE
             else:
                 return self.async_create_entry(data=user_input)
 

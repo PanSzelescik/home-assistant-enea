@@ -200,6 +200,51 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return f"{meter['code']} ({tariff}) – {address}"
         return f"{meter['code']} ({tariff})"
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle user-initiated reconfiguration (credential update)."""
+        return await self.async_step_reconfigure_confirm()
+
+    async def async_step_reconfigure_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle reconfiguration confirmation."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            entry = self._get_reconfigure_entry()
+            session = async_create_clientsession(self.hass)
+            connector = EneaApiClient(
+                session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+            )
+            try:
+                await connector.authenticate()
+            except EneaAuthError:
+                errors["base"] = "invalid_auth"
+            except EneaApiError:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected error during Enea reconfigure")
+                errors["base"] = "unknown"
+            else:
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    data={
+                        **entry.data,
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    },
+                )
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason="reconfigure_successful")
+
+        return self.async_show_form(
+            step_id="reconfigure_confirm",
+            data_schema=STEP_USER_SCHEMA,
+            errors=errors,
+        )
+
     async def async_step_reauth(
         self, entry_data: dict[str, Any]
     ) -> config_entries.ConfigFlowResult:

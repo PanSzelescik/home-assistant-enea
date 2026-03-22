@@ -49,6 +49,14 @@
           "username": "Adres e-mail",
           "password": "Hasło"
         }
+      },
+      "reconfigure_confirm": {
+        "title": "Zaktualizuj dane logowania Enea",
+        "description": "Wprowadź nowe dane logowania do Portalu Odbiorcy Enea.",
+        "data": {
+          "username": "Adres e-mail",
+          "password": "Hasło"
+        }
       }
     },
     "error": {
@@ -58,7 +66,8 @@
     },
     "abort": {
       "already_configured": "Ten licznik jest już skonfigurowany",
-      "reauth_successful": "Ponowna autoryzacja zakończyła się sukcesem"
+      "reauth_successful": "Ponowna autoryzacja zakończyła się sukcesem",
+      "reconfigure_successful": "Dane logowania zostały zaktualizowane"
     }
   },
   "services": {

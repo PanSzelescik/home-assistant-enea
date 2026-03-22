@@ -49,6 +49,14 @@
           "username": "Email address",
           "password": "Password"
         }
+      },
+      "reconfigure_confirm": {
+        "title": "Update Enea credentials",
+        "description": "Enter your new login credentials for the Portal Odbiorcy Enea.",
+        "data": {
+          "username": "Email address",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -58,7 +66,8 @@
     },
     "abort": {
       "already_configured": "This meter is already configured",
-      "reauth_successful": "Re-authentication was successful"
+      "reauth_successful": "Re-authentication was successful",
+      "reconfigure_successful": "Credentials updated successfully"
     }
   },
   "services": {

@@ -224,6 +224,17 @@ Przy zmianie struktury danych w `ConfigEntry` (klucze w `entry.data`):
 1. Zwiększ `VERSION` w `EneaConfigFlow`
 2. Dodaj `async_migrate_entry()` w `__init__.py`
 
+## Wydawanie nowej wersji
+
+1. Podbij `version` w `custom_components/enea/manifest.json` oraz `version` w `pyproject.toml`
+2. Zacommituj: `git commit -m "Release vX.Y.Z"`
+3. Wypchnij: `git push`
+4. Utwórz release przez GitHub CLI:
+   ```
+   gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes
+   ```
+   Flaga `--generate-notes` automatycznie generuje changelog z commitów od poprzedniego tagu.
+
 ## CI/CD
 
 - `hacs.yaml` — walidacja przez `hacs/action@main` (push, PR, codziennie)

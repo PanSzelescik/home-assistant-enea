@@ -18,6 +18,11 @@ from .const import (
     BACKFILL_DAYS_MAX,
     BACKFILL_MAX_CONSECUTIVE_EMPTY,
     DOMAIN,
+    STAT_KEY_ENERGY_CONSUMED,
+    STAT_KEY_ENERGY_RETURNED,
+    STAT_KEY_POWER_CONSUMED,
+    STAT_KEY_POWER_RETURNED,
+    STAT_NAME_BY_KEY,
     STATS_ENERGY_CONSUMED,
     STATS_ENERGY_RETURNED,
     STATS_POWER_CONSUMED,
@@ -61,13 +66,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         types: list[tuple[str, int]] = []
         if self._fetch_consumption:
             types.extend([
-                ("energy_consumed", STATS_ENERGY_CONSUMED),
-                ("power_consumed", STATS_POWER_CONSUMED),
+                (STAT_KEY_ENERGY_CONSUMED, STATS_ENERGY_CONSUMED),
+                (STAT_KEY_POWER_CONSUMED, STATS_POWER_CONSUMED),
             ])
         if self._fetch_generation:
             types.extend([
-                ("energy_returned", STATS_ENERGY_RETURNED),
-                ("power_returned", STATS_POWER_RETURNED),
+                (STAT_KEY_ENERGY_RETURNED, STATS_ENERGY_RETURNED),
+                (STAT_KEY_POWER_RETURNED, STATS_POWER_RETURNED),
             ])
         return types
 
@@ -92,14 +97,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # Statistics helpers
     # ------------------------------------------------------------------
 
-    # Maps measurement key → statistic name (used for freshness checks).
-    _STAT_NAME_BY_KEY: dict[str, str] = {
-        "energy_consumed": "Energia pobrana",
-        "energy_returned": "Energia oddana",
-        "power_consumed": "Moc pobrana",
-        "power_returned": "Moc oddana",
-    }
-
     async def _async_fetch_and_inject_stats(self) -> None:
         """Determine which days are missing and inject historical statistics."""
         keys_and_types = self._get_measurement_types()
@@ -112,7 +109,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Find the most-recent date across all active statistic series.
         latest_date: date | None = None
         for key, _ in keys_and_types:
-            name = self._STAT_NAME_BY_KEY.get(key)
+            name = STAT_NAME_BY_KEY.get(key)
             if name is None:
                 continue
             stat_id = get_statistic_id(self._meter_code, name)

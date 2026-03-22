@@ -77,3 +77,15 @@ STATS_RESOLUTION_60MIN = 2
 
 BACKFILL_DAYS_MAX = 0  # sentinel: fetch as far back as data is available
 BACKFILL_MAX_CONSECUTIVE_EMPTY = 7  # stop after this many consecutive days with no data
+
+STAT_KEY_ENERGY_CONSUMED = "energy_consumed"
+STAT_KEY_ENERGY_RETURNED = "energy_returned"
+STAT_KEY_POWER_CONSUMED = "power_consumed"
+STAT_KEY_POWER_RETURNED = "power_returned"
+
+STAT_NAME_BY_KEY: dict[str, str] = {
+    STAT_KEY_ENERGY_CONSUMED: "Energia pobrana",
+    STAT_KEY_ENERGY_RETURNED: "Energia oddana",
+    STAT_KEY_POWER_CONSUMED: "Moc pobrana",
+    STAT_KEY_POWER_RETURNED: "Moc oddana",
+}

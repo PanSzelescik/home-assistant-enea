@@ -1,6 +1,7 @@
 """API client for the Portal Odbiorcy Enea."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -37,6 +38,7 @@ class EneaApiClient:
         self._username = username
         self._password = password
         self._authenticated = False
+        self._auth_lock = asyncio.Lock()
         self._meters_cache: list[dict[str, Any]] | None = None
         self._meters_cache_time: datetime | None = None
 
@@ -66,6 +68,40 @@ class EneaApiClient:
         self._authenticated = True
         _LOGGER.debug("Successfully authenticated with Portal Odbiorcy Enea")
 
+    async def _request(self, url: str, label: str) -> Any:
+        """Perform an authenticated GET request, retrying once on session expiry."""
+        if not self._authenticated:
+            await self.authenticate()
+
+        try:
+            resp = await self._session.get(url)
+        except aiohttp.ClientError as err:
+            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+
+        if resp.status in (401, 403):
+            async with self._auth_lock:
+                if not self._authenticated:
+                    # Another concurrent request already re-authenticated.
+                    pass
+                else:
+                    _LOGGER.debug("Session expired, re-authenticating")
+                    self._authenticated = False
+                    self._meters_cache = None
+                    self._meters_cache_time = None
+                    await self.authenticate()
+            try:
+                resp = await self._session.get(url)
+            except aiohttp.ClientError as err:
+                raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+
+        if resp.status != 200:
+            raise EneaApiError(f"Unexpected response from {label} endpoint: {resp.status}")
+
+        try:
+            return await resp.json()
+        except Exception as err:
+            raise EneaApiError(f"Failed to parse {label} response: {err}") from err
+
     async def get_meters(self) -> list[dict[str, Any]]:
         """Return the list of PPE meters associated with the account.
 
@@ -81,70 +117,15 @@ class EneaApiClient:
             _LOGGER.debug("Returning cached meters list")
             return self._meters_cache
 
-        if not self._authenticated:
-            await self.authenticate()
-
-        try:
-            resp = await self._session.get(CONST_URL_PPES)
-        except aiohttp.ClientError as err:
-            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
-
-        if resp.status in (401, 403):
-            _LOGGER.debug("Session expired, re-authenticating")
-            self._authenticated = False
-            self._meters_cache = None
-            self._meters_cache_time = None
-            await self.authenticate()
-            try:
-                resp = await self._session.get(CONST_URL_PPES)
-            except aiohttp.ClientError as err:
-                raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
-
-        if resp.status != 200:
-            raise EneaApiError(f"Unexpected response from ppes endpoint: {resp.status}")
-
-        try:
-            data: list[dict[str, Any]] = await resp.json()
-        except Exception as err:
-            raise EneaApiError(f"Failed to parse meters response: {err}") from err
-
+        data: list[dict[str, Any]] = await self._request(CONST_URL_PPES, "ppes")
         self._meters_cache = data
         self._meters_cache_time = now
         return data
 
     async def get_ppe_dashboard(self, meter_id: int) -> dict[str, Any]:
         """Return full consumption dashboard data for a specific meter."""
-        if not self._authenticated:
-            await self.authenticate()
-
         url = CONST_URL_PPE_DASHBOARD.format(meter_id=meter_id)
-        try:
-            resp = await self._session.get(url)
-        except aiohttp.ClientError as err:
-            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
-
-        if resp.status in (401, 403):
-            _LOGGER.debug("Session expired, re-authenticating")
-            self._authenticated = False
-            self._meters_cache = None
-            self._meters_cache_time = None
-            await self.authenticate()
-            try:
-                resp = await self._session.get(url)
-            except aiohttp.ClientError as err:
-                raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
-
-        if resp.status != 200:
-            raise EneaApiError(
-                f"Unexpected response from dashboard endpoint: {resp.status}"
-            )
-
-        try:
-            data: dict[str, Any] = await resp.json()
-        except Exception as err:
-            raise EneaApiError(f"Failed to parse dashboard response: {err}") from err
-
-        return data
+        return await self._request(url, "dashboard")
 
     async def get_meter_data(self, meter_id: int) -> dict[str, Any]:
         """Return full dashboard data for a specific meter."""
@@ -166,42 +147,13 @@ class EneaApiClient:
                               4=power consumed, 9=power returned.
             resolution: 1=15-minute (96 entries), 2=60-minute (24 entries).
         """
-        if not self._authenticated:
-            await self.authenticate()
-
         url = CONST_URL_CONSUMPTION.format(
             meter_id=meter_id,
             date=date,
             measurement_type=measurement_type,
             resolution=resolution,
         )
-        try:
-            resp = await self._session.get(url)
-        except aiohttp.ClientError as err:
-            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
-
-        if resp.status in (401, 403):
-            _LOGGER.debug("Session expired, re-authenticating")
-            self._authenticated = False
-            self._meters_cache = None
-            self._meters_cache_time = None
-            await self.authenticate()
-            try:
-                resp = await self._session.get(url)
-            except aiohttp.ClientError as err:
-                raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
-
-        if resp.status != 200:
-            raise EneaApiError(
-                f"Unexpected response from consumption endpoint: {resp.status}"
-            )
-
-        try:
-            data: dict[str, Any] = await resp.json()
-        except Exception as err:
-            raise EneaApiError(f"Failed to parse consumption response: {err}") from err
-
-        return data
+        return await self._request(url, "consumption")
 
 
 def format_address(addr: dict[str, Any] | None) -> str | None:

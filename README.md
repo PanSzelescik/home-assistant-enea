@@ -5,7 +5,7 @@ Pozwala na monitorowanie danych licznika bezpośrednio z Portalu Odbiorcy Enea.
 
 ## Wymagania
 
-- Home Assistant 2024.1.0 lub nowszy
+- Home Assistant 2026.3.3 lub nowszy
 - Zweryfikowane konto na [portalodbiorcy.operator.enea.pl](https://portalodbiorcy.operator.enea.pl/)
 - Licznik zdalnego odczytu (AMI) od Enea Operator
 

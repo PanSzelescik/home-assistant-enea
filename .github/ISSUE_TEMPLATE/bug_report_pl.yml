@@ -11,7 +11,7 @@ body:
     id: ha_version
     attributes:
       label: Wersja Home Assistant
-      placeholder: "np. 2026.3.2"
+      placeholder: "np. 2026.3.3"
     validations:
       required: true
 

@@ -5,7 +5,7 @@ import logging
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from homeassistant.components.recorder import get_instance
+from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMeanType, StatisticMetaData
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
@@ -129,7 +129,7 @@ async def _inject_energy_series(
         get_last_statistics, hass, 1, statistic_id, True, {"sum"}
     )
     running_sum: float = (
-        last_stats[statistic_id][0]["sum"]
+        last_stats[statistic_id][0].get("sum") or 0.0
         if last_stats.get(statistic_id)
         else 0.0
     )

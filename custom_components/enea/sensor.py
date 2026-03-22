@@ -59,6 +59,7 @@ def _get_device_info(meter_code: str, data: dict[str, Any] | None) -> DeviceInfo
 
 
 def _get_reading_date(data: dict[str, Any]) -> datetime | None:
+    """Return the last reading timestamp from dashboard data, or None if unavailable."""
     ts = next(
         (
             cv["readingDate"]
@@ -259,16 +260,19 @@ class EneaSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
 
     @property
     def available(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+        """Return whether the entity is available."""
         return super().available
 
     @cached_property
     def native_value(self) -> Any:
+        """Return the sensor state value."""
         if self.coordinator.data is None or self.entity_description.value_fn is None:
             return None
         return self.entity_description.value_fn(self.coordinator.data)
 
     @cached_property
     def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return additional state attributes."""
         if self.entity_description.attr_fn is None:
             return None
         if self.coordinator.data is None:
@@ -309,6 +313,7 @@ class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
 
     @property
     def available(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+        """Return whether the entity is available."""
         return super().available
 
     @cached_property

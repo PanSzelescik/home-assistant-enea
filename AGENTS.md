@@ -17,8 +17,8 @@ custom_components/enea/
 ├── connector.py     — klient HTTP (EneaApiClient, _request helper), wyjątki, format_address()
 ├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, async_backfill
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", reconfigure; EneaOptionsFlow
-├── sensor.py        — EneaSensor, EneaEnergySensor, SENSOR_DESCRIPTIONS
-├── statistics.py    — async_insert_historical_statistics, _collect/inject energy/power series
+├── sensor.py        — EneaSensor, EneaEnergySensor, SENSOR_DESCRIPTIONS, _get_reading_date
+├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy/power_series
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem)
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
 ├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk

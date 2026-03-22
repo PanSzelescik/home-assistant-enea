@@ -26,8 +26,6 @@ from .statistics import async_insert_historical_statistics, get_statistic_id, ha
 
 _LOGGER = logging.getLogger(__name__)
 
-# Maximum number of days to look back when BACKFILL_DAYS_MAX is set.
-_MAX_BACKFILL_DAYS = 365
 # Stop searching further back after this many consecutive days with no data.
 _MAX_CONSECUTIVE_EMPTY = 7
 
@@ -146,7 +144,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         all_days: list[tuple[date, dict[str, Any]]] = []
         consecutive_empty = 0
         current = end_date
-        for _ in range(_MAX_BACKFILL_DAYS):
+        while True:
             day_data, any_data = await self._fetch_one_day(current)
             if any_data:
                 all_days.append((current, day_data))

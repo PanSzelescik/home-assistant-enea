@@ -39,7 +39,7 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 - Coordinator co każde odświeżenie sprawdza, czy wczorajszy dzień jest już w bazie (przez `get_last_statistics`).
 - Jeśli nie — pobiera brakujące dni i wstrzykuje.
 - Backfill przy pierwszym uruchomieniu: konfigurowalny przez użytkownika (7/30/60/90 dni lub "ile się da").
-- "Ile się da" = cofaj się dzień po dniu do tyłu od wczoraj, zatrzymaj po 7 kolejnych dniach bez danych (max 365 dni).
+- "Ile się da" = cofaj się dzień po dniu do tyłu od wczoraj bez limitu, zatrzymaj po 7 kolejnych dniach bez danych z API.
 
 ### Nazwy statystyk
 

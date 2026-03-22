@@ -13,14 +13,14 @@ Niniejszy projekt to custom component dla Home Assistant integrujący liczniki z
 
 ```
 custom_components/enea/
-├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, serwis refresh
-├── connector.py     — klient HTTP (EneaApiClient), wyjątki, format_address()
-├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk
-├── config_flow.py   — EneaConfigFlow: krok "user" (login) + krok "select_meter" (z adresem i backfill)
+├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, serwisy refresh/backfill
+├── connector.py     — klient HTTP (EneaApiClient, _request helper), wyjątki, format_address()
+├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, async_backfill
+├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", reconfigure; EneaOptionsFlow
 ├── sensor.py        — EneaSensor, EneaEnergySensor, SENSOR_DESCRIPTIONS
 ├── statistics.py    — async_insert_historical_statistics, _collect/inject energy/power series
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem)
-├── services.yaml    — definicja akcji "refresh"
+├── services.yaml    — definicja akcji "refresh" i "backfill"
 ├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk
 ├── manifest.json    — metadane integracji (wymagane przez HA/HACS/hassfest)
 └── translations/
@@ -36,10 +36,12 @@ custom_components/enea/
 
 Statystyki historyczne są wstrzykiwane jako **external statistics** (poza systemem encji HA) przez `async_add_external_statistics`. Dzięki temu Energy Dashboard może wyświetlać dane z prawidłowymi timestampami (godzinowa granularność — HA wymaga pełnych godzin dla external statistics) niezależnie od częstotliwości pollingu.
 
-- Coordinator co każde odświeżenie sprawdza, czy wczorajszy dzień jest już w bazie (przez `get_last_statistics`).
-- Jeśli nie — pobiera brakujące dni i wstrzykuje.
+- Coordinator co każde odświeżenie sprawdza aktualność statystyk przez `get_last_statistics` — sprawdza wszystkie aktywne serie (energy_consumed/returned, power_consumed/returned) i bierze najnowszą datę.
+- Jeśli nie ma danych do wczoraj — pobiera brakujące dni i wstrzykuje.
 - Backfill przy pierwszym uruchomieniu: konfigurowalny przez użytkownika (7/30/60/90 dni lub "ile się da").
 - "Ile się da" = cofaj się dzień po dniu do tyłu od wczoraj bez limitu, zatrzymaj po 7 kolejnych dniach bez danych z API.
+- Pobieranie per dzień jest równoległe (`asyncio.gather`) — 2 lub 4 żądania jednocześnie zależnie od opcji fetch_consumption/fetch_generation.
+- Manualny backfill dowolnego zakresu dat: akcja `enea.backfill` (patrz Akcje).
 
 ### Nazwy statystyk
 
@@ -148,16 +150,17 @@ Dane za poprzedni dzień są dostępne zwykle po godzinie 11:00 następnego dnia
 | `meter_model` | `meters[].typeName` aktywnego licznika |
 
 ### Energia (widoczne w dashboardach)
-Tworzone dynamicznie w `async_setup_entry` na podstawie `currentValues[]`:
+Tworzone dynamicznie w `async_setup_entry` na podstawie `currentValues[]`. Sensory dla wyłączonego kierunku (`fetch_consumption=False` lub `fetch_generation=False` w options) nie są tworzone.
 - `consumption_total` / `generation_total` — sumy stref (statyczne)
 - `consumption_zone{i}` / `generation_zone{i}` — per strefa (dynamiczne, nazwy z `ppeZones[]`)
 
 ## Obsługa sesji
 
 - aiohttp `CookieJar` zarządza ciasteczkiem `PER_JSESSIONID` automatycznie
-- Przy odpowiedzi 401/403 connector automatycznie ponawia logowanie i powtarza żądanie
+- Przy odpowiedzi 401/403 `_request()` w connectorze ponawia logowanie i powtarza żądanie (z `asyncio.Lock` — zapobiega wielokrotnym re-auth przy równoległych żądaniach)
 - Przy restarcie HA sesja jest tracona — `get_meters()` automatycznie wywołuje `authenticate()`
 - Przy permanentnym błędzie auth coordinator rzuca `ConfigEntryAuthFailed` → przepływ reauth w UI
+- Zmiana danych logowania przez użytkownika: dostępna przez **reconfigure flow** (menu ⋮ integracji) — inaczej niż reauth, który jest wyzwalany automatycznie przez 401
 - Wiele liczników na jednym koncie: współdzielony `EneaApiClient` w `hass.data[DOMAIN][username]`
 
 ## Statystyki a sensory — podział odpowiedzialności
@@ -169,10 +172,38 @@ Tworzone dynamicznie w `async_setup_entry` na podstawie `currentValues[]`:
 
 W Energy Dashboard **nie** dodajemy sensorów (`sensor.enea_...`) do wykresu historii — zamiast tego dodajemy statystyki zewnętrzne (`enea:...`). Sensory służą do bieżącego wyświetlania wartości na dashboardach Lovelace.
 
+## Opcje integracji (options flow)
+
+Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**:
+
+| Opcja | Domyślnie | Opis |
+|-------|-----------|------|
+| `update_interval` | 8h 30min | Interwał odpytywania dashboardu; minimum 30 min |
+| `fetch_consumption` | `True` | Pobieranie statystyk i sensorów energii pobranej |
+| `fetch_generation` | `True` | Pobieranie statystyk i sensorów energii oddanej |
+
+Zmiana opcji powoduje natychmiastowy reload integracji (update listener w `__init__.py`).
+
+## Akcje (services)
+
+### `enea.refresh`
+Wymusza natychmiastowe pobranie danych dashboardu i uzupełnienie brakujących statystyk (od ostatniej zapisanej daty do wczoraj).
+
+### `enea.backfill`
+Importuje statystyki historyczne dla dowolnego zakresu dat. Nie aktualizuje stanów sensorów.
+
+| Parametr | Wymagany | Opis |
+|----------|----------|------|
+| `device_id` | nie | Konkretny licznik; puste = wszystkie |
+| `start_date` | nie | Pierwsza data (YYYY-MM-DD); ma pierwszeństwo nad `days_back` |
+| `end_date` | nie | Ostatnia data; domyślnie wczoraj gdy podano `start_date` |
+| `days_back` | nie | Liczba dni wstecz od wczoraj (1–365) |
+| *(brak parametrów)* | — | Domyślnie: ostatnie 30 dni |
+
 ## Jak dodać nowe endpointy API
 
 1. **`const.py`** — dodaj URL
-2. **`connector.py`** — dodaj metodę z auto-reauth (wzoruj się na `get_ppe_dashboard()`)
+2. **`connector.py`** — dodaj metodę wywołującą `await self._request(url, "label")`
 3. **`coordinator.py`** — rozszerz `_async_update_data()` o nowe wywołanie; gdy dane urosną, zamień typ generyczny `dict` na własny dataclass
 4. **`sensor.py`** — dodaj nowe opisy sensorów w `SENSOR_DESCRIPTIONS` lub nową klasę sensorów
 

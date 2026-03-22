@@ -1,6 +1,7 @@
 """DataUpdateCoordinator for the Enea integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, timedelta
 from typing import Any
@@ -183,30 +184,35 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _fetch_one_day(
         self, day: date
     ) -> tuple[dict[str, Any], bool]:
-        """Fetch all 4 measurement types for a single day.
+        """Fetch active measurement types for a single day in parallel.
 
         Returns (day_data_dict, any_data_found).
         """
-        date_str = day.isoformat()
-        day_data: dict[str, Any] = {}
-        any_data = False
+        keys_and_types = self._get_measurement_types()
+        if not keys_and_types:
+            return {}, False
 
-        for key, mtype in (
-            ("energy_consumed", STATS_ENERGY_CONSUMED),
-            ("energy_returned", STATS_ENERGY_RETURNED),
-            ("power_consumed", STATS_POWER_CONSUMED),
-            ("power_returned", STATS_POWER_RETURNED),
-        ):
-            try:
-                result = await self.connector.get_consumption_data(
+        date_str = day.isoformat()
+        results = await asyncio.gather(
+            *(
+                self.connector.get_consumption_data(
                     self.meter_id, date_str, mtype, STATS_RESOLUTION_60MIN
                 )
-                day_data[key] = result
-                if has_data(result):
-                    any_data = True
-            except EneaApiError as err:
+                for _, mtype in keys_and_types
+            ),
+            return_exceptions=True,
+        )
+
+        day_data: dict[str, Any] = {}
+        any_data = False
+        for (key, mtype), result in zip(keys_and_types, results):
+            if isinstance(result, Exception):
                 _LOGGER.debug(
-                    "No stats data for %s type %d: %s", date_str, mtype, err
+                    "No stats data for %s type %d: %s", date_str, mtype, result
                 )
+                continue
+            day_data[key] = result
+            if has_data(result):
+                any_data = True
 
         return day_data, any_data

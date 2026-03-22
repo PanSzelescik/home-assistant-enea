@@ -144,6 +144,8 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                     options={
                         CONF_UPDATE_INTERVAL: user_input[CONF_UPDATE_INTERVAL],
+                        CONF_FETCH_CONSUMPTION: user_input[CONF_FETCH_CONSUMPTION],
+                        CONF_FETCH_GENERATION: user_input[CONF_FETCH_GENERATION],
                     },
                 )
 
@@ -182,6 +184,8 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(
                     CONF_UPDATE_INTERVAL, default=DEFAULT_UPDATE_INTERVAL_DICT
                 ): DurationSelector(DurationSelectorConfig(enable_day=False)),
+                vol.Required(CONF_FETCH_CONSUMPTION, default=True): BooleanSelector(),
+                vol.Required(CONF_FETCH_GENERATION, default=True): BooleanSelector(),
             }
         )
 

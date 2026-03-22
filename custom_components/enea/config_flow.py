@@ -36,6 +36,7 @@ from .const import (
     CONF_UPDATE_INTERVAL,
     DEFAULT_BACKFILL_DAYS,
     DEFAULT_UPDATE_INTERVAL_DICT,
+    MIN_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
     ERROR_AT_LEAST_ONE_FETCH_TYPE,
     ERROR_CANNOT_CONNECT,
@@ -321,7 +322,7 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
                 int(duration.get("hours", 0)) * 60
                 + int(duration.get("minutes", 0))
             )
-            if total_minutes < 30:
+            if total_minutes < MIN_UPDATE_INTERVAL_MINUTES:
                 errors[CONF_UPDATE_INTERVAL] = ERROR_INTERVAL_TOO_SHORT
             elif not user_input.get(CONF_FETCH_CONSUMPTION) and not user_input.get(CONF_FETCH_GENERATION):
                 errors["base"] = ERROR_AT_LEAST_ONE_FETCH_TYPE

@@ -55,6 +55,7 @@ ABORT_RECONFIGURE_SUCCESSFUL = "reconfigure_successful"
 
 DEFAULT_UPDATE_INTERVAL_DICT: dict[str, int] = {"hours": 8, "minutes": 30, "seconds": 0}
 DEFAULT_BACKFILL_DAYS = 30
+MIN_UPDATE_INTERVAL_MINUTES = 30
 
 # ---------------------------------------------------------------------------
 # Statistics API — measurement types and resolution

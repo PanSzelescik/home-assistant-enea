@@ -1,0 +1,10 @@
+[project]
+name = "home-assistant-enea"
+version = "1.1.0"
+requires-python = ">=3.13,<3.14"
+
+[dependency-groups]
+dev = [
+    "homeassistant>=2025.3.0",
+    "pyright",
+]

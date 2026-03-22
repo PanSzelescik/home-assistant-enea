@@ -1,15 +1,4 @@
 {
-  "enabledPlugins": {
-    "home-assistant-skills@home-assistant-skills": true
-  },
-  "extraKnownMarketplaces": {
-    "home-assistant-skills": {
-      "source": {
-        "source": "github",
-        "repo": "homeassistant-ai/skills"
-      }
-    }
-  },
   "permissions": {
     "allow": [
       "WebSearch",
@@ -18,5 +7,17 @@
       "Bash(gh api:*)",
       "Bash(gh search:*)"
     ]
+  },
+  "enabledPlugins": {
+    "home-assistant-skills@home-assistant-skills": true,
+    "pyright-lsp@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "home-assistant-skills": {
+      "source": {
+        "source": "github",
+        "repo": "homeassistant-ai/skills"
+      }
+    }
   }
 }

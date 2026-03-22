@@ -3,7 +3,7 @@
     "home-assistant-skills@home-assistant-skills": true
   },
   "extraKnownMarketplaces": {
-    "dotnet-agent-skills": {
+    "home-assistant-skills": {
       "source": {
         "source": "github",
         "repo": "homeassistant-ai/skills"

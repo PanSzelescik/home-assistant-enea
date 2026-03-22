@@ -66,7 +66,8 @@
     "error": {
       "invalid_auth": "Nieprawidłowy adres e-mail lub hasło",
       "cannot_connect": "Nie można połączyć się z Portalem Odbiorcy Enea. Sprawdź połączenie z internetem.",
-      "unknown": "Wystąpił nieoczekiwany błąd"
+      "unknown": "Wystąpił nieoczekiwany błąd",
+      "at_least_one_fetch_type": "Przynajmniej jeden z typów statystyk (pobrana lub oddana) musi być włączony."
     },
     "abort": {
       "already_configured": "Ten licznik jest już skonfigurowany",

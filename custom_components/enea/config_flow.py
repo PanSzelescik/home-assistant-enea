@@ -128,6 +128,8 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             if meter is None:
                 errors["base"] = "unknown"
+            elif not user_input.get(CONF_FETCH_CONSUMPTION) and not user_input.get(CONF_FETCH_GENERATION):
+                errors["base"] = "at_least_one_fetch_type"
             else:
                 await self.async_set_unique_id(meter["code"])
                 self._abort_if_unique_id_configured()

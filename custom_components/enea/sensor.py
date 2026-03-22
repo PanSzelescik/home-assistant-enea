@@ -1,8 +1,10 @@
 """Sensor platform for the Enea Energy Meter integration."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import cached_property
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -11,10 +13,9 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy, UnitOfPower
+from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -27,7 +28,6 @@ from .const import (
     DEFAULT_NAME,
     DOMAIN,
     MEASUREMENT_ID_CONSUMPTION,
-    MEASUREMENT_ID_GENERATION,
 )
 from .coordinator import EneaUpdateCoordinator
 
@@ -58,12 +58,24 @@ def _get_device_info(meter_code: str, data: dict[str, Any] | None) -> DeviceInfo
 # ---------------------------------------------------------------------------
 
 
+def _get_reading_date(data: dict[str, Any]) -> datetime | None:
+    ts = next(
+        (
+            cv["readingDate"]
+            for cv in data.get("currentValues", [])
+            if cv.get("measurementId") == 1 and cv.get("readingDate")
+        ),
+        None,
+    )
+    return datetime.fromtimestamp(ts / 1000, tz=timezone.utc) if ts else None
+
+
 @dataclass(frozen=True, kw_only=True)
 class EneaSensorEntityDescription(SensorEntityDescription):
     """Extended sensor description for Enea diagnostic sensors."""
 
-    value_fn: Any = None
-    attr_fn: Any = None
+    value_fn: Callable[[dict[str, Any]], Any] | None = None
+    attr_fn: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None
 
 
 SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
@@ -130,20 +142,7 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         icon="mdi:clock-outline",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: (
-            datetime.fromtimestamp(
-                ts / 1000,
-                tz=timezone.utc,
-            )
-            if (
-                ts := next(
-                    (cv["readingDate"] for cv in data.get("currentValues", [])
-                     if cv.get("measurementId") == 1 and cv.get("readingDate")),
-                    None,
-                )
-            )
-            else None
-        ),
+        value_fn=_get_reading_date,
     ),
     EneaSensorEntityDescription(
         key="meter_model",
@@ -177,7 +176,7 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: EneaConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
@@ -243,7 +242,7 @@ async def async_setup_entry(
 class EneaSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
     """Diagnostic sensor entity for an Enea meter."""
 
-    entity_description: EneaSensorEntityDescription
+    entity_description: EneaSensorEntityDescription  # pyright: ignore[reportIncompatibleVariableOverride]
     _attr_has_entity_name = True
 
     def __init__(
@@ -253,18 +252,22 @@ class EneaSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
         description: EneaSensorEntityDescription,
     ) -> None:
         super().__init__(coordinator)
-        self.entity_description = description
+        self.entity_description = description  # pyright: ignore[reportIncompatibleVariableOverride]
         self._meter_code = meter_code
         self._attr_unique_id = f"enea-{meter_code}-{description.key}"
         self._attr_device_info = _get_device_info(meter_code, coordinator.data)
 
     @property
+    def available(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+        return super().available
+
+    @cached_property
     def native_value(self) -> Any:
-        if self.coordinator.data is None:
+        if self.coordinator.data is None or self.entity_description.value_fn is None:
             return None
         return self.entity_description.value_fn(self.coordinator.data)
 
-    @property
+    @cached_property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         if self.entity_description.attr_fn is None:
             return None
@@ -305,6 +308,10 @@ class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
             self._attr_name = sensor_name
 
     @property
+    def available(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+        return super().available
+
+    @cached_property
     def native_value(self) -> float | None:
         """Return the energy value in kWh."""
         data = self.coordinator.data

@@ -53,6 +53,7 @@ STEP_USER_SCHEMA = vol.Schema(
 )
 
 
+# noinspection PyTypeChecker
 class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Enea Energy Meter."""
 
@@ -60,7 +61,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
+        config_entry: config_entries.ConfigEntry,  # noqa: ARG004
     ) -> EneaOptionsFlow:
         """Return the options flow."""
         return EneaOptionsFlow()
@@ -94,8 +95,8 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except EneaApiError:
                 errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected error during Enea login")
+            except Exception as err:
+                _LOGGER.error("Unexpected error during Enea login", exc_info=err)
                 errors["base"] = "unknown"
             else:
                 self._username = user_input[CONF_USERNAME]
@@ -207,7 +208,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return f"{meter['code']} ({tariff})"
 
     async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
+        self, _user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Handle user-initiated reconfiguration (credential update)."""
         return await self.async_step_reconfigure_confirm()
@@ -230,8 +231,8 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except EneaApiError:
                 errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected error during Enea reconfigure")
+            except Exception as err:
+                _LOGGER.error("Unexpected error during Enea reconfigure", exc_info=err)
                 errors["base"] = "unknown"
             else:
                 self.hass.config_entries.async_update_entry(
@@ -252,7 +253,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_reauth(
-        self, entry_data: dict[str, Any]
+        self, _entry_data: dict[str, Any]
     ) -> config_entries.ConfigFlowResult:
         """Handle re-authentication."""
         return await self.async_step_reauth_confirm()
@@ -275,8 +276,8 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except EneaApiError:
                 errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected error during Enea re-auth")
+            except Exception as err:
+                _LOGGER.error("Unexpected error during Enea re-auth", exc_info=err)
                 errors["base"] = "unknown"
             else:
                 self.hass.config_entries.async_update_entry(
@@ -297,6 +298,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
+# noinspection PyTypeChecker
 class EneaOptionsFlow(config_entries.OptionsFlow):
     """Options flow for Enea Energy Meter."""
 

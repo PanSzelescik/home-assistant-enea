@@ -13,7 +13,7 @@ TO_REDACT = {CONF_PASSWORD, CONF_USERNAME}
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: EneaConfigEntry
+    _hass: HomeAssistant, entry: EneaConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry.
 

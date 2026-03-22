@@ -53,6 +53,8 @@ async def async_insert_historical_statistics(
     """Inject hourly historical statistics for one or more days.
 
     Args:
+        hass: The Home Assistant instance.
+        meter_code: The meter identifier used to build statistic IDs.
         all_days: List of (date, data_dict) tuples sorted chronologically.
                   data_dict keys: "energy_consumed", "energy_returned",
                                   "power_consumed", "power_returned".
@@ -68,7 +70,7 @@ async def async_insert_historical_statistics(
             api = data.get(key)
             if not api or not has_data(api):
                 continue
-            _collect_energy_series(api, day, type_label, series_by_name)
+            _collect_series(api, day, type_label, "Energia", series_by_name)
 
         for name, series in series_by_name.items():
             await _inject_energy_series(hass, meter_code, name, series)
@@ -81,23 +83,24 @@ async def async_insert_historical_statistics(
             api = data.get(key)
             if not api or not has_data(api):
                 continue
-            _collect_power_series(api, day, type_label, series_by_name)
+            _collect_series(api, day, type_label, "Moc", series_by_name)
 
         for name, series in series_by_name.items():
             _inject_power_series(hass, meter_code, name, series)
 
 
-def _collect_energy_series(
+def _collect_series(
     api_response: dict[str, Any],
     stats_date: date,
     type_label: str,
+    prefix: str,
     series_by_name: dict[str, list[tuple[datetime, float]]],
 ) -> None:
-    """Append one day's energy time series into series_by_name (mutates in place)."""
+    """Append one day's time series into series_by_name (mutates in place)."""
     zones: dict[int, str] = {z["id"]: z["name"] for z in api_response.get("zones", [])}
-    total_name = f"Energia {type_label}"
+    total_name = f"{prefix} {type_label}"
     zone_names: dict[int, str] = {
-        zone_id: f"Energia {type_label} \u2013 {zone_name}"
+        zone_id: f"{prefix} {type_label} \u2013 {zone_name}"
         for zone_id, zone_name in zones.items()
     }
 
@@ -152,31 +155,6 @@ async def _inject_energy_series(
     async_add_external_statistics(hass, metadata, stats_data)
     _LOGGER.debug("Injected %d energy stats for %s", len(stats_data), statistic_id)
 
-
-def _collect_power_series(
-    api_response: dict[str, Any],
-    stats_date: date,
-    type_label: str,
-    series_by_name: dict[str, list[tuple[datetime, float]]],
-) -> None:
-    """Append one day's power time series into series_by_name (mutates in place)."""
-    zones: dict[int, str] = {z["id"]: z["name"] for z in api_response.get("zones", [])}
-    total_name = f"Moc {type_label}"
-    zone_names: dict[int, str] = {
-        zone_id: f"Moc {type_label} \u2013 {zone_name}"
-        for zone_id, zone_name in zones.items()
-    }
-
-    for entry in api_response.get("values", []):
-        dt = _time_id_to_dt(stats_date, entry["timeId"])
-        slot_total = 0.0
-        for item in entry.get("items", []):
-            zone_id = item.get("tarifZoneId")
-            value = item.get("value") or 0.0
-            slot_total += value
-            if zone_id in zone_names:
-                series_by_name.setdefault(zone_names[zone_id], []).append((dt, value))
-        series_by_name.setdefault(total_name, []).append((dt, slot_total))
 
 
 def _inject_power_series(

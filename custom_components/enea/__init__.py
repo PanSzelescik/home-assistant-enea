@@ -39,12 +39,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
     # Reuse existing client for accounts with multiple meters (shared session/cookie).
     # If credentials changed (e.g. after reauth), update them in the shared client.
     if username in hass.data[DOMAIN]:
-        connector: EneaApiClient = hass.data[DOMAIN][username]
-        connector.update_credentials(password)
+        client: EneaApiClient = hass.data[DOMAIN][username]
+        client.update_credentials(password)
     else:
         session = async_create_clientsession(hass)
-        connector = EneaApiClient(session, username, password)
-        hass.data[DOMAIN][username] = connector
+        client = EneaApiClient(session, username, password)
+        hass.data[DOMAIN][username] = client
 
     duration = entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_DICT)
     update_interval = timedelta(
@@ -52,9 +52,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
         minutes=int(duration.get("minutes", 0)),
         seconds=int(duration.get("seconds", 0)),
     )
-    coordinator = EneaUpdateCoordinator(
+    update_coordinator = EneaUpdateCoordinator(
         hass,
-        connector,
+        client,
         entry.data[CONF_METER_ID],
         meter_code=entry.data[CONF_METER_NAME],
         backfill_days=entry.data.get(CONF_BACKFILL_DAYS, DEFAULT_BACKFILL_DAYS),
@@ -62,9 +62,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
         fetch_consumption=entry.options.get(CONF_FETCH_CONSUMPTION, True),
         fetch_generation=entry.options.get(CONF_FETCH_GENERATION, True),
     )
-    await coordinator.async_config_entry_first_refresh()
+    await update_coordinator.async_config_entry_first_refresh()
 
-    entry.runtime_data = EneaRuntimeData(coordinator=coordinator)
+    entry.runtime_data = EneaRuntimeData(coordinator=update_coordinator)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_options))
 
@@ -80,7 +80,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
             for config_entry in hass.config_entries.async_entries(DOMAIN):
                 if not hasattr(config_entry, "runtime_data"):
                     continue
-                meter_code = config_entry.data.get(CONF_METER_NAME)
+                meter_code: str = config_entry.data[CONF_METER_NAME]
                 device = dev_reg.async_get_device(
                     identifiers={(DOMAIN, meter_code)}
                 )
@@ -117,7 +117,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
             for config_entry in hass.config_entries.async_entries(DOMAIN):
                 if not hasattr(config_entry, "runtime_data"):
                     continue
-                meter_code = config_entry.data.get(CONF_METER_NAME)
+                meter_code: str = config_entry.data[CONF_METER_NAME]
                 device = dev_reg.async_get_device(
                     identifiers={(DOMAIN, meter_code)}
                 )

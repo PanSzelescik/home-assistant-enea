@@ -11,6 +11,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     DurationSelector,
     DurationSelectorConfig,
     SelectOptionDict,
@@ -25,6 +26,8 @@ from homeassistant.helpers.selector import (
 from .connector import EneaApiClient, EneaAuthError, EneaApiError, format_address
 from .const import (
     CONF_BACKFILL_DAYS,
+    CONF_FETCH_CONSUMPTION,
+    CONF_FETCH_GENERATION,
     CONF_METER_ID,
     CONF_METER_NAME,
     CONF_TARIFF,
@@ -139,6 +142,9 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_TARIFF: meter.get("tariffGroup", {}).get("name", ""),
                         CONF_BACKFILL_DAYS: int(user_input[CONF_BACKFILL_DAYS]),
                     },
+                    options={
+                        CONF_UPDATE_INTERVAL: user_input[CONF_UPDATE_INTERVAL],
+                    },
                 )
 
         options = [
@@ -173,6 +179,9 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         mode=SelectSelectorMode.LIST,
                     )
                 ),
+                vol.Required(
+                    CONF_UPDATE_INTERVAL, default=DEFAULT_UPDATE_INTERVAL_DICT
+                ): DurationSelector(DurationSelectorConfig(enable_day=False)),
             }
         )
 
@@ -244,6 +253,8 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Handle options."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
             duration = user_input[CONF_UPDATE_INTERVAL]
             total_minutes = (
@@ -251,32 +262,30 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
                 + int(duration.get("minutes", 0))
             )
             if total_minutes < 30:
-                return self.async_show_form(
-                    step_id="init",
-                    data_schema=vol.Schema(
-                        {
-                            vol.Required(
-                                CONF_UPDATE_INTERVAL,
-                                default=user_input[CONF_UPDATE_INTERVAL],
-                            ): DurationSelector(DurationSelectorConfig(enable_day=False)),
-                        }
-                    ),
-                    errors={CONF_UPDATE_INTERVAL: "interval_too_short"},
-                )
-            return self.async_create_entry(data=user_input)
+                errors[CONF_UPDATE_INTERVAL] = "interval_too_short"
+            elif not user_input.get(CONF_FETCH_CONSUMPTION) and not user_input.get(CONF_FETCH_GENERATION):
+                errors["base"] = "at_least_one_fetch_type"
+            else:
+                return self.async_create_entry(data=user_input)
 
-        current = self.config_entry.options.get(
-            CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_DICT
-        )
+        opts = self.config_entry.options
+        current_interval = opts.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_DICT)
 
         schema = vol.Schema(
             {
                 vol.Required(
-                    CONF_UPDATE_INTERVAL, default=current
-                ): DurationSelector(
-                    DurationSelectorConfig(enable_day=False)
-                ),
+                    CONF_UPDATE_INTERVAL,
+                    default=user_input[CONF_UPDATE_INTERVAL] if user_input else current_interval,
+                ): DurationSelector(DurationSelectorConfig(enable_day=False)),
+                vol.Required(
+                    CONF_FETCH_CONSUMPTION,
+                    default=user_input[CONF_FETCH_CONSUMPTION] if user_input else opts.get(CONF_FETCH_CONSUMPTION, True),
+                ): BooleanSelector(),
+                vol.Required(
+                    CONF_FETCH_GENERATION,
+                    default=user_input[CONF_FETCH_GENERATION] if user_input else opts.get(CONF_FETCH_GENERATION, True),
+                ): BooleanSelector(),
             }
         )
 
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

@@ -41,6 +41,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         meter_code: str,
         backfill_days: int,
         update_interval: timedelta,
+        fetch_consumption: bool = True,
+        fetch_generation: bool = True,
     ) -> None:
         super().__init__(
             hass,
@@ -52,6 +54,23 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.meter_id = meter_id
         self._meter_code = meter_code
         self._backfill_days = backfill_days
+        self._fetch_consumption = fetch_consumption
+        self._fetch_generation = fetch_generation
+
+    def _get_measurement_types(self) -> list[tuple[str, int]]:
+        """Return active (key, measurement_type) pairs based on fetch settings."""
+        types: list[tuple[str, int]] = []
+        if self._fetch_consumption:
+            types.extend([
+                ("energy_consumed", STATS_ENERGY_CONSUMED),
+                ("power_consumed", STATS_POWER_CONSUMED),
+            ])
+        if self._fetch_generation:
+            types.extend([
+                ("energy_returned", STATS_ENERGY_RETURNED),
+                ("power_returned", STATS_POWER_RETURNED),
+            ])
+        return types
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch meter data from the API."""

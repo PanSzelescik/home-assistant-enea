@@ -21,6 +21,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import EneaConfigEntry
 from .connector import format_address
 from .const import (
+    CONF_FETCH_CONSUMPTION,
+    CONF_FETCH_GENERATION,
     CONF_METER_NAME,
     DEFAULT_NAME,
     DOMAIN,
@@ -183,6 +185,8 @@ async def async_setup_entry(
     coordinator = entry.runtime_data.coordinator
     meter_code = entry.data[CONF_METER_NAME]
     data = coordinator.data or {}
+    fetch_consumption = entry.options.get(CONF_FETCH_CONSUMPTION, True)
+    fetch_generation = entry.options.get(CONF_FETCH_GENERATION, True)
 
     sensors: list[SensorEntity] = []
 
@@ -196,6 +200,10 @@ async def async_setup_entry(
     for cv in data.get("currentValues", []):
         measurement_id: int = cv["measurementId"]
         is_consumption = measurement_id == MEASUREMENT_ID_CONSUMPTION
+        if is_consumption and not fetch_consumption:
+            continue
+        if not is_consumption and not fetch_generation:
+            continue
         prefix = "consumption" if is_consumption else "generation"
         type_label = "pobrana" if is_consumption else "oddana"
 

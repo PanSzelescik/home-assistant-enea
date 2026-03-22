@@ -40,3 +40,6 @@ STATS_RESOLUTION_60MIN = 2
 CONF_BACKFILL_DAYS = "backfill_days"
 DEFAULT_BACKFILL_DAYS = 30
 BACKFILL_DAYS_MAX = 0  # sentinel: fetch as far back as data is available
+
+CONF_FETCH_CONSUMPTION = "fetch_consumption"
+CONF_FETCH_GENERATION = "fetch_generation"

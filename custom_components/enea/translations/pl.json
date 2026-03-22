@@ -4,15 +4,20 @@
       "init": {
         "title": "Opcje Enea",
         "data": {
-          "update_interval": "Interwał odświeżania"
+          "update_interval": "Interwał odświeżania",
+          "fetch_consumption": "Pobieraj statystyki energii pobranej",
+          "fetch_generation": "Pobieraj statystyki energii oddanej"
         },
         "data_description": {
-          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 8h 30min."
+          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 8h 30min.",
+          "fetch_consumption": "Włącz, aby wyświetlać sensory energii pobranej i importować godzinowe statystyki do Energy Dashboard.",
+          "fetch_generation": "Włącz, aby wyświetlać sensory energii oddanej do sieci i importować godzinowe statystyki. Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji."
         }
       }
     },
     "error": {
-      "interval_too_short": "Minimalny interwał to 30 minut."
+      "interval_too_short": "Minimalny interwał to 30 minut.",
+      "at_least_one_fetch_type": "Przynajmniej jeden z typów statystyk (pobrana lub oddana) musi być włączony."
     }
   },
   "config": {
@@ -30,7 +35,11 @@
         "description": "Wybierz licznik energii (PPE) do monitorowania",
         "data": {
           "meter_id": "Licznik energii",
-          "backfill_days": "Ile dni historii pobrać"
+          "backfill_days": "Ile dni historii pobrać",
+          "update_interval": "Interwał odświeżania"
+        },
+        "data_description": {
+          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 8h 30min."
         }
       },
       "reauth_confirm": {

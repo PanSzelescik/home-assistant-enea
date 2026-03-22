@@ -64,6 +64,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
 
     entry.runtime_data = EneaRuntimeData(coordinator=coordinator)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(_async_update_options))
 
     # Register the refresh service once for the whole domain.
     if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):
@@ -87,6 +88,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
         hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh)
 
     return True
+
+
+async def _async_update_options(hass: HomeAssistant, entry: EneaConfigEntry) -> None:
+    """Reload the config entry when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool:

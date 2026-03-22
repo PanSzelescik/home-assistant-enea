@@ -94,34 +94,51 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # Statistics helpers
     # ------------------------------------------------------------------
 
+    # Maps measurement key → statistic name (used for freshness checks).
+    _STAT_NAME_BY_KEY: dict[str, str] = {
+        "energy_consumed": "Energia pobrana",
+        "energy_returned": "Energia oddana",
+        "power_consumed": "Moc pobrana",
+        "power_returned": "Moc oddana",
+    }
+
     async def _async_fetch_and_inject_stats(self) -> None:
-        """Determine which days are missing and inject 15-minute statistics."""
+        """Determine which days are missing and inject historical statistics."""
+        keys_and_types = self._get_measurement_types()
+        if not keys_and_types:
+            return
+
         today = dt_util.now().date()
         yesterday = today - timedelta(days=1)
 
-        # Find the date of the most-recent already-injected statistic.
-        statistic_id = get_statistic_id(self._meter_code, "Energia pobrana")
-        last_stats = await get_instance(self.hass).async_add_executor_job(
-            get_last_statistics, self.hass, 1, statistic_id, True, {"sum"}
-        )
+        # Find the most-recent date across all active statistic series.
+        latest_date: date | None = None
+        for key, _ in keys_and_types:
+            name = self._STAT_NAME_BY_KEY.get(key)
+            if name is None:
+                continue
+            stat_id = get_statistic_id(self._meter_code, name)
+            last = await get_instance(self.hass).async_add_executor_job(
+                get_last_statistics, self.hass, 1, stat_id, True, {"sum", "mean"}
+            )
+            if last.get(stat_id):
+                ts = last[stat_id][0].get("start")
+                if ts is not None:
+                    d = (
+                        dt_util.utc_from_timestamp(ts)
+                        .astimezone(dt_util.DEFAULT_TIME_ZONE)
+                        .date()
+                    )
+                    if d >= yesterday:
+                        _LOGGER.debug("Statistics already up to date (last: %s)", d)
+                        return
+                    if latest_date is None or d > latest_date:
+                        latest_date = d
 
-        if last_stats.get(statistic_id):
-            last_ts = last_stats[statistic_id][0].get("start")
-            if last_ts is not None:
-                last_date = (
-                    dt_util.utc_from_timestamp(last_ts)
-                    .astimezone(dt_util.DEFAULT_TIME_ZONE)
-                    .date()
-                )
-                if last_date >= yesterday:
-                    _LOGGER.debug("Statistics already up to date (last: %s)", last_date)
-                    return
-                # Fetch forward from the day after the last recorded entry.
-                all_days = await self._fetch_days_forward(
-                    last_date + timedelta(days=1), yesterday
-                )
-            else:
-                all_days = await self._fetch_initial(yesterday)
+        if latest_date is not None:
+            all_days = await self._fetch_days_forward(
+                latest_date + timedelta(days=1), yesterday
+            )
         else:
             all_days = await self._fetch_initial(yesterday)
 

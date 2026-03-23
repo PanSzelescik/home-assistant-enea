@@ -88,7 +88,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Inject historical statistics — errors are non-fatal (dashboard data stays valid).
         try:
             await self._async_fetch_and_inject_stats()
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             _LOGGER.warning("Failed to update historical statistics: %s", err)
 
         return data

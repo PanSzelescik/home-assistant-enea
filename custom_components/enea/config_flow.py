@@ -68,7 +68,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,  # noqa: ARG004
+        config_entry: config_entries.ConfigEntry,
     ) -> EneaOptionsFlow:
         """Return the options flow."""
         return EneaOptionsFlow()
@@ -102,7 +102,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = ERROR_INVALID_AUTH
             except EneaApiError:
                 errors["base"] = ERROR_CANNOT_CONNECT
-            except Exception as err:  # noqa: BLE001
+            except Exception as err:
                 _LOGGER.error("Unexpected error during Enea login", exc_info=err)
                 errors["base"] = ERROR_UNKNOWN
             else:
@@ -241,7 +241,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = ERROR_INVALID_AUTH
             except EneaApiError:
                 errors["base"] = ERROR_CANNOT_CONNECT
-            except Exception as err:  # noqa: BLE001
+            except Exception as err:
                 _LOGGER.error("Unexpected error during Enea reconfigure", exc_info=err)
                 errors["base"] = ERROR_UNKNOWN
             else:
@@ -286,7 +286,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = ERROR_INVALID_AUTH
             except EneaApiError:
                 errors["base"] = ERROR_CANNOT_CONNECT
-            except Exception as err:  # noqa: BLE001
+            except Exception as err:
                 _LOGGER.error("Unexpected error during Enea re-auth", exc_info=err)
                 errors["base"] = ERROR_UNKNOWN
             else:

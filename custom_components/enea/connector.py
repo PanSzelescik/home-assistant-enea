@@ -103,7 +103,7 @@ class EneaApiClient:
 
         try:
             return await resp.json()
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             raise EneaApiError(f"Failed to parse {label} response: {err}") from err
 
     async def get_meters(self) -> list[dict[str, Any]]:

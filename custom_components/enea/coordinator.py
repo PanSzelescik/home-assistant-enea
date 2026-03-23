@@ -169,27 +169,41 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             all_days = await self._fetch_initial(yesterday)
 
         if all_days:
-            await async_insert_historical_statistics(
-                self.hass, self._meter_code, all_days
-            )
+            await self._async_inject_days(all_days, set_pending=True)
             _LOGGER.debug("Injected statistics for %d day(s)", len(all_days))
 
-            tariff = find_tariff_group(self.hass, self._tariff_name)
-            if tariff is not None:
-                sums = await async_insert_cost_statistics(
-                    self.hass,
-                    self._meter_code,
-                    all_days,
-                    tariff,
-                    self._fetch_consumption,
-                    self._fetch_generation,
-                )
-                if sums:
-                    self.cost_sums.update(sums)
-                else:
-                    # Cost sensor entities not yet registered (setup still in
-                    # progress); save days for async_setup_costs() called later.
-                    self._pending_cost_days = all_days
+    async def _async_inject_days(
+        self,
+        all_days: list[tuple[date, dict[str, Any]]],
+        *,
+        set_pending: bool = False,
+    ) -> None:
+        """Inject energy statistics and, if a matching tariff exists, cost statistics.
+
+        Args:
+            all_days: Chronologically sorted list of (date, data_dict) tuples.
+            set_pending: When True and cost sensor entities are not yet registered,
+                save the days list so async_setup_costs() can retry after setup.
+        """
+        if not all_days:
+            return
+        await async_insert_historical_statistics(self.hass, self._meter_code, all_days)
+        tariff = find_tariff_group(self.hass, self._tariff_name)
+        if tariff is not None:
+            sums = await async_insert_cost_statistics(
+                self.hass,
+                self._meter_code,
+                all_days,
+                tariff,
+                self._fetch_consumption,
+                self._fetch_generation,
+            )
+            if sums:
+                self.cost_sums.update(sums)
+            elif set_pending:
+                # Cost sensor entities not yet registered (setup still in
+                # progress); save days for async_setup_costs() called later.
+                self._pending_cost_days = all_days
 
     async def async_setup_costs(self) -> None:
         """Inject cost statistics after sensor entities have been registered.
@@ -396,21 +410,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         all_days = await self._fetch_days_forward(start_date, end_date)
         if all_days:
-            await async_insert_historical_statistics(
-                self.hass, self._meter_code, all_days
-            )
-            tariff = find_tariff_group(self.hass, self._tariff_name)
-            if tariff is not None:
-                sums = await async_insert_cost_statistics(
-                    self.hass,
-                    self._meter_code,
-                    all_days,
-                    tariff,
-                    self._fetch_consumption,
-                    self._fetch_generation,
-                )
-                self.cost_sums.update(sums)
-                self.async_update_listeners()
+            await self._async_inject_days(all_days)
+            self.async_update_listeners()
             _LOGGER.info(
                 "Backfill injected %d day(s) for meter %s (%s – %s)",
                 len(all_days),

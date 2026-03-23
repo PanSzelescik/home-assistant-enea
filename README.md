@@ -198,7 +198,7 @@ W przypadku problemów pobierz raport diagnostyczny (hasło jest automatycznie u
 
 - API Enea jest nieoficjalne i może ulec zmianie bez ostrzeżenia
 - Odczyty energii są wartościami skumulowanymi — przy wymianie licznika nowe urządzenie zaczyna od 0; integracja automatycznie wykrywa datę i godzinę montażu aktualnego licznika i importuje tylko dane z godzin po montażu, więc historia zaczyna się od momentu wymiany
-- Dni z zerowym zużyciem mogą być pomijane w statystykach — nie wpływa to na poprawność sum, ponieważ zero nie zmienia wartości skumulowanej
+- Dni z zerowym zużyciem są uwzględniane w statystykach — nie wpływa to na poprawność sum, ponieważ zero nie zmienia wartości skumulowanej
 - Integracja była testowana wyłącznie na taryfie **G12**; działanie na G11 i G13 jest możliwe, ale niezweryfikowane
 
 ## Rozwiązywanie problemów

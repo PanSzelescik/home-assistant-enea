@@ -130,17 +130,23 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         yesterday = today - timedelta(days=1)
 
         # Find the most-recent date across all active statistic series.
-        latest_date: date | None = None
-        for key, _ in keys_and_types:
-            name = STAT_NAME_BY_KEY.get(key)
-            if name is None:
-                continue
-            stat_id = get_statistic_id(self._meter_code, name)
-            last = await get_instance(self.hass).async_add_executor_job(
-                get_last_statistics, self.hass, 1, stat_id, True, {"sum", "mean"}
+        # All series are queried in parallel to avoid sequential executor round-trips.
+        stat_ids = [
+            get_statistic_id(self._meter_code, STAT_NAME_BY_KEY[key])
+            for key, _ in keys_and_types
+            if STAT_NAME_BY_KEY.get(key)
+        ]
+        last_stats_list = await asyncio.gather(*(
+            get_instance(self.hass).async_add_executor_job(
+                get_last_statistics, self.hass, 1, sid, True, {"sum", "mean"}
             )
-            if last.get(stat_id):
-                ts = last[stat_id][0].get("start")
+            for sid in stat_ids
+        ))
+
+        latest_date: date | None = None
+        for sid, last in zip(stat_ids, last_stats_list):
+            if last.get(sid):
+                ts = last[sid][0].get("start")
                 if ts is not None:
                     d = (
                         dt_util.utc_from_timestamp(ts)

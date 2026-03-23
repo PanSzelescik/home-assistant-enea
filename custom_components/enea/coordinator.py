@@ -213,6 +213,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._fetch_generation,
                 )
                 self.cost_sums.update(sums)
+                self.async_update_listeners()
         else:
             await self._async_inject_missing_costs(yesterday)
 
@@ -232,6 +233,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("Cost statistics already up to date (last: %s)", cost_latest)
             if not self.cost_sums:
                 self.cost_sums.update(existing_sums)
+                self.async_update_listeners()
             return
 
         if cost_latest is not None:
@@ -255,6 +257,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._fetch_generation,
             )
             self.cost_sums.update(sums)
+            self.async_update_listeners()
             _LOGGER.debug("Injected cost statistics for %d day(s)", len(days))
 
     async def _fetch_initial(
@@ -401,6 +404,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._fetch_generation,
                 )
                 self.cost_sums.update(sums)
+                self.async_update_listeners()
             _LOGGER.info(
                 "Backfill injected %d day(s) for meter %s (%s – %s)",
                 len(all_days),

@@ -399,7 +399,7 @@ class EneaCostSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
         """Return whether the entity is available."""
         return super().available
 
-    @property
+    @cached_property
     def native_value(self) -> float | None:  # pyright: ignore[reportIncompatibleVariableOverride]
         """Return the last known cumulative cost sum, or None before first injection."""
         unique_id = self._attr_unique_id or ""

@@ -36,7 +36,7 @@ from .const import (
     STAT_KEY_ENERGY_RETURNED,
     UNIT_COST,
 )
-from .statistics import _time_id_to_dt, has_data
+from .statistics import time_id_to_dt, has_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ async def async_insert_cost_statistics(
 
             allowed_zone_strs = {str(z) for z in period.zones}
             for entry in api.get("values", []):
-                dt = _time_id_to_dt(day, entry["timeId"])
+                dt = time_id_to_dt(day, entry["timeId"])
                 zone = period.get_zone_at_hour(dt.hour, day.weekday(), is_holiday=False)
                 zone_str = str(zone)
 

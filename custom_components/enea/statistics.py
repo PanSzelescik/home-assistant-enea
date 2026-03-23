@@ -41,7 +41,7 @@ def has_data(api_response: dict[str, Any]) -> bool:
     return False
 
 
-def _time_id_to_dt(stats_date: date, time_id: int) -> datetime:
+def time_id_to_dt(stats_date: date, time_id: int) -> datetime:
     """Convert 1-based timeId (60-min resolution) to a timezone-aware datetime.
 
     timeId=1  → 00:00 local time on stats_date
@@ -117,7 +117,7 @@ def _collect_series(
     }
 
     for entry in api_response.get("values", []):
-        dt = _time_id_to_dt(stats_date, entry["timeId"])
+        dt = time_id_to_dt(stats_date, entry["timeId"])
         slot_total = 0.0
         for item in entry.get("items", []):
             zone_id = item.get("tarifZoneId")

@@ -71,7 +71,7 @@ SERVICE_BACKFILL = "backfill"
 # ---------------------------------------------------------------------------
 
 DEFAULT_UPDATE_INTERVAL_DICT: dict[str, int] = {"hours": 8, "minutes": 30, "seconds": 0}
-DEFAULT_BACKFILL_DAYS = 30
+DEFAULT_BACKFILL_DAYS = 0  # BACKFILL_DAYS_MAX — fetch as far back as data is available
 MIN_UPDATE_INTERVAL_MINUTES = 30
 METERS_CACHE_TTL = timedelta(minutes=5)
 
@@ -103,4 +103,19 @@ STAT_NAME_BY_KEY: dict[str, str] = {
     STAT_KEY_ENERGY_RETURNED: "Energia oddana",
     STAT_KEY_POWER_CONSUMED: "Moc pobrana",
     STAT_KEY_POWER_RETURNED: "Moc oddana",
+}
+
+# ---------------------------------------------------------------------------
+# Costs (optional — requires enea_prices integration with matching tariff)
+# ---------------------------------------------------------------------------
+
+ENEA_PRICES_DOMAIN = "enea_prices"
+
+UNIT_COST = "PLN"
+
+COST_ZONE_DISPLAY: dict[str, str] = {
+    "day": "Dzień",
+    "night": "Noc",
+    "peak": "Szczyt",
+    "off_peak": "Poza szczytem",
 }

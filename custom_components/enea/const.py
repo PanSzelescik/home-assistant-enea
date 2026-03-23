@@ -63,6 +63,9 @@ ERROR_INTERVAL_TOO_SHORT = "interval_too_short"
 ABORT_REAUTH_SUCCESSFUL = "reauth_successful"
 ABORT_RECONFIGURE_SUCCESSFUL = "reconfigure_successful"
 
+SERVICE_REFRESH = "refresh"
+SERVICE_BACKFILL = "backfill"
+
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------

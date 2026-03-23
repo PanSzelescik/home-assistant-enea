@@ -10,7 +10,13 @@ from homeassistant.util import dt as dt_util
 
 import aiohttp
 
-from .const import CONST_URL_CONSUMPTION, CONST_URL_LOGIN, CONST_URL_PPE_DASHBOARD, CONST_URL_PPES, METERS_CACHE_TTL
+from .const import (
+    CONST_URL_CONSUMPTION,
+    CONST_URL_LOGIN,
+    CONST_URL_PPE_DASHBOARD,
+    CONST_URL_PPES,
+    METERS_CACHE_TTL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,10 +130,6 @@ class EneaApiClient:
         """Return full consumption dashboard data for a specific meter."""
         url = CONST_URL_PPE_DASHBOARD.format(meter_id=meter_id)
         return await self._request(url, "dashboard")
-
-    async def get_meter_data(self, meter_id: int) -> dict[str, Any]:
-        """Return full dashboard data for a specific meter."""
-        return await self.get_ppe_dashboard(meter_id)
 
     async def get_consumption_data(
         self,

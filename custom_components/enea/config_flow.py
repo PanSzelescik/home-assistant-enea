@@ -137,7 +137,10 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             if meter is None:
                 errors["base"] = ERROR_UNKNOWN
-            elif not user_input.get(CONF_FETCH_CONSUMPTION) and not user_input.get(CONF_FETCH_GENERATION):
+            elif (
+                not user_input.get(CONF_FETCH_CONSUMPTION)
+                and not user_input.get(CONF_FETCH_GENERATION)
+            ):
                 errors["base"] = ERROR_AT_LEAST_ONE_FETCH_TYPE
             else:
                 await self.async_set_unique_id(meter["code"])
@@ -324,7 +327,10 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
             )
             if total_minutes < MIN_UPDATE_INTERVAL_MINUTES:
                 errors[CONF_UPDATE_INTERVAL] = ERROR_INTERVAL_TOO_SHORT
-            elif not user_input.get(CONF_FETCH_CONSUMPTION) and not user_input.get(CONF_FETCH_GENERATION):
+            elif (
+                not user_input.get(CONF_FETCH_CONSUMPTION)
+                and not user_input.get(CONF_FETCH_GENERATION)
+            ):
                 errors["base"] = ERROR_AT_LEAST_ONE_FETCH_TYPE
             else:
                 return self.async_create_entry(data=user_input)
@@ -336,15 +342,21 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
             {
                 vol.Required(
                     CONF_UPDATE_INTERVAL,
-                    default=user_input[CONF_UPDATE_INTERVAL] if user_input else current_interval,
+                    default=user_input[CONF_UPDATE_INTERVAL]
+                    if user_input
+                    else current_interval,
                 ): DurationSelector(DurationSelectorConfig(enable_day=False)),
                 vol.Required(
                     CONF_FETCH_CONSUMPTION,
-                    default=user_input[CONF_FETCH_CONSUMPTION] if user_input else opts.get(CONF_FETCH_CONSUMPTION, True),
+                    default=user_input[CONF_FETCH_CONSUMPTION]
+                    if user_input
+                    else opts.get(CONF_FETCH_CONSUMPTION, True),
                 ): BooleanSelector(),
                 vol.Required(
                     CONF_FETCH_GENERATION,
-                    default=user_input[CONF_FETCH_GENERATION] if user_input else opts.get(CONF_FETCH_GENERATION, True),
+                    default=user_input[CONF_FETCH_GENERATION]
+                    if user_input
+                    else opts.get(CONF_FETCH_GENERATION, True),
                 ): BooleanSelector(),
             }
         )

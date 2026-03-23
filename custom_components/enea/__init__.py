@@ -12,12 +12,21 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .connector import EneaApiClient
-from .const import CONF_BACKFILL_DAYS, CONF_FETCH_CONSUMPTION, CONF_FETCH_GENERATION, CONF_METER_ID, CONF_METER_NAME, CONF_UPDATE_INTERVAL, DEFAULT_BACKFILL_DAYS, DEFAULT_UPDATE_INTERVAL_DICT, DOMAIN, PLATFORMS
+from .const import (
+    CONF_BACKFILL_DAYS,
+    CONF_FETCH_CONSUMPTION,
+    CONF_FETCH_GENERATION,
+    CONF_METER_ID,
+    CONF_METER_NAME,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_BACKFILL_DAYS,
+    DEFAULT_UPDATE_INTERVAL_DICT,
+    DOMAIN,
+    PLATFORMS,
+    SERVICE_BACKFILL,
+    SERVICE_REFRESH,
+)
 from .coordinator import EneaUpdateCoordinator
-
-SERVICE_REFRESH = "refresh"
-SERVICE_BACKFILL = "backfill"
-
 
 @dataclass
 class EneaRuntimeData:

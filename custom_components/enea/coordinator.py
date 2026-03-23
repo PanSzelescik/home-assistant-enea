@@ -79,7 +79,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch meter data from the API."""
         try:
-            data = await self.connector.get_meter_data(self.meter_id)
+            data = await self.connector.get_ppe_dashboard(self.meter_id)
         except EneaAuthError as err:
             raise ConfigEntryAuthFailed("Invalid credentials") from err
         except EneaApiError as err:

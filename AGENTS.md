@@ -58,15 +58,11 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 
 ### Dolna granica fetchowania — assemblyDate
 
-Coordinator przechowuje:
-- `_assembly_date: date | None` — data montażu aktywnego licznika (wpis w `meters[]` bez `disassemblyDate`)
-- `_assembly_datetime: datetime | None` — pełny timestamp montażu w lokalnej strefie czasowej
-
-Pole `assemblyDate` z API jest w ms od epoki i konwertowane do `datetime` w lokalnej TZ, z której wyciągana jest `.date()`.
+Coordinator przechowuje `_assembly_datetime: datetime | None` — pełny timestamp montażu aktywnego licznika w lokalnej strefie czasowej (wpis w `meters[]` bez `disassemblyDate`). Pole `assemblyDate` z API jest w ms od epoki. Data jest dostępna jako `self._assembly_datetime.date()`.
 
 **Dolna granica na poziomie dni:**
-- `_fetch_days_forward`: `start_date = max(start_date, _assembly_date)` — nie fetchuje dni sprzed montażu
-- `_fetch_days_backward` (tryb "ile się da"): zatrzymuje pętlę gdy `current < _assembly_date`
+- `_fetch_days_forward`: `start_date = max(start_date, self._assembly_datetime.date())` — nie fetchuje dni sprzed montażu
+- `_fetch_days_backward` (tryb "ile się da"): zatrzymuje pętlę gdy `current < self._assembly_datetime.date()`
 
 **Filtr godzinowy dla dnia montażu — `_strip_pre_assembly_slots`:**
 

@@ -1,4 +1,4 @@
-# CLAUDE.md — Enea Licznik Integration
+# AGENTS.md — Enea Licznik Integration
 
 ## Konwencje ogólne
 
@@ -25,10 +25,10 @@ Niniejszy projekt to custom component dla Home Assistant integrujący liczniki z
 ```
 custom_components/enea/
 ├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, serwisy refresh/backfill
-├── connector.py     — klient HTTP (EneaApiClient, _request helper), wyjątki, format_address()
-├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, async_backfill
-├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", reconfigure; EneaOptionsFlow
-├── sensor.py        — EneaSensor, EneaEnergySensor, EneaCostSensor, SENSOR_DESCRIPTIONS, _get_reading_date
+├── connector.py     — klient HTTP (EneaApiClient, _request helper), wyjątki, get_active_meter(), format_address()
+├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill
+├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", reconfigure; EneaOptionsFlow; _async_validate_and_update_credentials
+├── sensor.py        — EneaSensor, EneaEnergySensor, EneaCostSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date
 ├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy/power_series
 ├── costs.py         — async_insert_cost_statistics, get_cost_stats, _inject_cost_series, find_tariff_group
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem)
@@ -48,7 +48,7 @@ custom_components/enea/
 
 Statystyki historyczne są wstrzykiwane jako **external statistics** (poza systemem encji HA) przez `async_add_external_statistics`. Dzięki temu Energy Dashboard może wyświetlać dane z prawidłowymi timestampami (godzinowa granularność — HA wymaga pełnych godzin dla external statistics) niezależnie od częstotliwości pollingu.
 
-- Coordinator co każde odświeżenie sprawdza aktualność statystyk przez `get_last_statistics` — sprawdza wszystkie aktywne serie (energy_consumed/returned, power_consumed/returned) i bierze najnowszą datę.
+- Coordinator co każde odświeżenie sprawdza aktualność statystyk przez `get_last_statistics` — odpytuje wszystkie aktywne serie (energy_consumed/returned, power_consumed/returned) **równolegle** (`asyncio.gather`) i bierze najnowszą datę.
 - Jeśli nie ma danych do wczoraj — pobiera brakujące dni i wstrzykuje.
 - Backfill przy pierwszym uruchomieniu: konfigurowalny przez użytkownika (7/30/60/90 dni lub "ile się da"); domyślnie "ile się da" (`DEFAULT_BACKFILL_DAYS = BACKFILL_DAYS_MAX = 0`).
 - "Ile się da" = cofaj się dzień po dniu do tyłu od wczoraj bez limitu, zatrzymaj po 7 kolejnych dniach bez danych z API.
@@ -135,6 +135,10 @@ async_setup_entry()
 ```
 
 `async_setup_costs()` używa `_pending_cost_days` — listy dni już pobranych przez standardowy backfill energii — żeby nie wykonywać dodatkowych żądań do API. Jeśli energia jest aktualna, `_async_inject_missing_costs(yesterday)` odpowiada za niezależne uzupełnienie brakujących kosztów.
+
+### Obsługa świąt (G12w)
+
+Koszty są obliczane przez `period.get_zone_at_hour(hour, day=day)` — `enea_prices` wykrywa polskie święta automatycznie na podstawie przekazanej daty (biblioteka `holidays`). Dla taryf bez harmonogramu tygodniowego (G11, G12) parametr `day` nie ma wpływu na wynik.
 
 ### Deduplikacja przy backfill
 

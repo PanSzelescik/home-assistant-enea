@@ -26,6 +26,7 @@ from .const import (
     CONF_FETCH_GENERATION,
     CONF_METER_NAME,
     CONST_PORTAL_URL,
+    COST_ZONE_DISPLAY,
     DEFAULT_NAME,
     DOMAIN,
     MEASUREMENT_ID_CONSUMPTION,
@@ -35,8 +36,10 @@ from .const import (
     SENSOR_KEY_READING_DATE,
     SENSOR_KEY_STATUS,
     SENSOR_KEY_TARIFF,
+    UNIT_COST,
 )
 from .coordinator import EneaUpdateCoordinator
+from .costs import find_tariff_group, get_cost_unique_id
 
 
 def _get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:
@@ -182,7 +185,7 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
 
 
 async def async_setup_entry(
-    _hass: HomeAssistant,
+    hass: HomeAssistant,
     entry: EneaConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
@@ -241,6 +244,29 @@ async def async_setup_entry(
                         translation_key=None,
                     )
                 )
+
+    # Cost sensors — created only when enea_prices is configured with matching tariff
+    tariff_name = data.get("tariffGroupName")
+    tariff = find_tariff_group(hass, tariff_name)
+    if tariff is not None:
+        period = tariff.get_current_period()
+        if period is not None:
+            for direction, is_consumption in (("pobrana", True), ("oddana", False)):
+                if is_consumption and not fetch_consumption:
+                    continue
+                if not is_consumption and not fetch_generation:
+                    continue
+                for zone in period.zones:
+                    zone_str = str(zone)
+                    sensors.append(
+                        EneaCostSensor(
+                            coordinator=coordinator,
+                            meter_code=meter_code,
+                            direction=direction,
+                            zone_str=zone_str,
+                            zone_display=COST_ZONE_DISPLAY.get(zone_str, zone_str),
+                        )
+                    )
 
     async_add_entities(sensors)
 
@@ -334,4 +360,49 @@ class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
                     return None
                 return zone_data.get("value")
         return None
+
+
+class EneaCostSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
+    """Sensor tracking accumulated electricity cost (PLN) for a single tariff zone.
+
+    Created only when the enea_prices integration is configured with a tariff
+    matching the meter's tariffGroupName.  One sensor is created per active
+    zone (e.g. Dzień / Noc for G12) per energy direction (consumed/returned).
+
+    Historical cost statistics are injected by costs.py using
+    async_import_statistics so that the Energy Dashboard can use this entity
+    as "entity tracking total costs".
+    """
+
+    _attr_has_entity_name = True
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_native_unit_of_measurement = UNIT_COST
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_suggested_display_precision = 2
+
+    def __init__(
+        self,
+        coordinator: EneaUpdateCoordinator,
+        meter_code: str,
+        direction: str,
+        zone_str: str,
+        zone_display: str,
+    ) -> None:
+        """Initialize a cost sensor for the given meter, direction and zone."""
+        super().__init__(coordinator)
+        self._meter_code = meter_code
+        self._attr_unique_id = get_cost_unique_id(meter_code, direction, zone_str)
+        self._attr_name = f"Koszt energii {direction} \u2013 {zone_display}"
+        self._attr_device_info = _get_device_info(meter_code, coordinator.data)
+
+    @property
+    def available(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+        """Return whether the entity is available."""
+        return super().available
+
+    @property
+    def native_value(self) -> float | None:  # pyright: ignore[reportIncompatibleVariableOverride]
+        """Return the last known cumulative cost sum, or None before first injection."""
+        unique_id = self._attr_unique_id or ""
+        return self.coordinator.cost_sums.get(unique_id)
 

@@ -1,8 +1,11 @@
 """Enea Energy Meter integration for Home Assistant."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
+
+_LOGGER = logging.getLogger(__name__)
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
@@ -77,6 +80,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_options))
 
+    # Cost sensor entities are now registered; inject any pending cost statistics.
+    try:
+        await update_coordinator.async_setup_costs()
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Failed to set up cost statistics: %s", err, exc_info=True)
+
     # Register the refresh service once for the whole domain.
     if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):
 
@@ -120,7 +129,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
                 start_date = yesterday - timedelta(days=int(days_back) - 1)
             else:
                 end_date = yesterday
-                start_date = yesterday - timedelta(days=DEFAULT_BACKFILL_DAYS - 1)
+                start_date = yesterday - timedelta(days=29)  # default: last 30 days
 
             dev_reg = dr.async_get(hass)
             for config_entry in hass.config_entries.async_entries(DOMAIN):

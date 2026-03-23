@@ -100,6 +100,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Determine assembly date of the currently active meter (no disassemblyDate).
         # Used as a lower bound when fetching statistics — avoids importing all-zero
         # data from the old meter for days after the new meter was installed.
+        # Reset first so stale values don't persist if the field is absent.
+        self._assembly_date = None
+        self._assembly_datetime = None
         active_meter = next(
             (m for m in data.get("meters", []) if m.get("disassemblyDate") is None),
             None,

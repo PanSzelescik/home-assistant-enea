@@ -247,7 +247,7 @@ Tworzone dynamicznie w `async_setup_entry` na podstawie `currentValues[]`. Senso
 Tworzone dynamicznie per strefa i kierunek, gdy `find_tariff_group` zwraca pasującą taryfę z `enea_prices`.
 - `state_class=TOTAL`, `device_class=MONETARY`, jednostka PLN
 - Stan = skumulowana suma kosztów od początku danych; służy wyłącznie jako "hak" dla Energy Dashboard (`encja śledząca całkowite koszty`)
-- `unique_id` format: `enea-{meter_code}-koszt_{direction}_{zone}` (używany jako `statistic_id` w `async_import_statistics`)
+- `unique_id` format: `enea-{meter_code}-koszt_{direction}_{zone}` (używany do odszukania encji w entity registry; `statistic_id` w `async_import_statistics` to **`entity_id`** tej encji)
 
 ## Obsługa sesji
 

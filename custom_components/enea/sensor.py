@@ -60,6 +60,41 @@ def _get_device_info(meter_code: str, data: dict[str, Any] | None) -> DeviceInfo
 # ---------------------------------------------------------------------------
 
 
+def _address_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    """Return address fields as a flat dict, omitting null values."""
+    addr = data.get("address")
+    if not addr:
+        return {}
+    return {
+        k: v
+        for k, v in {
+            "street": addr.get("street"),
+            "house_number": addr.get("houseNum"),
+            "apartment_number": addr.get("apartmentNum"),
+            "post_code": addr.get("postCode"),
+            "city": addr.get("city"),
+            "district": addr.get("district"),
+            "parcel_number": addr.get("parcelNum"),
+        }.items()
+        if v is not None
+    }
+
+
+def _meter_model_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    """Return assembly/disassembly timestamps of the active meter as ISO strings."""
+    m = get_active_meter(data)
+    if not m:
+        return {}
+    return {
+        k: datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
+        for k, ts in {
+            "assembly_date": m.get("assemblyDate"),
+            "disassembly_date": m.get("disassemblyDate"),
+        }.items()
+        if ts is not None
+    }
+
+
 def _get_reading_date(data: dict[str, Any]) -> datetime | None:
     """Return the last reading timestamp from dashboard data, or None if unavailable."""
     ts = next(
@@ -122,23 +157,7 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         icon="mdi:map-marker",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: format_address(data.get("address")),
-        attr_fn=lambda data: (
-            {
-                k: v
-                for k, v in {
-                    "street": addr.get("street"),
-                    "house_number": addr.get("houseNum"),
-                    "apartment_number": addr.get("apartmentNum"),
-                    "post_code": addr.get("postCode"),
-                    "city": addr.get("city"),
-                    "district": addr.get("district"),
-                    "parcel_number": addr.get("parcelNum"),
-                }.items()
-                if v is not None
-            }
-            if (addr := data.get("address"))
-            else {}
-        ),
+        attr_fn=_address_attrs,
     ),
     EneaSensorEntityDescription(
         key=SENSOR_KEY_READING_DATE,
@@ -153,21 +172,8 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         translation_key=SENSOR_KEY_METER_MODEL,
         icon="mdi:meter-electric-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: (
-            get_active_meter(data) or {}
-        ).get("typeName"),
-        attr_fn=lambda data: (
-            {
-                k: datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
-                for k, ts in {
-                    "assembly_date": m.get("assemblyDate"),
-                    "disassembly_date": m.get("disassemblyDate"),
-                }.items()
-                if ts is not None
-            }
-            if (m := get_active_meter(data))
-            else {}
-        ),
+        value_fn=lambda data: (get_active_meter(data) or {}).get("typeName"),
+        attr_fn=_meter_model_attrs,
     ),
 )
 

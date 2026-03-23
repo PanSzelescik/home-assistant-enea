@@ -104,10 +104,11 @@ Koszty energii są funkcją opcjonalną — integracja współpracuje z zewnętr
 `find_tariff_group(hass, tariff_name)` w `costs.py` wyszukuje obiekt `TariffGroup` z domeny `enea_prices` przez duck typing — bez importu modułu. Wzorzec:
 
 ```python
-enea_prices_data = hass.data.get(ENEA_PRICES_DOMAIN, {})
-for entry_data in enea_prices_data.values():
-    tariff = entry_data.get("tariff_group")
-    if tariff and getattr(tariff, "name", None) == tariff_name:
+for entry in hass.config_entries.async_entries(ENEA_PRICES_DOMAIN):
+    if entry.data.get("tariff") != tariff_name:
+        continue
+    tariff = getattr(getattr(entry, "runtime_data", None), "tariff", None)
+    if tariff is not None:
         return tariff
 ```
 
@@ -117,7 +118,7 @@ Dzięki temu `enea_prices` nie jest twardą zależnością i integracja nie wyma
 
 Statystyki kosztów używają **`async_import_statistics`** z `source="recorder"` (nie `source=DOMAIN` jak energia). Wymagania:
 - Encja musi istnieć w rejestrze encji HA przed wstrzyknięciem statystyk
-- `statistic_id` to `unique_id` encji (format: `enea-{meter_code}-koszt_{direction}_{zone}`)
+- `statistic_id` to `entity_id` encji (format: `sensor.enea_{meter_code}_koszt_{direction}_{zone}`), pobierany przez `entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)`
 - Dlatego `async_setup_costs()` jest wywoływane z `__init__.py` **po** `async_forward_entry_setups`, gdy encje są już zarejestrowane
 
 ### EneaCostSensor — encja "hydrauliczna"

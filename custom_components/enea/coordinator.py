@@ -269,9 +269,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> dict[str, Any]:
         """Remove hourly slots that predate the meter assembly on the assembly day.
 
-        timeId N covers the hour (N-1):00–N:00.  For an assembly at HH:MM, the
-        first full new-meter hour starts at HH+1:00, so we keep timeId > HH+1.
-        Example: assembly at 12:13 → keep timeId >= 14 (13:00 onwards).
+        timeId N covers the hour (N-1):00–N:00.  We keep timeId > HH, where HH
+        is the assembly hour, so the slot that contains the assembly moment is
+        included (it carries new-meter readings from the assembly minute onwards).
+        Example: assembly at 12:13 → cutoff=12 → keep timeId > 12 (13+, i.e. 12:00 onwards).
         """
         if self._assembly_datetime is None or day != self._assembly_date:
             return day_data

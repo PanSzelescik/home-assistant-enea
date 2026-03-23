@@ -117,12 +117,13 @@ async def async_insert_cost_statistics(
             if period is None:
                 continue
 
+            allowed_zone_strs = {str(z) for z in period.zones}
             for entry in api.get("values", []):
                 dt = _time_id_to_dt(day, entry["timeId"])
                 zone = period.get_zone_at_hour(dt.hour, day.weekday(), is_holiday=False)
                 zone_str = str(zone)
 
-                if zone_str not in {str(z) for z in period.zones}:
+                if zone_str not in allowed_zone_strs:
                     continue
 
                 total_kwh = sum(

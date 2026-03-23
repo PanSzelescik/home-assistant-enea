@@ -54,7 +54,7 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 - "Ile się da" = cofaj się dzień po dniu do tyłu od wczoraj bez limitu, zatrzymaj po 7 kolejnych dniach bez danych z API.
 - Pobieranie per dzień jest równoległe (`asyncio.gather`) — 2 lub 4 żądania jednocześnie zależnie od opcji fetch_consumption/fetch_generation.
 - Manualny backfill dowolnego zakresu dat: akcja `enea.backfill` (patrz Akcje).
-- `has_data` zwraca `False` gdy odpowiedź API zawiera wyłącznie wartości zerowe (`if item.get("value")` zamiast `if item.get("value") is not None`) — obsługuje dane po wymianie licznika, gdzie stary licznik raportuje zera. Pominięcie dni z genuinymi zerami zużycia jest akceptowalne, bo zero nie zmienia wartości skumulowanej w Energy Dashboard.
+- `has_data` zwraca `False` gdy odpowiedź API zawiera wyłącznie wartości `null` (`if item.get("value") is not None`). Zera są traktowane jako dane (zerowe zużycie) — dni z zerowym zużyciem są importowane. Filtrowanie danych starego licznika odbywa się przez `_strip_pre_assembly_slots` na poziomie godzin, nie przez `has_data`.
 
 ### Dolna granica fetchowania — assemblyDate
 

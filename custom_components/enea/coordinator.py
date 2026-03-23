@@ -236,6 +236,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if cost_latest is not None:
             start = cost_latest + timedelta(days=1)
+        elif self._assembly_date is not None:
+            # Start from assembly date — matches the lower bound used for energy stats.
+            start = self._assembly_date
         elif self._backfill_days == BACKFILL_DAYS_MAX:
             start = yesterday - timedelta(days=364)
         else:

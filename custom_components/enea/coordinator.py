@@ -66,7 +66,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._fetch_consumption = fetch_consumption
         self._fetch_generation = fetch_generation
         self._tariff_name: str | None = None
-        self._assembly_date: date | None = None
         self._assembly_datetime: datetime | None = None
         self.cost_sums: dict[str, float] = {}
         self._pending_cost_days: list[tuple[date, dict[str, Any]]] = []
@@ -101,7 +100,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Used as a lower bound when fetching statistics — avoids importing all-zero
         # data from the old meter for days after the new meter was installed.
         # Reset first so stale values don't persist if the field is absent.
-        self._assembly_date = None
         self._assembly_datetime = None
         active_meter = next(
             (m for m in data.get("meters", []) if m.get("disassemblyDate") is None),
@@ -112,7 +110,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 dt_util.utc_from_timestamp(active_meter["assemblyDate"] / 1000)
                 .astimezone(dt_util.DEFAULT_TIME_ZONE)
             )
-            self._assembly_date = self._assembly_datetime.date()
 
         # Inject historical statistics — errors are non-fatal (dashboard data stays valid).
         try:
@@ -241,10 +238,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if cost_latest is not None:
             start = cost_latest + timedelta(days=1)
-        elif self._assembly_date is not None:
+        elif self._assembly_datetime is not None:
             # Start from assembly date — matches the lower bound used for energy stats.
-            start = self._assembly_date
+            start = self._assembly_datetime.date()
         elif self._backfill_days == BACKFILL_DAYS_MAX:
+            # No assembly date known (meter never replaced). Fall back to 365 days
+            # to avoid unbounded API calls; a more precise start would require
+            # querying the earliest energy statistic from the DB.
             start = yesterday - timedelta(days=364)
         else:
             start = yesterday - timedelta(days=max(self._backfill_days - 1, 0))
@@ -283,7 +283,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         included (it carries new-meter readings from the assembly minute onwards).
         Example: assembly at 12:13 → cutoff=12 → keep timeId > 12 (13+, i.e. 12:00 onwards).
         """
-        if self._assembly_datetime is None or day != self._assembly_date:
+        if self._assembly_datetime is None or day != self._assembly_datetime.date():
             return day_data
         cutoff_time_id = self._assembly_datetime.hour
         result: dict[str, Any] = {}
@@ -304,8 +304,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         day itself, early-hour slots (before the assembly hour) are stripped by
         _strip_pre_assembly_slots so only new-meter data is imported.
         """
-        if self._assembly_date is not None:
-            start_date = max(start_date, self._assembly_date)
+        if self._assembly_datetime is not None:
+            start_date = max(start_date, self._assembly_datetime.date())
         all_days: list[tuple[date, dict[str, Any]]] = []
         current = start_date
         while current <= end_date:
@@ -327,9 +327,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         consecutive_empty = 0
         current = end_date
         while True:
-            if self._assembly_date is not None and current < self._assembly_date:
+            if self._assembly_datetime is not None and current < self._assembly_datetime.date():
                 _LOGGER.debug(
-                    "Stopping backfill at assembly date %s", self._assembly_date
+                    "Stopping backfill at assembly date %s", self._assembly_datetime.date()
                 )
                 break
             day_data, any_data = await self._fetch_one_day(current)
@@ -377,7 +377,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if isinstance(result, BaseException):
                 _LOGGER.debug(
                     "No stats data for %s type %d: %s", date_str, mtype, result,
-                    exc_info=result,
+                    exc_info=(type(result), result, result.__traceback__),
                 )
                 continue
             day_data[key] = result

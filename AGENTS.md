@@ -264,7 +264,7 @@ Tworzone dynamicznie per strefa i kierunek, gdy `find_tariff_group` zwraca pasuj
 |-------|---------------|---------------|
 | `sensor.enea_*_energia_pobrana` | `/ppe/{id}` dashboard | Energy Dashboard (encje) |
 | `enea:..._energia_pobrana` | `/consumption/...` | Energy Dashboard (statystyki zewnętrzne) |
-| `sensor.enea_*_koszt_energia_pobrana_dzien` | obliczone z energii + cennik enea_prices | Energy Dashboard (encja śledząca koszty) |
+| `sensor.enea_*_koszt_energii_pobrana_dzien` | obliczone z energii + cennik enea_prices | Energy Dashboard (encja śledząca koszty) |
 
 W Energy Dashboard **nie** dodajemy sensorów energii (`sensor.enea_..._energia_...`) do wykresu historii — zamiast tego dodajemy statystyki zewnętrzne (`enea:...`). Sensory energii służą do bieżącego wyświetlania wartości na dashboardach Lovelace. Sensory kosztów (`sensor.enea_..._koszt_...`) są wskazywane w Energy Dashboard jako "encja śledząca całkowite koszty" dla danego źródła energii.
 

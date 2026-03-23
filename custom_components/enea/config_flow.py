@@ -61,7 +61,6 @@ STEP_USER_SCHEMA = vol.Schema(
 )
 
 
-# noinspection PyTypeChecker
 class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Enea Energy Meter."""
 
@@ -103,7 +102,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = ERROR_INVALID_AUTH
             except EneaApiError:
                 errors["base"] = ERROR_CANNOT_CONNECT
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Unexpected error during Enea login", exc_info=err)
                 errors["base"] = ERROR_UNKNOWN
             else:
@@ -242,7 +241,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = ERROR_INVALID_AUTH
             except EneaApiError:
                 errors["base"] = ERROR_CANNOT_CONNECT
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Unexpected error during Enea reconfigure", exc_info=err)
                 errors["base"] = ERROR_UNKNOWN
             else:
@@ -287,7 +286,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = ERROR_INVALID_AUTH
             except EneaApiError:
                 errors["base"] = ERROR_CANNOT_CONNECT
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Unexpected error during Enea re-auth", exc_info=err)
                 errors["base"] = ERROR_UNKNOWN
             else:
@@ -309,7 +308,6 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-# noinspection PyTypeChecker
 class EneaOptionsFlow(config_entries.OptionsFlow):
     """Options flow for Enea Energy Meter."""
 

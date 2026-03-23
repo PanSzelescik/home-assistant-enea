@@ -71,7 +71,7 @@ def _get_reading_date(data: dict[str, Any]) -> datetime | None:
         (
             cv["readingDate"]
             for cv in data.get("currentValues", [])
-            if cv.get("measurementId") == 1 and cv.get("readingDate")
+            if cv.get("measurementId") == MEASUREMENT_ID_CONSUMPTION and cv.get("readingDate")
         ),
         None,
     )
@@ -97,7 +97,7 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
             "zones": [
                 cv["ppeZones"]
                 for cv in data.get("currentValues", [])
-                if cv.get("measurementId") == 1
+                if cv.get("measurementId") == MEASUREMENT_ID_CONSUMPTION
             ][:1][0]
             if data.get("currentValues")
             else [],

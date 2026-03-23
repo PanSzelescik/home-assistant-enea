@@ -70,7 +70,7 @@ SERVICE_BACKFILL = "backfill"
 # Defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_UPDATE_INTERVAL_DICT: dict[str, int] = {"hours": 8, "minutes": 30, "seconds": 0}
+DEFAULT_UPDATE_INTERVAL_DICT: dict[str, int] = {"hours": 3, "minutes": 30, "seconds": 0}
 DEFAULT_BACKFILL_DAYS = 0  # BACKFILL_DAYS_MAX — fetch as far back as data is available
 MIN_UPDATE_INTERVAL_MINUTES = 30
 METERS_CACHE_TTL = timedelta(minutes=5)

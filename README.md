@@ -34,7 +34,7 @@ Pozwala na monitorowanie danych licznika bezpośrednio z Portalu Odbiorcy Enea.
 2. Wprowadź adres e-mail i hasło z Portalu Odbiorcy Enea
 3. Wybierz licznik (PPE) z listy — każdy pokazuje kod PPE, taryfę i adres
 4. Wybierz ile dni historii pobrać (7 / 30 / 60 / 90 dni lub **Maksymalnie — ile się da**; domyślnie: maksymalnie)
-5. Ustaw interwał odświeżania (domyślnie 8h 30min, minimum 30 min)
+5. Ustaw interwał odświeżania (domyślnie 3h 30min, minimum 30 min)
 6. Gotowe!
 
 ## Statystyki historyczne godzinowe
@@ -150,7 +150,7 @@ Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**
 
 | Opcja | Domyślnie | Opis |
 |-------|-----------|------|
-| Interwał odświeżania | 8h 30min | Jak często odpytywać Portal Odbiorcy Enea (minimum 30 min) |
+| Interwał odświeżania | 3h 30min | Jak często odpytywać Portal Odbiorcy Enea (minimum 30 min) |
 | Pobieraj statystyki energii pobranej | Tak | Wyłącz jeśli chcesz oszczędzić requesty do API |
 | Pobieraj statystyki energii oddanej | Tak | Wyłącz jeśli nie masz fotowoltaiki ani innego źródła generacji |
 

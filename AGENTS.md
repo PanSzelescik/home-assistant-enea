@@ -185,7 +185,7 @@ GET /consumptionDashboard/ppe/{id}
 Cookie: PER_JSESSIONID=<wartość>
 ```
 
-Gdzie `{id}` to pole `id` z odpowiedzi `/user/ppes` (np. `73689`). Główny endpoint odpytywany przez coordinator zgodnie z konfigurowalnym interwałem (domyślnie 8h 30min, zmiana przez options flow).
+Gdzie `{id}` to pole `id` z odpowiedzi `/user/ppes` (np. `73689`). Główny endpoint odpytywany przez coordinator zgodnie z konfigurowalnym interwałem (domyślnie 3h 30min, zmiana przez options flow).
 
 Kluczowe pola odpowiedzi:
 - `address` — pełny adres PPE `{street, houseNum, apartmentNum, postCode, city, district, parcelNum}`
@@ -274,7 +274,7 @@ Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**
 
 | Opcja | Domyślnie | Opis |
 |-------|-----------|------|
-| `update_interval` | 8h 30min | Interwał odpytywania dashboardu; minimum 30 min |
+| `update_interval` | 3h 30min | Interwał odpytywania dashboardu; minimum 30 min |
 | `fetch_consumption` | `True` | Pobieranie statystyk i sensorów energii pobranej |
 | `fetch_generation` | `True` | Pobieranie statystyk i sensorów energii oddanej |
 

@@ -89,13 +89,14 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: data.get("tariffGroupName"),
         attr_fn=lambda data: {
-            "zones": [
-                cv["ppeZones"]
-                for cv in data.get("currentValues", [])
-                if cv.get("measurementId") == MEASUREMENT_ID_CONSUMPTION
-            ][:1][0]
-            if data.get("currentValues")
-            else [],
+            "zones": next(
+                (
+                    cv["ppeZones"]
+                    for cv in data.get("currentValues", [])
+                    if cv.get("measurementId") == MEASUREMENT_ID_CONSUMPTION
+                ),
+                [],
+            ),
         },
     ),
     EneaSensorEntityDescription(

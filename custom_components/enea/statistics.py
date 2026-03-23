@@ -69,7 +69,10 @@ async def async_insert_historical_statistics(
         return
 
     # Process energy (kWh) — requires cumulative sum chaining
-    for key, type_label in ((STAT_KEY_ENERGY_CONSUMED, "pobrana"), (STAT_KEY_ENERGY_RETURNED, "oddana")):
+    for key, type_label in (
+        (STAT_KEY_ENERGY_CONSUMED, "pobrana"),
+        (STAT_KEY_ENERGY_RETURNED, "oddana"),
+    ):
         series_by_name: dict[str, list[tuple[datetime, float]]] = {}
 
         for day, data in all_days:
@@ -82,7 +85,10 @@ async def async_insert_historical_statistics(
             await _inject_energy_series(hass, meter_code, name, series)
 
     # Process power (kW) — mean values, no cumulative sum
-    for key, type_label in ((STAT_KEY_POWER_CONSUMED, "pobrana"), (STAT_KEY_POWER_RETURNED, "oddana")):
+    for key, type_label in (
+        (STAT_KEY_POWER_CONSUMED, "pobrana"),
+        (STAT_KEY_POWER_RETURNED, "oddana"),
+    ):
         series_by_name = {}
 
         for day, data in all_days:
@@ -160,7 +166,6 @@ async def _inject_energy_series(
     )
     async_add_external_statistics(hass, metadata, stats_data)
     _LOGGER.debug("Injected %d energy stats for %s", len(stats_data), statistic_id)
-
 
 
 def _inject_power_series(

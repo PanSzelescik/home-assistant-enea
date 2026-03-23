@@ -115,7 +115,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             await self._async_fetch_and_inject_stats()
         except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("Failed to update historical statistics: %s", err)
+            _LOGGER.warning("Failed to update historical statistics: %s", err, exc_info=True)
 
         return data
 
@@ -370,7 +370,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for (key, mtype), result in zip(keys_and_types, results):
             if isinstance(result, BaseException):
                 _LOGGER.debug(
-                    "No stats data for %s type %d: %s", date_str, mtype, result
+                    "No stats data for %s type %d: %s", date_str, mtype, result,
+                    exc_info=result,
                 )
                 continue
             day_data[key] = result

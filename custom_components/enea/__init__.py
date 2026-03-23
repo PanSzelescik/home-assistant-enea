@@ -31,6 +31,7 @@ from .const import (
 )
 from .coordinator import EneaUpdateCoordinator
 
+
 @dataclass
 class EneaRuntimeData:
     """Runtime data stored in the config entry."""
@@ -83,13 +84,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
     # Cost sensor entities are now registered; inject any pending cost statistics.
     try:
         await update_coordinator.async_setup_costs()
-    except Exception as err:  # noqa: BLE001
+    except Exception as err:
         _LOGGER.debug("Failed to set up cost statistics: %s", err, exc_info=True)
 
     # Register the refresh service once for the whole domain.
     if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):
 
         async def _handle_refresh(call: ServiceCall) -> None:
+            """Handle the 'enea.refresh' service call.
+
+            Triggers an immediate data refresh for each matching device.
+            If no device_id is provided, all Enea devices are refreshed.
+            """
             device_ids: list[str] = call.data.get("device_id", [])
             if isinstance(device_ids, str):
                 device_ids = [device_ids]
@@ -110,6 +116,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
     if not hass.services.has_service(DOMAIN, SERVICE_BACKFILL):
 
         async def _handle_backfill(call: ServiceCall) -> None:
+            """Handle the 'enea.backfill' service call.
+
+            Imports historical statistics for the specified date range.
+            Accepts start_date/end_date (ISO format), days_back, or defaults
+            to the last DEFAULT_BACKFILL_DAYS days when no parameters are given.
+            """
             device_ids: list[str] = call.data.get("device_id", [])
             if isinstance(device_ids, str):
                 device_ids = [device_ids]

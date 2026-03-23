@@ -61,7 +61,6 @@ STEP_USER_SCHEMA = vol.Schema(
 )
 
 
-# noinspection PyTypeChecker
 class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Enea Energy Meter."""
 
@@ -69,7 +68,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,  # noqa: ARG004
+        config_entry: config_entries.ConfigEntry,
     ) -> EneaOptionsFlow:
         """Return the options flow."""
         return EneaOptionsFlow()
@@ -309,7 +308,6 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-# noinspection PyTypeChecker
 class EneaOptionsFlow(config_entries.OptionsFlow):
     """Options flow for Enea Energy Meter."""
 

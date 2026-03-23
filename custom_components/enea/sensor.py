@@ -20,7 +20,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import EneaConfigEntry
-from .connector import format_address
+from .connector import format_address, get_active_meter
 from .const import (
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
@@ -42,17 +42,9 @@ from .coordinator import EneaUpdateCoordinator
 from .costs import find_tariff_group, get_cost_unique_id
 
 
-def _get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:
-    """Return the currently installed physical meter (no disassembly date)."""
-    for m in data.get("meters", []):
-        if m.get("disassemblyDate") is None:
-            return m
-    return None
-
-
 def _get_device_info(meter_code: str, data: dict[str, Any] | None) -> DeviceInfo:
     """Build DeviceInfo, enriched with physical meter details when data is available."""
-    active = _get_active_meter(data) if data else None
+    active = get_active_meter(data) if data else None
     return DeviceInfo(
         identifiers={(DOMAIN, meter_code)},
         name=f"{DEFAULT_NAME} {meter_code}",
@@ -161,7 +153,7 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         icon="mdi:meter-electric-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: (
-            _get_active_meter(data) or {}
+            get_active_meter(data) or {}
         ).get("typeName"),
         attr_fn=lambda data: (
             {
@@ -172,7 +164,7 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
                 }.items()
                 if ts is not None
             }
-            if (m := _get_active_meter(data))
+            if (m := get_active_meter(data))
             else {}
         ),
     ),

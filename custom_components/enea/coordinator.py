@@ -13,7 +13,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .connector import EneaApiClient, EneaAuthError, EneaApiError
+from .connector import EneaApiClient, EneaAuthError, EneaApiError, get_active_meter
 from .const import (
     BACKFILL_DAYS_MAX,
     BACKFILL_MAX_CONSECUTIVE_EMPTY,
@@ -101,10 +101,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # data from the old meter for days after the new meter was installed.
         # Reset first so stale values don't persist if the field is absent.
         self._assembly_datetime = None
-        active_meter = next(
-            (m for m in data.get("meters", []) if m.get("disassemblyDate") is None),
-            None,
-        )
+        active_meter = get_active_meter(data)
         if active_meter and active_meter.get("assemblyDate"):
             self._assembly_datetime = (
                 dt_util.utc_from_timestamp(active_meter["assemblyDate"] / 1000)

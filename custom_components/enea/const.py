@@ -15,7 +15,8 @@ DEFAULT_NAME = "Enea"
 # API URLs
 # ---------------------------------------------------------------------------
 
-CONST_BASE_URL = "https://portalodbiorcy.operator.enea.pl/portalOdbiorcy/api"
+CONST_PORTAL_URL = "https://portalodbiorcy.operator.enea.pl"
+CONST_BASE_URL = f"{CONST_PORTAL_URL}/portalOdbiorcy/api"
 CONST_URL_LOGIN = f"{CONST_BASE_URL}/auth/login"
 CONST_URL_PPES = f"{CONST_BASE_URL}/user/ppes"
 CONST_URL_PPE_DASHBOARD = f"{CONST_BASE_URL}/consumptionDashboard/ppe/{{meter_id}}"

@@ -25,6 +25,7 @@ from .const import (
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
     CONF_METER_NAME,
+    CONST_PORTAL_URL,
     DEFAULT_NAME,
     DOMAIN,
     MEASUREMENT_ID_CONSUMPTION,
@@ -49,7 +50,7 @@ def _get_device_info(meter_code: str, data: dict[str, Any] | None) -> DeviceInfo
         manufacturer="Enea",
         model=active["typeName"] if active else None,
         serial_number=active["serialNumber"] if active else None,
-        configuration_url="https://portalodbiorcy.operator.enea.pl",
+        configuration_url=CONST_PORTAL_URL,
     )
 
 

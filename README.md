@@ -190,7 +190,7 @@ Aby zmienić adres e-mail lub hasło bez usuwania integracji:
 
 ### Diagnostyki
 
-W przypadku problemów pobierz raport diagnostyczny (hasło jest automatycznie ukrywane):
+W przypadku problemów pobierz raport diagnostyczny (hasło i adres są automatycznie ukrywane):
 
 **Ustawienia → Urządzenia i usługi → Enea → menu (⋮) → Pobierz diagnostyki**
 

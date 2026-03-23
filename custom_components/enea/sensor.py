@@ -29,6 +29,12 @@ from .const import (
     DEFAULT_NAME,
     DOMAIN,
     MEASUREMENT_ID_CONSUMPTION,
+    SENSOR_KEY_ADDRESS,
+    SENSOR_KEY_CAPACITY,
+    SENSOR_KEY_METER_MODEL,
+    SENSOR_KEY_READING_DATE,
+    SENSOR_KEY_STATUS,
+    SENSOR_KEY_TARIFF,
 )
 from .coordinator import EneaUpdateCoordinator
 
@@ -82,8 +88,8 @@ class EneaSensorEntityDescription(SensorEntityDescription):
 
 SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
     EneaSensorEntityDescription(
-        key="tariff",
-        translation_key="tariff",
+        key=SENSOR_KEY_TARIFF,
+        translation_key=SENSOR_KEY_TARIFF,
         icon="mdi:tag-text",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: data.get("tariffGroupName"),
@@ -98,8 +104,8 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         },
     ),
     EneaSensorEntityDescription(
-        key="capacity",
-        translation_key="capacity",
+        key=SENSOR_KEY_CAPACITY,
+        translation_key=SENSOR_KEY_CAPACITY,
         icon="mdi:flash-triangle",
         native_unit_of_measurement=UnitOfPower.KILO_WATT,
         device_class=SensorDeviceClass.POWER,
@@ -108,15 +114,15 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         value_fn=lambda data: data.get("agreementPower"),
     ),
     EneaSensorEntityDescription(
-        key="status",
-        translation_key="status",
+        key=SENSOR_KEY_STATUS,
+        translation_key=SENSOR_KEY_STATUS,
         icon="mdi:information-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: data.get("detailedStatus"),
     ),
     EneaSensorEntityDescription(
-        key="address",
-        translation_key="address",
+        key=SENSOR_KEY_ADDRESS,
+        translation_key=SENSOR_KEY_ADDRESS,
         icon="mdi:map-marker",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: format_address(data.get("address")),
@@ -139,16 +145,16 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         ),
     ),
     EneaSensorEntityDescription(
-        key="reading_date",
-        translation_key="reading_date",
+        key=SENSOR_KEY_READING_DATE,
+        translation_key=SENSOR_KEY_READING_DATE,
         icon="mdi:clock-outline",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=_get_reading_date,
     ),
     EneaSensorEntityDescription(
-        key="meter_model",
-        translation_key="meter_model",
+        key=SENSOR_KEY_METER_MODEL,
+        translation_key=SENSOR_KEY_METER_MODEL,
         icon="mdi:meter-electric-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: (

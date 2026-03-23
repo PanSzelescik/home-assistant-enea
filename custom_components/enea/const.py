@@ -40,6 +40,17 @@ CONF_FETCH_CONSUMPTION = "fetch_consumption"
 CONF_FETCH_GENERATION = "fetch_generation"
 
 # ---------------------------------------------------------------------------
+# Sensor keys (must match translation files)
+# ---------------------------------------------------------------------------
+
+SENSOR_KEY_TARIFF = "tariff"
+SENSOR_KEY_CAPACITY = "capacity"
+SENSOR_KEY_STATUS = "status"
+SENSOR_KEY_ADDRESS = "address"
+SENSOR_KEY_READING_DATE = "reading_date"
+SENSOR_KEY_METER_MODEL = "meter_model"
+
+# ---------------------------------------------------------------------------
 # Config flow — error and abort reason keys (must match translation files)
 # ---------------------------------------------------------------------------
 

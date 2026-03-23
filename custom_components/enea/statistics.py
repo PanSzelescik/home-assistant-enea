@@ -33,10 +33,10 @@ def get_statistic_id(meter_code: str, name: str) -> str:
 
 
 def has_data(api_response: dict[str, Any]) -> bool:
-    """Return True if the response contains at least one non-null value."""
+    """Return True if the response contains at least one non-null, non-zero value."""
     for entry in api_response.get("values", []):
         for item in entry.get("items", []):
-            if item.get("value") is not None:
+            if item.get("value"):
                 return True
     return False
 

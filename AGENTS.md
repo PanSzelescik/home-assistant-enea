@@ -28,11 +28,12 @@ custom_components/enea/
 ├── connector.py     — klient HTTP (EneaApiClient, _request helper), wyjątki, format_address()
 ├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, async_backfill
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", reconfigure; EneaOptionsFlow
-├── sensor.py        — EneaSensor, EneaEnergySensor, SENSOR_DESCRIPTIONS, _get_reading_date
+├── sensor.py        — EneaSensor, EneaEnergySensor, EneaCostSensor, SENSOR_DESCRIPTIONS, _get_reading_date
 ├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy/power_series
+├── costs.py         — async_insert_cost_statistics, get_cost_stats, _inject_cost_series, find_tariff_group
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem)
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
-├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk
+├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk, stałe kosztów (ENEA_PRICES_DOMAIN, UNIT_COST, COST_ZONE_DISPLAY)
 ├── manifest.json    — metadane integracji (wymagane przez HA/HACS/hassfest)
 └── translations/
     ├── en.json      — angielski (kopia strings.json)
@@ -49,10 +50,34 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 
 - Coordinator co każde odświeżenie sprawdza aktualność statystyk przez `get_last_statistics` — sprawdza wszystkie aktywne serie (energy_consumed/returned, power_consumed/returned) i bierze najnowszą datę.
 - Jeśli nie ma danych do wczoraj — pobiera brakujące dni i wstrzykuje.
-- Backfill przy pierwszym uruchomieniu: konfigurowalny przez użytkownika (7/30/60/90 dni lub "ile się da").
+- Backfill przy pierwszym uruchomieniu: konfigurowalny przez użytkownika (7/30/60/90 dni lub "ile się da"); domyślnie "ile się da" (`DEFAULT_BACKFILL_DAYS = BACKFILL_DAYS_MAX = 0`).
 - "Ile się da" = cofaj się dzień po dniu do tyłu od wczoraj bez limitu, zatrzymaj po 7 kolejnych dniach bez danych z API.
 - Pobieranie per dzień jest równoległe (`asyncio.gather`) — 2 lub 4 żądania jednocześnie zależnie od opcji fetch_consumption/fetch_generation.
 - Manualny backfill dowolnego zakresu dat: akcja `enea.backfill` (patrz Akcje).
+- `has_data` zwraca `False` gdy odpowiedź API zawiera wyłącznie wartości zerowe (`if item.get("value")` zamiast `if item.get("value") is not None`) — obsługuje dane po wymianie licznika, gdzie stary licznik raportuje zera. Pominięcie dni z genuinymi zerami zużycia jest akceptowalne, bo zero nie zmienia wartości skumulowanej w Energy Dashboard.
+
+### Dolna granica fetchowania — assemblyDate
+
+Coordinator przechowuje:
+- `_assembly_date: date | None` — data montażu aktywnego licznika (wpis w `meters[]` bez `disassemblyDate`)
+- `_assembly_datetime: datetime | None` — pełny timestamp montażu w lokalnej strefie czasowej
+
+Pole `assemblyDate` z API jest w ms od epoki i konwertowane do `datetime` w lokalnej TZ, z której wyciągana jest `.date()`.
+
+**Dolna granica na poziomie dni:**
+- `_fetch_days_forward`: `start_date = max(start_date, _assembly_date)` — nie fetchuje dni sprzed montażu
+- `_fetch_days_backward` (tryb "ile się da"): zatrzymuje pętlę gdy `current < _assembly_date`
+
+**Filtr godzinowy dla dnia montażu — `_strip_pre_assembly_slots`:**
+
+Dzień montażu jest fetchowany, ale zawiera dane zarówno starego (godziny przed montażem), jak i nowego licznika (godziny po montażu). Metoda `_strip_pre_assembly_slots(day, day_data)` usuwa timeId `<= assembly_datetime.hour` z odpowiedzi API dla dnia montażu:
+
+```
+timeId N = godzina (N-1):00–N:00
+montaż o 12:13 → cutoff = 12 → wyrzuca timeId 1–12 (0:00–12:00), zostawia 13+ (12:00 wzwyż)
+```
+
+Metoda jest aplikowana w `_fetch_days_forward` i `_fetch_days_backward` bezpośrednio przed dołączeniem dnia do listy wyników. Dotyczy wszystkich ścieżek: inicjalny backfill, uzupełnianie luk, koszty (`_async_inject_missing_costs` korzysta z `_fetch_days_forward`).
 
 ### Nazwy statystyk
 
@@ -69,6 +94,58 @@ Format: `enea:{meter_code}_{slugified_name}`, np. `enea:590310600000000001_energ
 | (analogicznie oddana) | | |
 
 Nazwy stref (`Dzień`, `Noc`, …) są **dynamiczne** — pobierane z pola `zones[].name` w odpowiedzi API. Kod nie zakłada żadnej konkretnej taryfy (działa z G11, G12, G13 i innymi).
+
+## Architektura kosztów
+
+Koszty energii są funkcją opcjonalną — integracja współpracuje z zewnętrzną integracją `enea_prices`, jeśli jest zainstalowana. Brak `enea_prices` nie powoduje żadnych błędów ani ograniczeń funkcjonalności.
+
+### Integracja z enea_prices (duck typing)
+
+`find_tariff_group(hass, tariff_name)` w `costs.py` wyszukuje obiekt `TariffGroup` z domeny `enea_prices` przez duck typing — bez importu modułu. Wzorzec:
+
+```python
+enea_prices_data = hass.data.get(ENEA_PRICES_DOMAIN, {})
+for entry_data in enea_prices_data.values():
+    tariff = entry_data.get("tariff_group")
+    if tariff and getattr(tariff, "name", None) == tariff_name:
+        return tariff
+```
+
+Dzięki temu `enea_prices` nie jest twardą zależnością i integracja nie wymaga wpisu w `manifest.json`.
+
+### Statystyki kosztów vs. statystyki energii
+
+Statystyki kosztów używają **`async_import_statistics`** z `source="recorder"` (nie `source=DOMAIN` jak energia). Wymagania:
+- Encja musi istnieć w rejestrze encji HA przed wstrzyknięciem statystyk
+- `statistic_id` to `unique_id` encji (format: `enea-{meter_code}-koszt_{direction}_{zone}`)
+- Dlatego `async_setup_costs()` jest wywoływane z `__init__.py` **po** `async_forward_entry_setups`, gdy encje są już zarejestrowane
+
+### EneaCostSensor — encja "hydrauliczna"
+
+`EneaCostSensor` w `sensor.py` ma:
+- `state_class=TOTAL`, `device_class=MONETARY`, `native_unit_of_measurement="PLN"`
+- Stan encji = skumulowana suma kosztów od początku danych (nie koszt za bieżący okres)
+- Encja istnieje wyłącznie jako "hak" dla funkcji **"encja śledząca całkowite koszty"** w Energy Dashboard — HA oblicza koszt dla dowolnego okresu jako różnicę między wartościami sum
+- `native_value` czytane z `coordinator.cost_sums[unique_id]`
+- Tworzone tylko gdy `find_tariff_group` zwraca pasującą taryfę
+
+### Timing wstrzykiwania kosztów
+
+```
+async_setup_entry()
+  → async_forward_entry_setups()   # rejestruje EneaCostSensor w rejestrze encji
+  → async_setup_costs()            # wstrzykuje statystyki kosztów (encje już istnieją)
+```
+
+`async_setup_costs()` używa `_pending_cost_days` — listy dni już pobranych przez standardowy backfill energii — żeby nie wykonywać dodatkowych żądań do API. Jeśli energia jest aktualna, `_async_inject_missing_costs(yesterday)` odpowiada za niezależne uzupełnienie brakujących kosztów.
+
+### Deduplikacja przy backfill
+
+`_inject_cost_series` w `costs.py` filtruje wpisy, których datetime jest `<=` ostatniemu wstrzykniętemu datetime, zapobiegając podwójnemu liczeniu przy wielokrotnym backfill tego samego zakresu dat.
+
+### Automatyczne przeładowanie
+
+`enea_prices.__init__` po swoim setup wywołuje `_async_reload_matching_enea_entries`, która przeładowuje wpisy Enea z pasującą taryfą. Dzięki temu użytkownik nie musi ręcznie przeładowywać integracji po zainstalowaniu `enea_prices`.
 
 ## Dokumentacja API Enea
 
@@ -165,6 +242,12 @@ Tworzone dynamicznie w `async_setup_entry` na podstawie `currentValues[]`. Senso
 - `consumption_total` / `generation_total` — sumy stref (statyczne)
 - `consumption_zone{i}` / `generation_zone{i}` — per strefa (dynamiczne, nazwy z `ppeZones[]`)
 
+### Koszty (EneaCostSensor, opcjonalne)
+Tworzone dynamicznie per strefa i kierunek, gdy `find_tariff_group` zwraca pasującą taryfę z `enea_prices`.
+- `state_class=TOTAL`, `device_class=MONETARY`, jednostka PLN
+- Stan = skumulowana suma kosztów od początku danych; służy wyłącznie jako "hak" dla Energy Dashboard (`encja śledząca całkowite koszty`)
+- `unique_id` format: `enea-{meter_code}-koszt_{direction}_{zone}` (używany jako `statistic_id` w `async_import_statistics`)
+
 ## Obsługa sesji
 
 - aiohttp `CookieJar` zarządza ciasteczkiem `PER_JSESSIONID` automatycznie
@@ -180,8 +263,9 @@ Tworzone dynamicznie w `async_setup_entry` na podstawie `currentValues[]`. Senso
 |-------|---------------|---------------|
 | `sensor.enea_*_energia_pobrana` | `/ppe/{id}` dashboard | Energy Dashboard (encje) |
 | `enea:..._energia_pobrana` | `/consumption/...` | Energy Dashboard (statystyki zewnętrzne) |
+| `sensor.enea_*_koszt_energia_pobrana_dzien` | obliczone z energii + cennik enea_prices | Energy Dashboard (encja śledząca koszty) |
 
-W Energy Dashboard **nie** dodajemy sensorów (`sensor.enea_...`) do wykresu historii — zamiast tego dodajemy statystyki zewnętrzne (`enea:...`). Sensory służą do bieżącego wyświetlania wartości na dashboardach Lovelace.
+W Energy Dashboard **nie** dodajemy sensorów energii (`sensor.enea_..._energia_...`) do wykresu historii — zamiast tego dodajemy statystyki zewnętrzne (`enea:...`). Sensory energii służą do bieżącego wyświetlania wartości na dashboardach Lovelace. Sensory kosztów (`sensor.enea_..._koszt_...`) są wskazywane w Energy Dashboard jako "encja śledząca całkowite koszty" dla danego źródła energii.
 
 ## Opcje integracji (options flow)
 

@@ -176,8 +176,6 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
 )
 
 
-
-
 # ---------------------------------------------------------------------------
 # Energy sensors (static total + dynamic per-zone)
 # ---------------------------------------------------------------------------

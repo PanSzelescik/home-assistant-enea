@@ -64,7 +64,7 @@ Aby zobaczyć dane historyczne w panelu Energia:
 1. **Ustawienia → Energia → Sieć elektryczna**
 2. Kliknij **Dodaj zużycie** i wyszukaj `enea:{kod}_energia_pobrana`
 3. Jeśli masz fotowoltaikę, dodaj **Energia zwrócona**: `enea:{kod}_energia_oddana`
-4. Opcjonalnie: jeśli masz zainstalowaną integrację `enea_prices`, możesz w konfiguracji źródła energii wskazać sensor kosztów jako **encję śledzącą całkowite koszty** — np. `sensor.enea_..._koszt_energia_pobrana_dzien`
+4. Opcjonalnie: jeśli masz zainstalowaną integrację `enea_prices`, możesz w konfiguracji źródła energii wskazać sensor kosztów jako **encję śledzącą całkowite koszty** — np. `sensor.enea_..._koszt_energii_pobrana_dzien`
 
 > **Uwaga:** Nie dodawaj sensorów `sensor.enea_...` do wykresu zużycia — używaj statystyk zewnętrznych `enea:...`, które mają prawidłowe znaczniki czasu.
 

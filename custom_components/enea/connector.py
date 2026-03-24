@@ -75,7 +75,7 @@ class EneaApiClient:
             raise EneaApiError(
                 f"SSL error connecting to Portal Odbiorcy Enea: {err}"
             ) from err
-        except (aiohttp.ClientError, RuntimeError) as err:
+        except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as err:
             raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
         try:
             yield resp

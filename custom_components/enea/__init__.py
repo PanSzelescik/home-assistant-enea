@@ -74,6 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
         update_interval=update_interval,
         fetch_consumption=entry.options.get(CONF_FETCH_CONSUMPTION, True),
         fetch_generation=entry.options.get(CONF_FETCH_GENERATION, True),
+        config_entry=entry,
     )
     await update_coordinator.async_config_entry_first_refresh()
 

@@ -22,5 +22,8 @@ Thumbs.db
 *.db
 *.log
 
+# Environment variables (may contain secrets)
+.env
+
 # Claude
 .claude/settings.local.json

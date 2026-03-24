@@ -8,6 +8,7 @@ from typing import Any
 
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder.statistics import get_last_statistics
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -52,13 +53,14 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         update_interval: timedelta,
         fetch_consumption: bool = True,
         fetch_generation: bool = True,
+        config_entry: ConfigEntry | None = None,
     ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=update_interval,
-            config_entry=None,
+            config_entry=config_entry,
         )
         self.connector = connector
         self.meter_id = meter_id

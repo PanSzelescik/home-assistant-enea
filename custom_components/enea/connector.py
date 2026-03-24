@@ -52,7 +52,8 @@ class EneaApiClient:
         """Return True if the underlying aiohttp session has been closed."""
         return self._session.closed
 
-    async def _fetch(self, coro: Awaitable[aiohttp.ClientResponse]) -> aiohttp.ClientResponse:
+    @staticmethod
+    async def _fetch(coro: Awaitable[aiohttp.ClientResponse]) -> aiohttp.ClientResponse:
         """Await a request coroutine, translating connection errors to EneaApiError."""
         try:
             return await coro
@@ -82,10 +83,10 @@ class EneaApiClient:
         )
 
         if resp.status == 401:
-            await resp.release()
+            resp.release()
             raise EneaAuthError("Invalid username or password")
         if resp.status != 200:
-            await resp.release()
+            resp.release()
             raise EneaApiError(f"Unexpected login response: {resp.status}")
 
         self._authenticated = True
@@ -99,7 +100,7 @@ class EneaApiClient:
         resp = await self._fetch(self._session.get(url))
 
         if resp.status in (401, 403):
-            await resp.release()
+            resp.release()
             async with self._auth_lock:
                 if not self._authenticated:
                     # Another concurrent request already re-authenticated.
@@ -113,7 +114,7 @@ class EneaApiClient:
             resp = await self._fetch(self._session.get(url))
 
         if resp.status != 200:
-            await resp.release()
+            resp.release()
             raise EneaApiError(f"Unexpected response from {label} endpoint: {resp.status}")
 
         try:

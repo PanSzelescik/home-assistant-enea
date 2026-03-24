@@ -47,6 +47,11 @@ class EneaApiClient:
         self._meters_cache: list[dict[str, Any]] | None = None
         self._meters_cache_time: datetime | None = None
 
+    @property
+    def session_closed(self) -> bool:
+        """Return True if the underlying aiohttp session has been closed."""
+        return self._session.closed
+
     async def _fetch(self, coro: Awaitable[aiohttp.ClientResponse]) -> aiohttp.ClientResponse:
         """Await a request coroutine, translating connection errors to EneaApiError."""
         try:

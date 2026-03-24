@@ -89,6 +89,7 @@ class EneaApiClient:
             resp.release()
             raise EneaApiError(f"Unexpected login response: {resp.status}")
 
+        resp.release()
         self._authenticated = True
         _LOGGER.debug("Successfully authenticated with Portal Odbiorcy Enea")
 
@@ -120,6 +121,7 @@ class EneaApiClient:
         try:
             return await resp.json()
         except Exception as err:
+            resp.release()
             raise EneaApiError(f"Failed to parse {label} response: {err}") from err
 
     async def get_meters(self) -> list[dict[str, Any]]:

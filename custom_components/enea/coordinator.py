@@ -58,6 +58,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER,
             name=DOMAIN,
             update_interval=update_interval,
+            config_entry=None,
         )
         self.connector = connector
         self.meter_id = meter_id

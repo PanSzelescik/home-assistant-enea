@@ -66,10 +66,14 @@ class EneaApiClient:
         """
         try:
             resp = await coro
-        except aiohttp.ClientSSLError as err:
+        except aiohttp.ClientConnectorCertificateError as err:
             raise EneaApiError(
                 f"SSL certificate error for Portal Odbiorcy Enea"
                 f" (certificate may have expired): {err}"
+            ) from err
+        except aiohttp.ClientSSLError as err:
+            raise EneaApiError(
+                f"SSL error connecting to Portal Odbiorcy Enea: {err}"
             ) from err
         except (aiohttp.ClientError, RuntimeError) as err:
             raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err

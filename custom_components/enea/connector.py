@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable
 from datetime import datetime
 from typing import Any
 
@@ -46,7 +47,7 @@ class EneaApiClient:
         self._meters_cache: list[dict[str, Any]] | None = None
         self._meters_cache_time: datetime | None = None
 
-    async def _fetch(self, coro) -> aiohttp.ClientResponse:
+    async def _fetch(self, coro: Awaitable[aiohttp.ClientResponse]) -> aiohttp.ClientResponse:
         """Await a request coroutine, translating connection errors to EneaApiError."""
         try:
             return await coro
@@ -76,8 +77,10 @@ class EneaApiClient:
         )
 
         if resp.status == 401:
+            await resp.release()
             raise EneaAuthError("Invalid username or password")
         if resp.status != 200:
+            await resp.release()
             raise EneaApiError(f"Unexpected login response: {resp.status}")
 
         self._authenticated = True
@@ -91,6 +94,7 @@ class EneaApiClient:
         resp = await self._fetch(self._session.get(url))
 
         if resp.status in (401, 403):
+            await resp.release()
             async with self._auth_lock:
                 if not self._authenticated:
                     # Another concurrent request already re-authenticated.
@@ -104,6 +108,7 @@ class EneaApiClient:
             resp = await self._fetch(self._session.get(url))
 
         if resp.status != 200:
+            await resp.release()
             raise EneaApiError(f"Unexpected response from {label} endpoint: {resp.status}")
 
         try:

@@ -55,7 +55,7 @@ class EneaApiClient:
                 f"SSL certificate error for Portal Odbiorcy Enea"
                 f" (certificate may have expired): {err}"
             ) from err
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, RuntimeError) as err:
             raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
 
     def update_credentials(self, password: str) -> None:

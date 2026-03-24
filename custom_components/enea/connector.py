@@ -156,6 +156,14 @@ class EneaApiClient:
         return await self._request(url, "consumption")
 
 
+def get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the currently installed physical meter (no disassembly date)."""
+    return next(
+        (m for m in data.get("meters", []) if m.get("disassemblyDate") is None),
+        None,
+    )
+
+
 def format_address(addr: dict[str, Any] | None) -> str | None:
     """Format an address dict into a readable string."""
     if not addr:

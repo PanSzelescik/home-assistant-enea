@@ -217,6 +217,42 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return f"{meter['code']} ({tariff}) – {address}"
         return f"{meter['code']} ({tariff})"
 
+    async def _async_validate_and_update_credentials(
+        self,
+        entry: config_entries.ConfigEntry,
+        user_input: dict[str, Any],
+        error_log_msg: str,
+    ) -> dict[str, str] | None:
+        """Validate credentials against the API and update the config entry on success.
+
+        Returns a dict of errors if validation fails, or None on success.
+        On success, the entry is updated in place and reloaded.
+        """
+        session = async_create_clientsession(self.hass)
+        connector = EneaApiClient(
+            session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+        )
+        try:
+            await connector.authenticate()
+        except EneaAuthError:
+            return {"base": ERROR_INVALID_AUTH}
+        except EneaApiError:
+            return {"base": ERROR_CANNOT_CONNECT}
+        except Exception as err:
+            _LOGGER.error(error_log_msg, exc_info=err)
+            return {"base": ERROR_UNKNOWN}
+
+        self.hass.config_entries.async_update_entry(
+            entry,
+            data={
+                **entry.data,
+                CONF_USERNAME: user_input[CONF_USERNAME],
+                CONF_PASSWORD: user_input[CONF_PASSWORD],
+            },
+        )
+        await self.hass.config_entries.async_reload(entry.entry_id)
+        return None
+
     async def async_step_reconfigure(
         self, _user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
@@ -230,30 +266,12 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            entry = self._get_reconfigure_entry()
-            session = async_create_clientsession(self.hass)
-            connector = EneaApiClient(
-                session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
-            )
-            try:
-                await connector.authenticate()
-            except EneaAuthError:
-                errors["base"] = ERROR_INVALID_AUTH
-            except EneaApiError:
-                errors["base"] = ERROR_CANNOT_CONNECT
-            except Exception as err:
-                _LOGGER.error("Unexpected error during Enea reconfigure", exc_info=err)
-                errors["base"] = ERROR_UNKNOWN
-            else:
-                self.hass.config_entries.async_update_entry(
-                    entry,
-                    data={
-                        **entry.data,
-                        CONF_USERNAME: user_input[CONF_USERNAME],
-                        CONF_PASSWORD: user_input[CONF_PASSWORD],
-                    },
-                )
-                await self.hass.config_entries.async_reload(entry.entry_id)
+            errors = await self._async_validate_and_update_credentials(
+                self._get_reconfigure_entry(),
+                user_input,
+                "Unexpected error during Enea reconfigure",
+            ) or {}
+            if not errors:
                 return self.async_abort(reason=ABORT_RECONFIGURE_SUCCESSFUL)
 
         return self.async_show_form(
@@ -275,30 +293,12 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            entry = self._get_reauth_entry()
-            session = async_create_clientsession(self.hass)
-            connector = EneaApiClient(
-                session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
-            )
-            try:
-                await connector.authenticate()
-            except EneaAuthError:
-                errors["base"] = ERROR_INVALID_AUTH
-            except EneaApiError:
-                errors["base"] = ERROR_CANNOT_CONNECT
-            except Exception as err:
-                _LOGGER.error("Unexpected error during Enea re-auth", exc_info=err)
-                errors["base"] = ERROR_UNKNOWN
-            else:
-                self.hass.config_entries.async_update_entry(
-                    entry,
-                    data={
-                        **entry.data,
-                        CONF_USERNAME: user_input[CONF_USERNAME],
-                        CONF_PASSWORD: user_input[CONF_PASSWORD],
-                    },
-                )
-                await self.hass.config_entries.async_reload(entry.entry_id)
+            errors = await self._async_validate_and_update_credentials(
+                self._get_reauth_entry(),
+                user_input,
+                "Unexpected error during Enea re-auth",
+            ) or {}
+            if not errors:
                 return self.async_abort(reason=ABORT_REAUTH_SUCCESSFUL)
 
         return self.async_show_form(

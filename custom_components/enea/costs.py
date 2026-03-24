@@ -11,6 +11,7 @@ Energy Dashboard under "entity tracking total costs".
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime
 from typing import Any
@@ -120,7 +121,7 @@ async def async_insert_cost_statistics(
             allowed_zone_strs = {str(z) for z in period.zones}
             for entry in api.get("values", []):
                 dt = time_id_to_dt(day, entry["timeId"])
-                zone = period.get_zone_at_hour(dt.hour, day.weekday(), is_holiday=False)
+                zone = period.get_zone_at_hour(dt.hour, day=day)
                 zone_str = str(zone)
 
                 if zone_str not in allowed_zone_strs:
@@ -212,17 +213,24 @@ async def get_cost_stats(
     """
     registry = er.async_get(hass)
     prefix = f"enea-{meter_code}-koszt_"
+    entries = [
+        e
+        for e in registry.entities.values()
+        if e.platform == DOMAIN and (e.unique_id or "").startswith(prefix)
+    ]
+    if not entries:
+        return None, {}
+
+    last_stats_list = await asyncio.gather(*(
+        get_instance(hass).async_add_executor_job(
+            get_last_statistics, hass, 1, e.entity_id, True, {"sum"}
+        )
+        for e in entries
+    ))
+
     latest: date | None = None
     sums: dict[str, float] = {}
-    for entry in registry.entities.values():
-        if entry.platform != DOMAIN:
-            continue
-        unique_id = entry.unique_id or ""
-        if not unique_id.startswith(prefix):
-            continue
-        last = await get_instance(hass).async_add_executor_job(
-            get_last_statistics, hass, 1, entry.entity_id, True, {"sum"}
-        )
+    for entry, last in zip(entries, last_stats_list):
         if last.get(entry.entity_id):
             record = last[entry.entity_id][0]
             ts = record.get("start")
@@ -236,5 +244,5 @@ async def get_cost_stats(
                     latest = d
             s = record.get("sum")
             if s is not None:
-                sums[unique_id] = s
+                sums[entry.unique_id or ""] = s
     return latest, sums

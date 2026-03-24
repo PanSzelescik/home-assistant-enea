@@ -9,7 +9,7 @@ from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMeanType, StatisticMetaData
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
-    get_last_statistics,
+    statistics_during_period,
 )
 from homeassistant.const import UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
@@ -134,20 +134,33 @@ async def _inject_energy_series(
     name: str,
     series: list[tuple[datetime, float]],
 ) -> None:
-    """Inject an energy time series with cumulative sum chained from the last known value."""
+    """Inject an energy time series, always overwriting the given range.
+
+    The cumulative running_sum is chained from the stat immediately preceding
+    series[0] so that both fresh injection and re-injection (backfill overwrite)
+    produce correct values without creating spikes.
+    """
     if not series:
         return
 
     statistic_id = get_statistic_id(meter_code, name)
+    first_dt = series[0][0]
 
-    last_stats = await get_instance(hass).async_add_executor_job(
-        get_last_statistics, hass, 1, statistic_id, True, {"sum"}
+    # Look up the sum for the hour that ends exactly at series[0] so we can
+    # chain correctly even when overwriting already-injected data.
+    base_stats = await get_instance(hass).async_add_executor_job(
+        statistics_during_period,
+        hass,
+        first_dt - timedelta(hours=1),
+        first_dt,
+        {statistic_id},
+        "hour",
+        None,
+        {"sum"},
     )
-    running_sum: float = (
-        last_stats[statistic_id][0].get("sum") or 0.0
-        if last_stats.get(statistic_id)
-        else 0.0
-    )
+    running_sum: float = 0.0
+    if base_stats.get(statistic_id):
+        running_sum = base_stats[statistic_id][-1].get("sum") or 0.0
 
     stats_data = []
     for dt, value in series:

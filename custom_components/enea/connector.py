@@ -44,6 +44,7 @@ class EneaApiClient:
         self._username = username
         self._password = password
         self._authenticated = False
+        self._auth_gen = 0
         self._auth_lock = asyncio.Lock()
         self._meters_cache: list[dict[str, Any]] | None = None
         self._meters_cache_time: datetime | None = None
@@ -54,7 +55,8 @@ class EneaApiClient:
         return self._session.closed
 
     @asynccontextmanager
-    async def _fetch(self,
+    async def _fetch(
+        self,
         coro: Awaitable[aiohttp.ClientResponse],
     ) -> AsyncIterator[aiohttp.ClientResponse]:
         """Async context manager that issues a request and translates connection errors.
@@ -64,7 +66,7 @@ class EneaApiClient:
         """
         try:
             resp = await coro
-        except aiohttp.ClientConnectorSSLError as err:
+        except aiohttp.ClientSSLError as err:
             raise EneaApiError(
                 f"SSL certificate error for Portal Odbiorcy Enea"
                 f" (certificate may have expired): {err}"
@@ -107,6 +109,7 @@ class EneaApiClient:
             if resp.status != 200:
                 raise EneaApiError(f"Unexpected login response: {resp.status}")
         self._authenticated = True
+        self._auth_gen += 1
         _LOGGER.debug("Successfully authenticated with Portal Odbiorcy Enea")
 
     async def _request(self, url: str, label: str) -> Any:
@@ -114,15 +117,14 @@ class EneaApiClient:
         if not self._authenticated:
             await self.authenticate()
 
+        auth_gen = self._auth_gen
         async with self._fetch(self._session.get(url)) as resp:
             if resp.status not in (401, 403):
                 return await self._parse_response(resp, label)
 
         async with self._auth_lock:
-            if not self._authenticated:
-                # Another concurrent request already re-authenticated.
-                pass
-            else:
+            if self._auth_gen == auth_gen:
+                # Generation unchanged — we are the first to handle this expiry.
                 _LOGGER.debug("Session expired, re-authenticating")
                 self._authenticated = False
                 self._meters_cache = None

@@ -51,7 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
 
     # Reuse existing client for accounts with multiple meters (shared session/cookie).
     # If credentials changed (e.g. after reauth), update them in the shared client.
-    if username in hass.data[DOMAIN]:
+    if username in hass.data[DOMAIN] and not hass.data[DOMAIN][username].session_closed:
         client: EneaApiClient = hass.data[DOMAIN][username]
         client.update_credentials(password)
     else:

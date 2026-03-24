@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator, Awaitable
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
@@ -42,9 +44,53 @@ class EneaApiClient:
         self._username = username
         self._password = password
         self._authenticated = False
+        self._auth_gen = 0
         self._auth_lock = asyncio.Lock()
         self._meters_cache: list[dict[str, Any]] | None = None
         self._meters_cache_time: datetime | None = None
+
+    @property
+    def session_closed(self) -> bool:
+        """Return True if the underlying aiohttp session has been closed."""
+        return self._session.closed
+
+    @asynccontextmanager
+    async def _fetch(
+        self,
+        coro: Awaitable[aiohttp.ClientResponse],
+    ) -> AsyncIterator[aiohttp.ClientResponse]:
+        """Async context manager that issues a request and translates connection errors.
+
+        Automatically releases the response on exit, so callers never need to
+        call resp.release() manually.
+        """
+        try:
+            resp = await coro
+        except aiohttp.ClientConnectorCertificateError as err:
+            raise EneaApiError(
+                f"SSL certificate error for Portal Odbiorcy Enea"
+                f" (certificate may have expired): {err}"
+            ) from err
+        except aiohttp.ClientSSLError as err:
+            raise EneaApiError(
+                f"SSL error connecting to Portal Odbiorcy Enea: {err}"
+            ) from err
+        except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as err:
+            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+        try:
+            yield resp
+        finally:
+            resp.release()
+
+    @staticmethod
+    async def _parse_response(resp: aiohttp.ClientResponse, label: str) -> Any:
+        """Check response status and return the parsed JSON body."""
+        if resp.status != 200:
+            raise EneaApiError(f"Unexpected response from {label} endpoint: {resp.status}")
+        try:
+            return await resp.json()
+        except Exception as err:
+            raise EneaApiError(f"Failed to parse {label} response: {err}") from err
 
     def update_credentials(self, password: str) -> None:
         """Update password and invalidate the current session (e.g. after reauth)."""
@@ -56,20 +102,18 @@ class EneaApiClient:
 
     async def authenticate(self) -> None:
         """Log in to the Portal Odbiorcy Enea and store the session cookie."""
-        try:
-            resp = await self._session.post(
+        async with self._fetch(
+            self._session.post(
                 CONST_URL_LOGIN,
                 json={"username": self._username, "password": self._password},
             )
-        except aiohttp.ClientError as err:
-            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
-
-        if resp.status == 401:
-            raise EneaAuthError("Invalid username or password")
-        if resp.status != 200:
-            raise EneaApiError(f"Unexpected login response: {resp.status}")
-
+        ) as resp:
+            if resp.status == 401:
+                raise EneaAuthError("Invalid username or password")
+            if resp.status != 200:
+                raise EneaApiError(f"Unexpected login response: {resp.status}")
         self._authenticated = True
+        self._auth_gen += 1
         _LOGGER.debug("Successfully authenticated with Portal Odbiorcy Enea")
 
     async def _request(self, url: str, label: str) -> Any:
@@ -77,34 +121,22 @@ class EneaApiClient:
         if not self._authenticated:
             await self.authenticate()
 
-        try:
-            resp = await self._session.get(url)
-        except aiohttp.ClientError as err:
-            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+        auth_gen = self._auth_gen
+        async with self._fetch(self._session.get(url)) as resp:
+            if resp.status not in (401, 403):
+                return await self._parse_response(resp, label)
 
-        if resp.status in (401, 403):
-            async with self._auth_lock:
-                if not self._authenticated:
-                    # Another concurrent request already re-authenticated.
-                    pass
-                else:
-                    _LOGGER.debug("Session expired, re-authenticating")
-                    self._authenticated = False
-                    self._meters_cache = None
-                    self._meters_cache_time = None
-                    await self.authenticate()
-            try:
-                resp = await self._session.get(url)
-            except aiohttp.ClientError as err:
-                raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+        async with self._auth_lock:
+            if self._auth_gen == auth_gen:
+                # Generation unchanged — we are the first to handle this expiry.
+                _LOGGER.debug("Session expired, re-authenticating")
+                self._authenticated = False
+                self._meters_cache = None
+                self._meters_cache_time = None
+                await self.authenticate()
 
-        if resp.status != 200:
-            raise EneaApiError(f"Unexpected response from {label} endpoint: {resp.status}")
-
-        try:
-            return await resp.json()
-        except Exception as err:
-            raise EneaApiError(f"Failed to parse {label} response: {err}") from err
+        async with self._fetch(self._session.get(url)) as resp:
+            return await self._parse_response(resp, label)
 
     async def get_meters(self) -> list[dict[str, Any]]:
         """Return the list of PPE meters associated with the account.

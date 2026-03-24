@@ -46,6 +46,18 @@ class EneaApiClient:
         self._meters_cache: list[dict[str, Any]] | None = None
         self._meters_cache_time: datetime | None = None
 
+    async def _fetch(self, coro) -> aiohttp.ClientResponse:
+        """Await a request coroutine, translating connection errors to EneaApiError."""
+        try:
+            return await coro
+        except aiohttp.ClientConnectorSSLError as err:
+            raise EneaApiError(
+                f"SSL certificate error for Portal Odbiorcy Enea"
+                f" (certificate may have expired): {err}"
+            ) from err
+        except aiohttp.ClientError as err:
+            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+
     def update_credentials(self, password: str) -> None:
         """Update password and invalidate the current session (e.g. after reauth)."""
         if self._password != password:
@@ -56,13 +68,12 @@ class EneaApiClient:
 
     async def authenticate(self) -> None:
         """Log in to the Portal Odbiorcy Enea and store the session cookie."""
-        try:
-            resp = await self._session.post(
+        resp = await self._fetch(
+            self._session.post(
                 CONST_URL_LOGIN,
                 json={"username": self._username, "password": self._password},
             )
-        except aiohttp.ClientError as err:
-            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+        )
 
         if resp.status == 401:
             raise EneaAuthError("Invalid username or password")
@@ -77,10 +88,7 @@ class EneaApiClient:
         if not self._authenticated:
             await self.authenticate()
 
-        try:
-            resp = await self._session.get(url)
-        except aiohttp.ClientError as err:
-            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+        resp = await self._fetch(self._session.get(url))
 
         if resp.status in (401, 403):
             async with self._auth_lock:
@@ -93,10 +101,7 @@ class EneaApiClient:
                     self._meters_cache = None
                     self._meters_cache_time = None
                     await self.authenticate()
-            try:
-                resp = await self._session.get(url)
-            except aiohttp.ClientError as err:
-                raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+            resp = await self._fetch(self._session.get(url))
 
         if resp.status != 200:
             raise EneaApiError(f"Unexpected response from {label} endpoint: {resp.status}")

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Awaitable
+from collections.abc import Awaitable
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Any
@@ -33,6 +33,34 @@ class EneaAuthError(EneaApiError):
     """Authentication failure (bad credentials or session expired)."""
 
 
+@asynccontextmanager
+async def _fetch(
+    coro: Awaitable[aiohttp.ClientResponse],
+):
+    """Async context manager that issues a request and translates connection errors.
+
+    Automatically releases the response on exit, so callers never need to
+    call resp.release() manually.
+    """
+    try:
+        resp = await coro
+    except aiohttp.ClientConnectorCertificateError as err:
+        raise EneaApiError(
+            f"SSL certificate error for Portal Odbiorcy Enea"
+            f" (certificate may have expired): {err}"
+        ) from err
+    except aiohttp.ClientSSLError as err:
+        raise EneaApiError(
+            f"SSL error connecting to Portal Odbiorcy Enea: {err}"
+        ) from err
+    except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as err:
+        raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+    try:
+        yield resp
+    finally:
+        resp.release()
+
+
 class EneaApiClient:
     """Client for the Portal Odbiorcy Enea REST API."""
 
@@ -56,34 +84,6 @@ class EneaApiClient:
         """Return True if the underlying aiohttp session has been closed."""
         return self._session.closed
 
-    @asynccontextmanager
-    async def _fetch(
-        self,
-        coro: Awaitable[aiohttp.ClientResponse],
-    ) -> AsyncIterator[aiohttp.ClientResponse]:
-        """Async context manager that issues a request and translates connection errors.
-
-        Automatically releases the response on exit, so callers never need to
-        call resp.release() manually.
-        """
-        try:
-            resp = await coro
-        except aiohttp.ClientConnectorCertificateError as err:
-            raise EneaApiError(
-                f"SSL certificate error for Portal Odbiorcy Enea"
-                f" (certificate may have expired): {err}"
-            ) from err
-        except aiohttp.ClientSSLError as err:
-            raise EneaApiError(
-                f"SSL error connecting to Portal Odbiorcy Enea: {err}"
-            ) from err
-        except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as err:
-            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
-        try:
-            yield resp
-        finally:
-            resp.release()
-
     @staticmethod
     async def _parse_response(resp: aiohttp.ClientResponse, label: str) -> Any:
         """Check response status and return the parsed JSON body."""
@@ -104,7 +104,7 @@ class EneaApiClient:
 
     async def authenticate(self) -> None:
         """Log in to the Portal Odbiorcy Enea and store the session cookie."""
-        async with self._fetch(
+        async with _fetch(
             self._session.post(
                 CONST_URL_LOGIN,
                 json={"username": self._username, "password": self._password},
@@ -124,7 +124,7 @@ class EneaApiClient:
             await self.authenticate()
 
         auth_gen = self._auth_gen
-        async with self._fetch(self._session.get(url)) as resp:
+        async with _fetch(self._session.get(url)) as resp:
             if resp.status not in (401, 403):
                 return await self._parse_response(resp, label)
 
@@ -137,7 +137,7 @@ class EneaApiClient:
                 self._meters_cache_time = None
                 await self.authenticate()
 
-        async with self._fetch(self._session.get(url)) as resp:
+        async with _fetch(self._session.get(url)) as resp:
             return await self._parse_response(resp, label)
 
     async def get_meters(self) -> list[dict[str, Any]]:

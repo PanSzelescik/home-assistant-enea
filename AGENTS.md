@@ -8,7 +8,7 @@
   2. **API URLs** — `CONST_BASE_URL`, `CONST_URL_*`
   3. **Config entry keys** — `CONF_*`
   4. **Defaults** — `DEFAULT_*`
-  5. **Statistics API** — `MEASUREMENT_ID_*`, `STATS_*`, `BACKFILL_*`, `RANGE_FETCH_CHUNK_DAYS`
+  5. **Statistics API** — `MEASUREMENT_ID_*`, `MeasurementType`, `Resolution`, `BACKFILL_*`, `RANGE_FETCH_CHUNK_DAYS`
 - Każda nowa funkcja, metoda i klasa musi mieć **docstring**.
 
 ## Konwencje nazewnictwa

@@ -5,7 +5,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from homeassistant.util import dt as dt_util
@@ -13,11 +13,13 @@ from homeassistant.util import dt as dt_util
 import aiohttp
 
 from .const import (
-    CONST_URL_CONSUMPTION,
+    CONST_URL_CONSUMPTION_RANGE,
     CONST_URL_LOGIN,
     CONST_URL_PPE_DASHBOARD,
     CONST_URL_PPES,
     METERS_CACHE_TTL,
+    MeasurementType,
+    Resolution,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -163,29 +165,42 @@ class EneaApiClient:
         url = CONST_URL_PPE_DASHBOARD.format(meter_id=meter_id)
         return await self._request(url, "dashboard")
 
-    async def get_consumption_data(
+    async def get_consumption_data_range(
         self,
         meter_id: int,
-        date: str,
-        measurement_type: int,
-        resolution: int = 1,
+        start_date: date,
+        end_date: date,
+        measurement_type: MeasurementType,
+        resolution: Resolution,
     ) -> dict[str, Any]:
-        """Return 15-min or 60-min consumption/power data for a specific date.
+        """Return 60-min consumption/power data for a date range.
+
+        The response has the same structure as the single-day endpoint but
+        contains 24 timeId slots per day, repeating for each day in the range.
+        For very large ranges, data may appear in 'valuesToTable' instead of
+        'values' (same structure, different key).
 
         Args:
             meter_id: PPE identifier.
-            date: Date string in YYYY-MM-DD format.
-            measurement_type: 1=energy consumed, 5=energy returned,
-                              4=power consumed, 9=power returned.
-            resolution: 1=15-minute (96 entries), 2=60-minute (24 entries).
+            start_date: Start date (inclusive).
+            end_date: End date (inclusive); must be >= start_date.
+            measurement_type: MeasurementType (1=energy consumed, 5=energy returned,
+                              4=power consumed, 9=power returned).
+            resolution: Resolution (1=15-min/96 entries per day,
+                        2=60-min/24 entries per day).
         """
-        url = CONST_URL_CONSUMPTION.format(
+        if start_date > end_date:
+            raise ValueError(
+                f"start_date ({start_date}) must be <= end_date ({end_date})"
+            )
+        url = CONST_URL_CONSUMPTION_RANGE.format(
             meter_id=meter_id,
-            date=date,
+            start_date=start_date.isoformat(),
+            end_date=end_date.isoformat(),
             measurement_type=measurement_type,
             resolution=resolution,
         )
-        return await self._request(url, "consumption")
+        return await self._request(url, "consumption_range")
 
 
 def get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:

@@ -18,16 +18,15 @@ from .const import (
     BACKFILL_DAYS_MAX,
     BACKFILL_MAX_CONSECUTIVE_EMPTY,
     DOMAIN,
+    RANGE_FETCH_CHUNK_DAYS,
+    RANGE_SLOTS_PER_DAY,
     STAT_KEY_ENERGY_CONSUMED,
     STAT_KEY_ENERGY_RETURNED,
     STAT_KEY_POWER_CONSUMED,
     STAT_KEY_POWER_RETURNED,
+    MeasurementType,
+    Resolution,
     STAT_NAME_BY_KEY,
-    STATS_ENERGY_CONSUMED,
-    STATS_ENERGY_RETURNED,
-    STATS_POWER_CONSUMED,
-    STATS_POWER_RETURNED,
-    STATS_RESOLUTION_60MIN,
 )
 from .costs import (
     async_insert_cost_statistics,
@@ -70,18 +69,18 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.cost_sums: dict[str, float] = {}
         self._pending_cost_days: list[tuple[date, dict[str, Any]]] = []
 
-    def _get_measurement_types(self) -> list[tuple[str, int]]:
+    def _get_measurement_types(self) -> list[tuple[str, MeasurementType]]:
         """Return active (key, measurement_type) pairs based on fetch settings."""
-        types: list[tuple[str, int]] = []
+        types: list[tuple[str, MeasurementType]] = []
         if self._fetch_consumption:
             types.extend([
-                (STAT_KEY_ENERGY_CONSUMED, STATS_ENERGY_CONSUMED),
-                (STAT_KEY_POWER_CONSUMED, STATS_POWER_CONSUMED),
+                (STAT_KEY_ENERGY_CONSUMED, MeasurementType.ENERGY_CONSUMED),
+                (STAT_KEY_POWER_CONSUMED, MeasurementType.POWER_CONSUMED),
             ])
         if self._fetch_generation:
             types.extend([
-                (STAT_KEY_ENERGY_RETURNED, STATS_ENERGY_RETURNED),
-                (STAT_KEY_POWER_RETURNED, STATS_POWER_RETURNED),
+                (STAT_KEY_ENERGY_RETURNED, MeasurementType.ENERGY_RETURNED),
+                (STAT_KEY_POWER_RETURNED, MeasurementType.POWER_RETURNED),
             ])
         return types
 
@@ -312,96 +311,217 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             result[key] = {**api_response, "values": filtered_values}
         return result
 
-    async def _fetch_days_forward(
-        self, start_date: date, end_date: date
-    ) -> list[tuple[date, dict[str, Any]]]:
-        """Fetch days chronologically from start_date to end_date (inclusive).
+    @staticmethod
+    def _split_range_response(
+        api_response: dict[str, Any],
+        start_date: date,
+    ) -> dict[date, dict[str, Any]]:
+        """Split a range API response into per-day response dicts.
 
-        Skips days before the assembly date of the current meter.  On the assembly
-        day itself, early-hour slots (before the assembly hour) are stripped by
-        _strip_pre_assembly_slots so only new-meter data is imported.
+        The range endpoint returns 24 timeId slots per day concatenated in a flat
+        list (timeId repeats 1-24 for each day).  This method groups them back into
+        per-day structures identical to single-day responses so that has_data,
+        _collect_series and cost statistics need no changes.
+
+        For very large ranges the API stores data in 'valuesToTable' instead of
+        'values' — both are checked, with 'values' taking priority.
+
+        Args:
+            api_response: Raw API response from the range endpoint.
+            start_date: The first date of the requested range.
+
+        Returns:
+            Mapping of date → single-day response dict with 'values' and 'zones'.
         """
-        if self._assembly_datetime is not None:
-            start_date = max(start_date, self._assembly_datetime.date())
-        all_days: list[tuple[date, dict[str, Any]]] = []
-        current = start_date
-        while current <= end_date:
-            day_data, any_data = await self._fetch_one_day(current)
-            if any_data:
-                day_data = self._strip_pre_assembly_slots(current, day_data)
-                all_days.append((current, day_data))
-            current += timedelta(days=1)
-        return all_days
+        entries: list[dict[str, Any]] = (
+            api_response.get("values")
+            or api_response.get("valuesToTable")
+            or []
+        )
+        zones = api_response.get("zones", [])
+        result: dict[date, dict[str, Any]] = {}
 
-    async def _fetch_days_backward(
-        self, end_date: date
+        if len(entries) % RANGE_SLOTS_PER_DAY != 0:
+            _LOGGER.warning(
+                "Range response has %d entries — not a multiple of %d; "
+                "trailing incomplete day will be ignored",
+                len(entries),
+                RANGE_SLOTS_PER_DAY,
+            )
+
+        num_days = len(entries) // RANGE_SLOTS_PER_DAY
+        for i in range(num_days):
+            block = entries[i * RANGE_SLOTS_PER_DAY : (i + 1) * RANGE_SLOTS_PER_DAY]
+            day = start_date + timedelta(days=i)
+            result[day] = {"values": block, "zones": zones}
+
+        return result
+
+    async def _fetch_range(
+        self,
+        start_date: date,
+        end_date: date,
     ) -> list[tuple[date, dict[str, Any]]]:
-        """Fetch days backward from end_date; stop after consecutive empty days.
+        """Fetch all measurement types for a date range in parallel.
 
-        Returns days in chronological (ascending) order.
-        """
-        all_days: list[tuple[date, dict[str, Any]]] = []
-        consecutive_empty = 0
-        current = end_date
-        while True:
-            if self._assembly_datetime is not None and current < self._assembly_datetime.date():
-                _LOGGER.debug(
-                    "Stopping backfill at assembly date %s", self._assembly_datetime.date()
-                )
-                break
-            day_data, any_data = await self._fetch_one_day(current)
-            if any_data:
-                day_data = self._strip_pre_assembly_slots(current, day_data)
-                all_days.append((current, day_data))
-                consecutive_empty = 0
-            else:
-                consecutive_empty += 1
-                if consecutive_empty >= BACKFILL_MAX_CONSECUTIVE_EMPTY:
-                    _LOGGER.debug(
-                        "Stopping backfill after %d consecutive empty days (reached %s)",
-                        consecutive_empty,
-                        current,
-                    )
-                    break
-            current -= timedelta(days=1)
-        return list(reversed(all_days))
+        Issues one request per active measurement type simultaneously, splits
+        each flat response into per-day dicts, merges them, filters days with no
+        data, and applies assembly-date slot stripping.
 
-    async def _fetch_one_day(
-        self, day: date
-    ) -> tuple[dict[str, Any], bool]:
-        """Fetch active measurement types for a single day in parallel.
+        Args:
+            start_date: First date to fetch (inclusive); clamped to assembly date.
+            end_date: Last date to fetch (inclusive).
 
-        Returns (day_data_dict, any_data_found).
+        Returns:
+            Chronologically sorted list of (date, day_data) tuples where day_data
+            maps stat key → single-day API response dict.
         """
         keys_and_types = self._get_measurement_types()
         if not keys_and_types:
-            return {}, False
+            return []
 
-        date_str = day.isoformat()
+        if self._assembly_datetime is not None:
+            start_date = max(start_date, self._assembly_datetime.date())
+
+        if start_date > end_date:
+            return []
+
         results = await asyncio.gather(
             *(
-                self.connector.get_consumption_data(
-                    self.meter_id, date_str, mtype, STATS_RESOLUTION_60MIN
+                self.connector.get_consumption_data_range(
+                    self.meter_id, start_date, end_date, mtype, Resolution.MIN_60
                 )
                 for _, mtype in keys_and_types
             ),
             return_exceptions=True,
         )
 
-        day_data: dict[str, Any] = {}
-        any_data = False
+        # Split each measurement-type response into per-day dicts.
+        per_key_days: dict[str, dict[date, dict[str, Any]]] = {}
         for (key, mtype), result in zip(keys_and_types, results):
             if isinstance(result, BaseException):
                 _LOGGER.debug(
-                    "No stats data for %s type %d: %s", date_str, mtype, result,
+                    "No range stats data for key=%s type=%d (%s–%s): %s",
+                    key, mtype, start_date, end_date, result,
                     exc_info=(type(result), result, result.__traceback__),
                 )
                 continue
-            day_data[key] = result
-            if has_data(result):
-                any_data = True
+            per_key_days[key] = self._split_range_response(result, start_date)
 
-        return day_data, any_data
+        if not per_key_days:
+            return []
+
+        # Merge: for each date present in any key, build unified day_data dict.
+        all_dates: set[date] = set()
+        for days_map in per_key_days.values():
+            all_dates.update(days_map.keys())
+
+        all_days: list[tuple[date, dict[str, Any]]] = []
+        for day in sorted(all_dates):
+            day_data: dict[str, Any] = {
+                key: days_map[day]
+                for key, days_map in per_key_days.items()
+                if day in days_map
+            }
+            if not any(has_data(v) for v in day_data.values()):
+                continue
+            day_data = self._strip_pre_assembly_slots(day, day_data)
+            all_days.append((day, day_data))
+
+        return all_days
+
+    async def _fetch_days_forward(
+        self, start_date: date, end_date: date
+    ) -> list[tuple[date, dict[str, Any]]]:
+        """Fetch days chronologically from start_date to end_date (inclusive).
+
+        Splits the range into chunks of RANGE_FETCH_CHUNK_DAYS and fetches each
+        chunk via _fetch_range (2-4 parallel requests per chunk).  Chunks are
+        processed sequentially to avoid overloading the API.
+
+        Skips days before the assembly date of the current meter.  On the assembly
+        day itself, early-hour slots (before the assembly hour) are stripped by
+        _strip_pre_assembly_slots so only new-meter data is imported.
+        """
+        # Assembly-date clamp is also applied inside _fetch_range; repeating it
+        # here avoids allocating empty chunks before the assembly date.
+        if self._assembly_datetime is not None:
+            start_date = max(start_date, self._assembly_datetime.date())
+
+        all_days: list[tuple[date, dict[str, Any]]] = []
+        chunk_start = start_date
+        while chunk_start <= end_date:
+            chunk_end = min(
+                chunk_start + timedelta(days=RANGE_FETCH_CHUNK_DAYS - 1),
+                end_date,
+            )
+            chunk_days = await self._fetch_range(chunk_start, chunk_end)
+            all_days.extend(chunk_days)
+            chunk_start = chunk_end + timedelta(days=1)
+
+        return all_days
+
+    async def _fetch_days_backward(
+        self, end_date: date
+    ) -> list[tuple[date, dict[str, Any]]]:
+        """Fetch days backward from end_date; stop when data runs out.
+
+        When the assembly date is known, delegates to _fetch_days_forward because
+        the exact start is known. When the assembly date is unknown, fetches
+        RANGE_FETCH_CHUNK_DAYS-sized chunks going backward and stops after
+        BACKFILL_MAX_CONSECUTIVE_EMPTY consecutive days with no data at the tail
+        of a chunk.
+
+        Returns days in chronological (ascending) order.
+        """
+        if self._assembly_datetime is not None:
+            _LOGGER.debug(
+                "Assembly date known (%s) — fetching forward from assembly date",
+                self._assembly_datetime.date(),
+            )
+            return await self._fetch_days_forward(self._assembly_datetime.date(), end_date)
+
+        # Collect chunks newest-first, flatten in reverse at the end — avoids
+        # O(n²) copies that would result from prepending to all_days each iteration.
+        chunks: list[list[tuple[date, dict[str, Any]]]] = []
+        chunk_end = end_date
+        while True:
+            chunk_start = chunk_end - timedelta(days=RANGE_FETCH_CHUNK_DAYS - 1)
+            chunk_days = await self._fetch_range(chunk_start, chunk_end)
+
+            if chunk_days:
+                chunks.append(chunk_days)
+
+                # Check if the oldest BACKFILL_MAX_CONSECUTIVE_EMPTY days of this
+                # chunk were all empty — if so, data has run out.
+                days_in_chunk = {d for d, _ in chunk_days}
+                consecutive_empty = 0
+                check_day = chunk_start
+                while check_day <= chunk_end:
+                    if check_day not in days_in_chunk:
+                        consecutive_empty += 1
+                        if consecutive_empty >= BACKFILL_MAX_CONSECUTIVE_EMPTY:
+                            _LOGGER.debug(
+                                "Stopping backfill: %d consecutive empty days "
+                                "at start of chunk (reached %s)",
+                                consecutive_empty,
+                                chunk_start,
+                            )
+                            return [day for chunk in reversed(chunks) for day in chunk]
+                    else:
+                        break
+                    check_day += timedelta(days=1)
+            else:
+                _LOGGER.debug(
+                    "Stopping backfill: no data in chunk %s – %s",
+                    chunk_start,
+                    chunk_end,
+                )
+                break
+
+            chunk_end = chunk_start - timedelta(days=1)
+
+        return [day for chunk in reversed(chunks) for day in chunk]
 
     async def async_backfill(self, start_date: date, end_date: date) -> int:
         """Fetch and inject statistics for a custom date range.

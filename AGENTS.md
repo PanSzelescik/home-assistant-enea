@@ -8,7 +8,7 @@
   2. **API URLs** — `CONST_BASE_URL`, `CONST_URL_*`
   3. **Config entry keys** — `CONF_*`
   4. **Defaults** — `DEFAULT_*`
-  5. **Statistics API** — `MEASUREMENT_ID_*`, `STATS_*`, `BACKFILL_*`
+  5. **Statistics API** — `MEASUREMENT_ID_*`, `STATS_*`, `BACKFILL_*`, `RANGE_FETCH_CHUNK_DAYS`
 - Każda nowa funkcja, metoda i klasa musi mieć **docstring**.
 
 ## Konwencje nazewnictwa
@@ -51,8 +51,9 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 - Coordinator co każde odświeżenie sprawdza aktualność statystyk przez `get_last_statistics` — odpytuje wszystkie aktywne serie (energy_consumed/returned, power_consumed/returned) **równolegle** (`asyncio.gather`) i bierze najnowszą datę.
 - Jeśli nie ma danych do wczoraj — pobiera brakujące dni i wstrzykuje.
 - Backfill przy pierwszym uruchomieniu: konfigurowalny przez użytkownika (7/30/60/90 dni lub "ile się da"); domyślnie "ile się da" (`DEFAULT_BACKFILL_DAYS = BACKFILL_DAYS_MAX = 0`).
-- "Ile się da" = cofaj się dzień po dniu do tyłu od wczoraj bez limitu, zatrzymaj po 7 kolejnych dniach bez danych z API.
-- Pobieranie per dzień jest równoległe (`asyncio.gather`) — 2 lub 4 żądania jednocześnie zależnie od opcji fetch_consumption/fetch_generation.
+- "Ile się da" = gdy `assemblyDate` jest znane — fetch od daty montażu do wczoraj jednym zakresem; gdy nieznane — cofaj się chunkami 180-dniowymi, zatrzymaj gdy początek chunka zawiera 7 kolejnych dni bez danych.
+- Pobieranie danych odbywa się przez **range endpoint** (`/consumption/{id}/{startDate}/{endDate}/{mtype}/{resolution}`), który zwraca dane za wiele dni naraz. Zakres jest dzielony na chunki `RANGE_FETCH_CHUNK_DAYS = 180` dni przetwarzane sekwencyjnie; w każdym chunku 2–4 żądania HTTP są wysyłane **równolegle** (`asyncio.gather`) — po jednym na typ pomiaru. Wydajność: ~2s na 6 miesięcy, ~5.5s na rok.
+- Odpowiedź range endpoint to płaska lista slotów 1-24 (zawsze dokładnie 24 na dzień, niezależnie od DST). `_split_range_response` dzieli ją na per-day dicty z kluczami `{"values": [...], "zones": [...]}` identycznymi ze strukturą single-day endpoint — dzięki temu `has_data`, `_collect_series` i koszty nie wymagają zmian. Dla bardzo dużych zakresów API zwraca dane w `valuesToTable` zamiast `values` — kod sprawdza oba pola.
 - Manualny backfill dowolnego zakresu dat: akcja `enea.backfill` (patrz Akcje).
 - `has_data` zwraca `False` gdy odpowiedź API zawiera wyłącznie wartości `null` (`if item.get("value") is not None`). Zera są traktowane jako dane (zerowe zużycie) — dni z zerowym zużyciem są importowane. Filtrowanie danych starego licznika odbywa się przez `_strip_pre_assembly_slots` na poziomie godzin, nie przez `has_data`.
 
@@ -61,8 +62,8 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 Coordinator przechowuje `_assembly_datetime: datetime | None` — pełny timestamp montażu aktywnego licznika w lokalnej strefie czasowej (wpis w `meters[]` bez `disassemblyDate`). Pole `assemblyDate` z API jest w ms od epoki. Data jest dostępna jako `self._assembly_datetime.date()`.
 
 **Dolna granica na poziomie dni:**
-- `_fetch_days_forward`: `start_date = max(start_date, self._assembly_datetime.date())` — nie fetchuje dni sprzed montażu
-- `_fetch_days_backward` (tryb "ile się da"): zatrzymuje pętlę gdy `current < self._assembly_datetime.date()`
+- `_fetch_days_forward` i `_fetch_range`: `start_date = max(start_date, self._assembly_datetime.date())` — nie fetchuje dni sprzed montażu
+- `_fetch_days_backward` (tryb "ile się da", assembly date znane): deleguje do `_fetch_days_forward(assembly_date, yesterday)` — nie potrzeba cofania
 
 **Filtr godzinowy dla dnia montażu — `_strip_pre_assembly_slots`:**
 
@@ -204,7 +205,7 @@ Kluczowe pola odpowiedzi:
 
 Przykład odpowiedzi: patrz `data/ppe73689.json`.
 
-### Endpoint statystyk historycznych
+### Endpoint statystyk historycznych — single day (legacy)
 
 ```
 GET /consumption/{ppeId}/1/{date}/{measurementType}/{resolution}
@@ -218,11 +219,30 @@ Cookie: PER_JSESSIONID=<wartość>
 | `measurementType` | 1=energia pobrana, 5=energia oddana, 4=moc pobrana, 9=moc oddana |
 | `resolution` | 1=15 min (96 wpisów), 2=60 min (24 wpisy) |
 
+### Endpoint statystyk historycznych — zakres dat
+
+```
+GET /consumption/{ppeId}/{startDate}/{endDate}/{measurementType}/{resolution}
+Cookie: PER_JSESSIONID=<wartość>
+```
+
+| Parametr | Opis |
+|----------|------|
+| `ppeId` | ID licznika (pole `id` z `/user/ppes`) |
+| `startDate` | Data początkowa w formacie `YYYY-MM-DD` (włącznie) |
+| `endDate` | Data końcowa w formacie `YYYY-MM-DD` (włącznie) |
+| `measurementType` | 1=energia pobrana, 5=energia oddana, 4=moc pobrana, 9=moc oddana |
+| `resolution` | 2=60 min (zalecane; 24 wpisy × liczba dni) |
+
 Kluczowe pola odpowiedzi:
-- `values[]` — 24 sloty z `timeId` (1–24) i `items[]` per strefa taryfowa (resolution=2, godzinowe)
+- `values[]` — płaska lista: 24 sloty × liczba dni, `timeId` 1-24 powtarzający się per dzień; dla zakresów >~30 dni może być pusta (dane w `valuesToTable[]` o tej samej strukturze)
+- `valuesToTable[]` — fallback dla dużych zakresów (identyczna struktura jak `values[]`)
 - `items[].tarifZoneId` — ID strefy
 - `items[].value` — wartość (kWh lub kW), może być `null` gdy brak odczytu
-- `zones[]` — definicje stref: `{id, name}` (np. `{id: 1, name: "Dzień"}`)
+- `zones[]` — definicje stref wspólne dla całego zakresu: `{id, name}` (np. `{id: 1, name: "Dzień"}`)
+- Zawsze dokładnie 24 sloty na dzień, niezależnie od DST
+
+Wydajność (zmierzona): 6 miesięcy ~2s, rok ~5.5s, 3 lata ~26s (5.5 MB).
 
 Dane za poprzedni dzień są dostępne zwykle po godzinie 11:00 następnego dnia.
 

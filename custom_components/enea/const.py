@@ -1,7 +1,6 @@
 """Constants for the Enea Energy Meter integration."""
 from datetime import timedelta
 from enum import IntEnum
-from typing import Final
 
 from homeassistant.const import Platform
 

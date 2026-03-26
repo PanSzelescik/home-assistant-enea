@@ -33,9 +33,8 @@ Pozwala na monitorowanie danych licznika bezpośrednio z Portalu Odbiorcy Enea.
 1. Kliknij przycisk powyżej lub przejdź do **Ustawienia → Urządzenia i usługi → Dodaj integrację** i wyszukaj **Enea Licznik**
 2. Wprowadź adres e-mail i hasło z Portalu Odbiorcy Enea
 3. Wybierz licznik (PPE) z listy — każdy pokazuje kod PPE, taryfę i adres
-4. Wybierz ile dni historii pobrać (7 / 30 / 60 / 90 dni lub **Maksymalnie — ile się da**; domyślnie: maksymalnie)
-5. Ustaw interwał odświeżania (domyślnie 3h 30min, minimum 30 min)
-6. Gotowe!
+4. Ustaw interwał odświeżania i wybierz, które typy statystyk pobierać (domyślnie: energia pobrana i oddana; moc domyślnie wyłączona)
+5. Gotowe! Historia energii pobiera się automatycznie w tle — sensory są dostępne od razu
 
 ## Statystyki historyczne godzinowe
 
@@ -153,6 +152,8 @@ Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**
 | Interwał odświeżania | 3h 30min | Jak często odpytywać Portal Odbiorcy Enea (minimum 30 min) |
 | Pobieraj statystyki energii pobranej | Tak | Wyłącz jeśli chcesz oszczędzić requesty do API |
 | Pobieraj statystyki energii oddanej | Tak | Wyłącz jeśli nie masz fotowoltaiki ani innego źródła generacji |
+| Pobieraj statystyki mocy pobranej | Nie | Godzinowe dane mocy czynnej pobranej (kW) |
+| Pobieraj statystyki mocy oddanej | Nie | Godzinowe dane mocy czynnej oddanej (kW); wyłącz jeśli nie masz fotowoltaiki |
 
 Zmiana opcji powoduje natychmiastowe przeładowanie integracji. Wyłączenie danego kierunku ukrywa też odpowiednie sensory energii i kosztów.
 

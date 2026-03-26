@@ -69,6 +69,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._assembly_datetime: datetime | None = None
         self.cost_sums: dict[str, float] = {}
         self._pending_cost_days: list[tuple[date, dict[str, Any]]] = []
+        self._backfill_task: asyncio.Task[None] | None = None
 
     def _get_measurement_types(self) -> list[tuple[str, MeasurementType]]:
         """Return active (key, measurement_type) pairs based on fetch settings."""
@@ -157,15 +158,22 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         latest_date = d
 
         if latest_date is not None:
+            # Incremental update: small range — run inline (fast).
             all_days = await self._fetch_days_forward(
                 latest_date + timedelta(days=1), yesterday
             )
+            if all_days:
+                await self._async_inject_days(all_days, set_pending=True)
+                _LOGGER.debug("Injected statistics for %d day(s)", len(all_days))
         else:
-            all_days = await self._fetch_days_backward(yesterday)
-
-        if all_days:
-            await self._async_inject_days(all_days, set_pending=True)
-            _LOGGER.debug("Injected statistics for %d day(s)", len(all_days))
+            # Initial backfill — potentially years of data (slow).
+            # Schedule as a background task so the first coordinator refresh
+            # returns quickly and sensors become available immediately.
+            if self._backfill_task is None or self._backfill_task.done():
+                self._backfill_task = self.hass.async_create_task(
+                    self._async_do_initial_backfill(yesterday),
+                    name=f"enea_backfill_{self._meter_code}",
+                )
 
     async def _async_inject_days(
         self,
@@ -200,6 +208,46 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # progress); save days for async_setup_costs() called later.
                 self._pending_cost_days = all_days
 
+    async def _async_do_initial_backfill(self, yesterday: date) -> None:
+        """Fetch all historical data and inject statistics.
+
+        Runs as a background task (started from _async_fetch_and_inject_stats)
+        so that the first coordinator refresh does not block while years of data
+        are being downloaded.  Uses set_pending=True so that if entities are not
+        yet registered when the task finishes, async_setup_costs can pick up
+        the days and inject cost statistics once they are.
+        """
+        try:
+            all_days = await self._fetch_days_backward(yesterday)
+            if all_days:
+                await self._async_inject_days(all_days, set_pending=True)
+                self.async_update_listeners()
+                _LOGGER.debug(
+                    "Initial backfill complete for meter %s: injected %d day(s)",
+                    self._meter_code,
+                    len(all_days),
+                )
+        except asyncio.CancelledError:
+            _LOGGER.debug("Initial backfill cancelled for meter %s", self._meter_code)
+            raise
+        except Exception as err:
+            _LOGGER.warning(
+                "Initial backfill failed for meter %s: %s",
+                self._meter_code,
+                err,
+                exc_info=True,
+            )
+
+    def async_cancel_backfill(self) -> None:
+        """Cancel the background initial-backfill task if it is still running.
+
+        Called on entry unload to prevent the task from running after the
+        integration has been torn down.
+        """
+        if self._backfill_task is not None and not self._backfill_task.done():
+            self._backfill_task.cancel()
+            _LOGGER.debug("Cancelled initial backfill for meter %s", self._meter_code)
+
     async def async_setup_costs(self) -> None:
         """Inject cost statistics after sensor entities have been registered.
 
@@ -209,8 +257,19 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         - Pending days saved during first refresh (energy newly fetched but cost
           injection failed because entities were not yet registered).
         - Energy already up to date (e.g. reload triggered by enea_prices install).
+        - Initial backfill running in background: defers cost setup so the task
+          handles costs itself once it finishes and entities are registered.
         """
         yesterday = dt_util.now().date() - timedelta(days=1)
+        if self._backfill_task is not None and not self._backfill_task.done():
+            # Background initial backfill is still running.  It will call
+            # _async_inject_days(set_pending=True) when done, so cost statistics
+            # will be handled then (either directly or via _pending_cost_days).
+            _LOGGER.debug(
+                "Cost setup deferred: initial backfill running for meter %s",
+                self._meter_code,
+            )
+            return
         if self._pending_cost_days:
             days = self._pending_cost_days
             self._pending_cost_days = []

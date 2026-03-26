@@ -51,7 +51,7 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 
 - Coordinator co każde odświeżenie sprawdza aktualność statystyk przez `get_last_statistics` — odpytuje wszystkie aktywne serie (energy_consumed/returned, power_consumed/returned) **równolegle** (`asyncio.gather`) i bierze najnowszą datę.
 - Jeśli nie ma danych do wczoraj — pobiera brakujące dni i wstrzykuje.
-- Backfill przy pierwszym uruchomieniu: konfigurowalny przez użytkownika (7/30/60/90 dni lub "ile się da"); domyślnie "ile się da" (`DEFAULT_BACKFILL_DAYS = BACKFILL_DAYS_MAX = 0`).
+- Backfill przy pierwszym uruchomieniu: zawsze pobiera maksymalną dostępną historię. Odbywa się jako **background task** (`hass.async_create_task`) — nie blokuje pierwszego odświeżenia koordynatora, sensory stają się dostępne natychmiast. Task jest cancellowany przy unload entry (`entry.async_on_unload`).
 - "Ile się da" = gdy `assemblyDate` jest znane — fetch od daty montażu do wczoraj jednym zakresem; gdy nieznane — cofaj się chunkami 180-dniowymi, zatrzymaj gdy początek chunka zawiera 7 kolejnych dni bez danych.
 - Pobieranie danych odbywa się przez **range endpoint** (`/consumption/{id}/{startDate}/{endDate}/{mtype}/{resolution}`), który zwraca dane za wiele dni naraz. Zakres jest dzielony na chunki `RANGE_FETCH_CHUNK_DAYS = 180` dni przetwarzane sekwencyjnie; w każdym chunku 2–4 żądania HTTP są wysyłane **równolegle** (`asyncio.gather`) — po jednym na typ pomiaru. Wydajność: ~2s na 6 miesięcy, ~5.5s na rok.
 - Odpowiedź range endpoint to płaska lista slotów 1-24 (zawsze dokładnie 24 na dzień, niezależnie od DST). `_split_range_response` dzieli ją na per-day dicty z kluczami `{"values": [...], "zones": [...]}` identycznymi ze strukturą single-day endpoint — dzięki temu `has_data`, `_collect_series` i koszty nie wymagają zmian. Dla bardzo dużych zakresów API zwraca dane w `valuesToTable` zamiast `values` — kod sprawdza oba pola.
@@ -298,6 +298,8 @@ Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**
 | `update_interval` | 3h 30min | Interwał odpytywania dashboardu; minimum 30 min |
 | `fetch_consumption` | `True` | Pobieranie statystyk i sensorów energii pobranej |
 | `fetch_generation` | `True` | Pobieranie statystyk i sensorów energii oddanej |
+| `fetch_power_consumption` | `False` | Pobieranie statystyk mocy pobranej (kW) |
+| `fetch_power_generation` | `False` | Pobieranie statystyk mocy oddanej (kW) |
 
 Zmiana opcji powoduje natychmiastowy reload integracji (update listener w `__init__.py`).
 

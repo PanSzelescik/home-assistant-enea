@@ -30,6 +30,8 @@ from .const import (
     CONF_BACKFILL_DAYS,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
+    CONF_FETCH_POWER_CONSUMPTION,
+    CONF_FETCH_POWER_GENERATION,
     CONF_METER_ID,
     CONF_METER_NAME,
     CONF_TARIFF,
@@ -159,6 +161,8 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_UPDATE_INTERVAL: user_input[CONF_UPDATE_INTERVAL],
                         CONF_FETCH_CONSUMPTION: user_input[CONF_FETCH_CONSUMPTION],
                         CONF_FETCH_GENERATION: user_input[CONF_FETCH_GENERATION],
+                        CONF_FETCH_POWER_CONSUMPTION: user_input[CONF_FETCH_POWER_CONSUMPTION],
+                        CONF_FETCH_POWER_GENERATION: user_input[CONF_FETCH_POWER_GENERATION],
                     },
                 )
 
@@ -199,6 +203,8 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): DurationSelector(DurationSelectorConfig(enable_day=False)),
                 vol.Required(CONF_FETCH_CONSUMPTION, default=True): BooleanSelector(),
                 vol.Required(CONF_FETCH_GENERATION, default=True): BooleanSelector(),
+                vol.Required(CONF_FETCH_POWER_CONSUMPTION, default=False): BooleanSelector(),
+                vol.Required(CONF_FETCH_POWER_GENERATION, default=False): BooleanSelector(),
             }
         )
 
@@ -355,6 +361,18 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
                     default=user_input[CONF_FETCH_GENERATION]
                     if user_input
                     else opts.get(CONF_FETCH_GENERATION, True),
+                ): BooleanSelector(),
+                vol.Required(
+                    CONF_FETCH_POWER_CONSUMPTION,
+                    default=user_input[CONF_FETCH_POWER_CONSUMPTION]
+                    if user_input
+                    else opts.get(CONF_FETCH_POWER_CONSUMPTION, False),
+                ): BooleanSelector(),
+                vol.Required(
+                    CONF_FETCH_POWER_GENERATION,
+                    default=user_input[CONF_FETCH_POWER_GENERATION]
+                    if user_input
+                    else opts.get(CONF_FETCH_POWER_GENERATION, False),
                 ): BooleanSelector(),
             }
         )

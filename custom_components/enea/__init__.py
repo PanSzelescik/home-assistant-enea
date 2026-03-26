@@ -19,6 +19,8 @@ from .const import (
     CONF_BACKFILL_DAYS,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
+    CONF_FETCH_POWER_CONSUMPTION,
+    CONF_FETCH_POWER_GENERATION,
     CONF_METER_ID,
     CONF_METER_NAME,
     CONF_UPDATE_INTERVAL,
@@ -74,6 +76,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
         update_interval=update_interval,
         fetch_consumption=entry.options.get(CONF_FETCH_CONSUMPTION, True),
         fetch_generation=entry.options.get(CONF_FETCH_GENERATION, True),
+        fetch_power_consumption=entry.options.get(CONF_FETCH_POWER_CONSUMPTION, False),
+        fetch_power_generation=entry.options.get(CONF_FETCH_POWER_GENERATION, False),
     )
     await update_coordinator.async_config_entry_first_refresh()
 

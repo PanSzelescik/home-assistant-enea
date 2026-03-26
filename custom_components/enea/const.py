@@ -39,6 +39,8 @@ CONF_UPDATE_INTERVAL = "update_interval"
 CONF_BACKFILL_DAYS = "backfill_days"
 CONF_FETCH_CONSUMPTION = "fetch_consumption"
 CONF_FETCH_GENERATION = "fetch_generation"
+CONF_FETCH_POWER_CONSUMPTION = "fetch_power_consumption"
+CONF_FETCH_POWER_GENERATION = "fetch_power_generation"
 
 # ---------------------------------------------------------------------------
 # Sensor keys (must match translation files)

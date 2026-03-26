@@ -51,6 +51,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         update_interval: timedelta,
         fetch_consumption: bool = True,
         fetch_generation: bool = True,
+        fetch_power_consumption: bool = False,
+        fetch_power_generation: bool = False,
     ) -> None:
         super().__init__(
             hass,
@@ -64,6 +66,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._backfill_days = backfill_days
         self._fetch_consumption = fetch_consumption
         self._fetch_generation = fetch_generation
+        self._fetch_power_consumption = fetch_power_consumption
+        self._fetch_power_generation = fetch_power_generation
         self._tariff_name: str | None = None
         self._assembly_datetime: datetime | None = None
         self.cost_sums: dict[str, float] = {}
@@ -71,18 +75,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _get_measurement_types(self) -> list[tuple[str, MeasurementType]]:
         """Return active (key, measurement_type) pairs based on fetch settings."""
-        types: list[tuple[str, MeasurementType]] = []
-        if self._fetch_consumption:
-            types.extend([
-                (STAT_KEY_ENERGY_CONSUMED, MeasurementType.ENERGY_CONSUMED),
-                (STAT_KEY_POWER_CONSUMED, MeasurementType.POWER_CONSUMED),
-            ])
-        if self._fetch_generation:
-            types.extend([
-                (STAT_KEY_ENERGY_RETURNED, MeasurementType.ENERGY_RETURNED),
-                (STAT_KEY_POWER_RETURNED, MeasurementType.POWER_RETURNED),
-            ])
-        return types
+        candidates = [
+            (self._fetch_consumption, STAT_KEY_ENERGY_CONSUMED, MeasurementType.ENERGY_CONSUMED),
+            (self._fetch_generation, STAT_KEY_ENERGY_RETURNED, MeasurementType.ENERGY_RETURNED),
+            (self._fetch_power_consumption, STAT_KEY_POWER_CONSUMED, MeasurementType.POWER_CONSUMED),
+            (self._fetch_power_generation, STAT_KEY_POWER_RETURNED, MeasurementType.POWER_RETURNED),
+        ]
+        return [(key, mtype) for enabled, key, mtype in candidates if enabled]
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch meter data from the API."""

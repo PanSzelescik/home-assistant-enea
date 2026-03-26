@@ -16,13 +16,13 @@ from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .connector import EneaApiClient
 from .const import (
-    CONF_BACKFILL_DAYS,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
+    CONF_FETCH_POWER_CONSUMPTION,
+    CONF_FETCH_POWER_GENERATION,
     CONF_METER_ID,
     CONF_METER_NAME,
     CONF_UPDATE_INTERVAL,
-    DEFAULT_BACKFILL_DAYS,
     DEFAULT_UPDATE_INTERVAL_DICT,
     DOMAIN,
     PLATFORMS,
@@ -70,14 +70,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
         client,
         entry.data[CONF_METER_ID],
         meter_code=entry.data[CONF_METER_NAME],
-        backfill_days=entry.data.get(CONF_BACKFILL_DAYS, DEFAULT_BACKFILL_DAYS),
         update_interval=update_interval,
         fetch_consumption=entry.options.get(CONF_FETCH_CONSUMPTION, True),
         fetch_generation=entry.options.get(CONF_FETCH_GENERATION, True),
+        fetch_power_consumption=entry.options.get(CONF_FETCH_POWER_CONSUMPTION, False),
+        fetch_power_generation=entry.options.get(CONF_FETCH_POWER_GENERATION, False),
     )
-    await update_coordinator.async_config_entry_first_refresh()
-
     entry.runtime_data = EneaRuntimeData(coordinator=update_coordinator)
+    entry.async_on_unload(update_coordinator.cancel_backfill)
+    await update_coordinator.async_config_entry_first_refresh()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_options))
 

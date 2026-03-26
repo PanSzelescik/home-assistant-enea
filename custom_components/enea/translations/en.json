@@ -6,18 +6,22 @@
         "data": {
           "update_interval": "Refresh interval",
           "fetch_consumption": "Fetch consumption statistics",
-          "fetch_generation": "Fetch generation statistics"
+          "fetch_generation": "Fetch generation statistics",
+          "fetch_power_consumption": "Fetch power consumed statistics",
+          "fetch_power_generation": "Fetch power returned statistics"
         },
         "data_description": {
-          "update_interval": "How often to fetch data from the Portal Odbiorcy Enea. Minimum 30 minutes, default 8h 30min.",
+          "update_interval": "How often to fetch data from the Portal Odbiorcy Enea. Minimum 30 minutes, default 3h 30min.",
           "fetch_consumption": "Enable to show energy consumed sensors and import hourly statistics for the Energy Dashboard.",
-          "fetch_generation": "Enable to show energy returned (exported) sensors and import hourly statistics. Disable if you have no solar panels or other generation source."
+          "fetch_generation": "Enable to show energy returned (exported) sensors and import hourly statistics. Disable if you have no solar panels or other generation source.",
+          "fetch_power_consumption": "Enable to import hourly power consumed statistics (kW).",
+          "fetch_power_generation": "Enable to import hourly power returned statistics (kW). Disable if you have no solar panels or other generation source."
         }
       }
     },
     "error": {
       "interval_too_short": "Minimum interval is 30 minutes.",
-      "at_least_one_fetch_type": "At least one of consumption or generation statistics must be enabled."
+      "at_least_one_fetch_type": "At least one statistics type must be enabled (energy consumed, energy returned, power consumed, or power returned)."
     }
   },
   "config": {
@@ -34,19 +38,27 @@
         "title": "Select Energy Meter",
         "description": "Choose the energy meter (PPE) to monitor",
         "data": {
-          "meter_id": "Energy meter",
-          "backfill_days": "History to import (days)",
-          "update_interval": "Refresh interval",
-          "fetch_consumption": "Fetch consumption statistics",
-          "fetch_generation": "Fetch generation statistics"
-        },
-        "data_description": {
-          "update_interval": "How often to fetch data from the Portal Odbiorcy Enea. Minimum 30 minutes, default 8h 30min.",
-          "fetch_consumption": "Enable to show energy consumed sensors and import hourly statistics for the Energy Dashboard.",
-          "fetch_generation": "Enable to show energy returned (exported) sensors and import hourly statistics. Disable if you have no solar panels or other generation source."
+          "meter_id": "Energy meter"
         }
       },
-      "reauth_confirm": {
+      "configure": {
+        "title": "Configure integration",
+        "data": {
+          "update_interval": "Refresh interval",
+          "fetch_consumption": "Fetch consumption statistics",
+          "fetch_generation": "Fetch generation statistics",
+          "fetch_power_consumption": "Fetch power consumed statistics",
+          "fetch_power_generation": "Fetch power returned statistics"
+        },
+        "data_description": {
+          "update_interval": "How often to fetch data from the Portal Odbiorcy Enea. Minimum 30 minutes, default 3h 30min.",
+          "fetch_consumption": "Enable to show energy consumed sensors and import hourly statistics for the Energy Dashboard.",
+          "fetch_generation": "Enable to show energy returned (exported) sensors and import hourly statistics. Disable if you have no solar panels or other generation source.",
+          "fetch_power_consumption": "Enable to import hourly power consumed statistics (kW).",
+          "fetch_power_generation": "Enable to import hourly power returned statistics (kW). Disable if you have no solar panels or other generation source."
+        }
+      },
+      "reauth": {
         "title": "Re-authenticate with Enea",
         "description": "Your credentials are no longer valid (e.g. password was changed). Please enter your current login details.",
         "data": {
@@ -54,7 +66,7 @@
           "password": "Password"
         }
       },
-      "reconfigure_confirm": {
+      "reconfigure": {
         "title": "Update Enea credentials",
         "description": "Enter your new login credentials for the Portal Odbiorcy Enea.",
         "data": {
@@ -67,7 +79,7 @@
       "invalid_auth": "Invalid email address or password",
       "cannot_connect": "Cannot connect to the Portal Odbiorcy Enea. Please check your internet connection.",
       "unknown": "An unexpected error occurred",
-      "at_least_one_fetch_type": "At least one of consumption or generation statistics must be enabled."
+      "at_least_one_fetch_type": "At least one statistics type must be enabled (energy consumed, energy returned, power consumed, or power returned)."
     },
     "abort": {
       "already_configured": "This meter is already configured",

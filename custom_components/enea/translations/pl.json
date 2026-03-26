@@ -6,18 +6,22 @@
         "data": {
           "update_interval": "Interwał odświeżania",
           "fetch_consumption": "Pobieraj statystyki energii pobranej",
-          "fetch_generation": "Pobieraj statystyki energii oddanej"
+          "fetch_generation": "Pobieraj statystyki energii oddanej",
+          "fetch_power_consumption": "Pobieraj statystyki mocy pobranej",
+          "fetch_power_generation": "Pobieraj statystyki mocy oddanej"
         },
         "data_description": {
-          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 8h 30min.",
+          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 3h 30min.",
           "fetch_consumption": "Włącz, aby wyświetlać sensory energii pobranej i importować godzinowe statystyki do Energy Dashboard.",
-          "fetch_generation": "Włącz, aby wyświetlać sensory energii oddanej do sieci i importować godzinowe statystyki. Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji."
+          "fetch_generation": "Włącz, aby wyświetlać sensory energii oddanej do sieci i importować godzinowe statystyki. Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
+          "fetch_power_consumption": "Włącz, aby importować godzinowe statystyki mocy pobranej (kW).",
+          "fetch_power_generation": "Włącz, aby importować godzinowe statystyki mocy oddanej (kW). Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji."
         }
       }
     },
     "error": {
       "interval_too_short": "Minimalny interwał to 30 minut.",
-      "at_least_one_fetch_type": "Przynajmniej jeden z typów statystyk (pobrana lub oddana) musi być włączony."
+      "at_least_one_fetch_type": "Przynajmniej jeden typ statystyk musi być włączony (energia pobrana, oddana lub moc pobrana/oddana)."
     }
   },
   "config": {
@@ -34,19 +38,27 @@
         "title": "Wybierz licznik energii",
         "description": "Wybierz licznik energii (PPE) do monitorowania",
         "data": {
-          "meter_id": "Licznik energii",
-          "backfill_days": "Ile dni historii pobrać",
-          "update_interval": "Interwał odświeżania",
-          "fetch_consumption": "Pobieraj statystyki energii pobranej",
-          "fetch_generation": "Pobieraj statystyki energii oddanej"
-        },
-        "data_description": {
-          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 8h 30min.",
-          "fetch_consumption": "Włącz, aby wyświetlać sensory energii pobranej i importować godzinowe statystyki do Energy Dashboard.",
-          "fetch_generation": "Włącz, aby wyświetlać sensory energii oddanej do sieci i importować godzinowe statystyki. Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji."
+          "meter_id": "Licznik energii"
         }
       },
-      "reauth_confirm": {
+      "configure": {
+        "title": "Skonfiguruj integrację",
+        "data": {
+          "update_interval": "Interwał odświeżania",
+          "fetch_consumption": "Pobieraj statystyki energii pobranej",
+          "fetch_generation": "Pobieraj statystyki energii oddanej",
+          "fetch_power_consumption": "Pobieraj statystyki mocy pobranej",
+          "fetch_power_generation": "Pobieraj statystyki mocy oddanej"
+        },
+        "data_description": {
+          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 3h 30min.",
+          "fetch_consumption": "Włącz, aby wyświetlać sensory energii pobranej i importować godzinowe statystyki do Energy Dashboard.",
+          "fetch_generation": "Włącz, aby wyświetlać sensory energii oddanej do sieci i importować godzinowe statystyki. Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
+          "fetch_power_consumption": "Włącz, aby importować godzinowe statystyki mocy pobranej (kW).",
+          "fetch_power_generation": "Włącz, aby importować godzinowe statystyki mocy oddanej (kW). Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji."
+        }
+      },
+      "reauth": {
         "title": "Ponowna autoryzacja z Enea",
         "description": "Dane logowania są nieprawidłowe (np. hasło zostało zmienione). Wprowadź aktualne dane logowania.",
         "data": {
@@ -54,7 +66,7 @@
           "password": "Hasło"
         }
       },
-      "reconfigure_confirm": {
+      "reconfigure": {
         "title": "Zaktualizuj dane logowania Enea",
         "description": "Wprowadź nowe dane logowania do Portalu Odbiorcy Enea.",
         "data": {
@@ -67,7 +79,7 @@
       "invalid_auth": "Nieprawidłowy adres e-mail lub hasło",
       "cannot_connect": "Nie można połączyć się z Portalem Odbiorcy Enea. Sprawdź połączenie z internetem.",
       "unknown": "Wystąpił nieoczekiwany błąd",
-      "at_least_one_fetch_type": "Przynajmniej jeden z typów statystyk (pobrana lub oddana) musi być włączony."
+      "at_least_one_fetch_type": "Przynajmniej jeden typ statystyk musi być włączony (energia pobrana, oddana lub moc pobrana/oddana)."
     },
     "abort": {
       "already_configured": "Ten licznik jest już skonfigurowany",

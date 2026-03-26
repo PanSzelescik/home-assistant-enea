@@ -241,7 +241,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 exc_info=True,
             )
 
-    def async_cancel_backfill(self) -> None:
+    def cancel_backfill(self) -> None:
         """Cancel the background initial-backfill task if it is still running.
 
         Called on entry unload to prevent the task from running after the

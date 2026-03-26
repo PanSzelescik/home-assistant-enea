@@ -76,10 +76,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
         fetch_power_consumption=entry.options.get(CONF_FETCH_POWER_CONSUMPTION, False),
         fetch_power_generation=entry.options.get(CONF_FETCH_POWER_GENERATION, False),
     )
-    await update_coordinator.async_config_entry_first_refresh()
-
     entry.runtime_data = EneaRuntimeData(coordinator=update_coordinator)
-    entry.async_on_unload(update_coordinator.async_cancel_backfill)
+    entry.async_on_unload(update_coordinator.cancel_backfill)
+    await update_coordinator.async_config_entry_first_refresh()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_options))
 

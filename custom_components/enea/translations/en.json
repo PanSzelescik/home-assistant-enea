@@ -67,7 +67,7 @@
           "password": "Password"
         }
       },
-      "reconfigure_confirm": {
+      "reconfigure": {
         "title": "Update Enea credentials",
         "description": "Enter your new login credentials for the Portal Odbiorcy Enea.",
         "data": {

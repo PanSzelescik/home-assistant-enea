@@ -297,15 +297,9 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return None
 
     async def async_step_reconfigure(
-        self, _user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Handle user-initiated reconfiguration (credential update)."""
-        return await self.async_step_reconfigure_confirm()
-
-    async def async_step_reconfigure_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Handle reconfiguration confirmation."""
+        """Handle user-initiated reconfiguration (credential update)."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -318,7 +312,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason=ABORT_RECONFIGURE_SUCCESSFUL)
 
         return self.async_show_form(
-            step_id="reconfigure_confirm",
+            step_id="reconfigure",
             data_schema=STEP_USER_SCHEMA,
             errors=errors,
         )

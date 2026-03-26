@@ -67,7 +67,7 @@
           "password": "Hasło"
         }
       },
-      "reconfigure_confirm": {
+      "reconfigure": {
         "title": "Zaktualizuj dane logowania Enea",
         "description": "Wprowadź nowe dane logowania do Portalu Odbiorcy Enea.",
         "data": {

@@ -200,6 +200,7 @@ W przypadku problemów pobierz raport diagnostyczny (hasło i adres są automaty
 - Odczyty energii są wartościami skumulowanymi — przy wymianie licznika nowe urządzenie zaczyna od 0; integracja automatycznie wykrywa datę i godzinę montażu aktualnego licznika i importuje tylko dane z godzin po montażu, więc historia zaczyna się od momentu wymiany
 - Dni z zerowym zużyciem są uwzględniane w statystykach — nie wpływa to na poprawność sum, ponieważ zero nie zmienia wartości skumulowanej
 - Integracja była testowana wyłącznie na taryfie **G12**; działanie na G11, G12w i G13 jest możliwe, ale niezweryfikowane
+- Portal Odbiorcy Enea korzysta ze wspólnej platformy obsługującej również innych operatorów — PGE, EDF (E.ON), Lumen, DSR, PGE PWI, Mondi — integracja **może** działać z ich portalami po zmianie adresu bazowego API, ale nie zostało to zweryfikowane
 
 ## Rozwiązywanie problemów
 

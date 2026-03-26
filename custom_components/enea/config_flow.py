@@ -97,35 +97,10 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            session = async_create_clientsession(self.hass)
-            connector = EneaApiClient(
-                session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
-            )
-            try:
-                await connector.authenticate()
-                meters = await connector.get_meters()
-                dashboards = await asyncio.gather(
-                    *[connector.get_ppe_dashboard(m["id"]) for m in meters],
-                    return_exceptions=True,
-                )
-            except EneaAuthError:
-                errors["base"] = ERROR_INVALID_AUTH
-            except EneaApiError:
-                errors["base"] = ERROR_CANNOT_CONNECT
-            except Exception as err:
-                _LOGGER.error("Unexpected error during Enea login", exc_info=err)
-                errors["base"] = ERROR_UNKNOWN
-            else:
-                self._username = user_input[CONF_USERNAME]
-                self._password = user_input[CONF_PASSWORD]
-                self._meters = meters
-                self._dashboards = {
-                    m["id"]: d
-                    for m, d in zip(meters, dashboards)
-                    if isinstance(d, dict)
-                }
-                if len(meters) == 1:
-                    self._selected_meter = meters[0]
+            errors = await self._async_login(user_input)
+            if not errors:
+                if len(self._meters) == 1:
+                    self._selected_meter = self._meters[0]
                     return await self.async_step_configure()
                 return await self.async_step_select_meter()
 
@@ -134,6 +109,41 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=STEP_USER_SCHEMA,
             errors=errors,
         )
+
+    async def _async_login(self, user_input: dict[str, Any]) -> dict[str, str]:
+        """Authenticate with the API and load the meter list with dashboards.
+
+        On success updates self._username/_password/_meters/_dashboards and
+        returns an empty dict.  On failure returns an errors dict for the form.
+        """
+        session = async_create_clientsession(self.hass)
+        connector = EneaApiClient(
+            session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+        )
+        try:
+            await connector.authenticate()
+            meters = await connector.get_meters()
+            dashboards = await asyncio.gather(
+                *[connector.get_ppe_dashboard(m["id"]) for m in meters],
+                return_exceptions=True,
+            )
+        except EneaAuthError:
+            return {"base": ERROR_INVALID_AUTH}
+        except EneaApiError:
+            return {"base": ERROR_CANNOT_CONNECT}
+        except Exception as err:
+            _LOGGER.error("Unexpected error during Enea login", exc_info=err)
+            return {"base": ERROR_UNKNOWN}
+
+        self._username = user_input[CONF_USERNAME]
+        self._password = user_input[CONF_PASSWORD]
+        self._meters = meters
+        self._dashboards = {
+            m["id"]: d
+            for m, d in zip(meters, dashboards)
+            if isinstance(d, dict)
+        }
+        return {}
 
     async def async_step_select_meter(
         self, user_input: dict[str, Any] | None = None

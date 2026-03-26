@@ -10,6 +10,7 @@
   4. **Defaults** — `DEFAULT_*`
   5. **Statistics API** — `MEASUREMENT_ID_*`, `MeasurementType`, `Resolution`, `BACKFILL_*`, `RANGE_FETCH_CHUNK_DAYS`
 - Każda nowa funkcja, metoda i klasa musi mieć **docstring**.
+- **Nie twórz metod będących wyłącznie wrapperami** — jeśli metoda X robi tylko `return await self.Y()`, spłaszcz X i Y w jedną metodę. Wyjątek: gdy HA wymusza nazwę metody jako punkt wejścia (np. `async_step_reauth` z `entry_data`), użyj rozróżnienia po zawartości parametru zamiast tworzyć osobną metodę `_confirm`.
 
 ## Konwencje nazewnictwa
 

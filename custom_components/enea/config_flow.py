@@ -297,52 +297,50 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.hass.config_entries.async_reload(entry.entry_id)
         return None
 
+    async def _async_credentials_step(
+        self,
+        user_input: dict[str, Any] | None,
+        step_id: str,
+        entry: config_entries.ConfigEntry,
+        abort_reason: str,
+    ) -> config_entries.ConfigFlowResult:
+        """Shared logic for credential-update steps (reconfigure and reauth).
+
+        Shows STEP_USER_SCHEMA, validates on submit, aborts on success.
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = await self._async_validate_and_update_credentials(
+                entry, user_input, f"Unexpected error during Enea {step_id}"
+            ) or {}
+            if not errors:
+                return self.async_abort(reason=abort_reason)
+        return self.async_show_form(
+            step_id=step_id, data_schema=STEP_USER_SCHEMA, errors=errors
+        )
+
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Handle user-initiated reconfiguration (credential update)."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            errors = await self._async_validate_and_update_credentials(
-                self._get_reconfigure_entry(),
-                user_input,
-                "Unexpected error during Enea reconfigure",
-            ) or {}
-            if not errors:
-                return self.async_abort(reason=ABORT_RECONFIGURE_SUCCESSFUL)
-
-        return self.async_show_form(
-            step_id="reconfigure",
-            data_schema=STEP_USER_SCHEMA,
-            errors=errors,
+        return await self._async_credentials_step(
+            user_input, "reconfigure", self._get_reconfigure_entry(), ABORT_RECONFIGURE_SUCCESSFUL
         )
 
     async def async_step_reauth(
-        self, _entry_data: dict[str, Any]
+        self, entry_data: Mapping[str, Any]
     ) -> config_entries.ConfigFlowResult:
-        """Handle re-authentication."""
-        return await self.async_step_reauth_confirm()
+        """Handle re-authentication triggered by an auth failure.
 
-    async def async_step_reauth_confirm(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Handle re-authentication confirmation."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            errors = await self._async_validate_and_update_credentials(
-                self._get_reauth_entry(),
-                user_input,
-                "Unexpected error during Enea re-auth",
-            ) or {}
-            if not errors:
-                return self.async_abort(reason=ABORT_REAUTH_SUCCESSFUL)
-
-        return self.async_show_form(
-            step_id="reauth_confirm",
-            data_schema=STEP_USER_SCHEMA,
-            errors=errors,
+        HA triggers this initially with the full config entry data (which contains
+        CONF_METER_ID). On form submission it is called again with only the
+        credentials fields, so we distinguish the two by checking for CONF_METER_ID.
+        """
+        credentials: dict[str, Any] | None = (
+            None if CONF_METER_ID in entry_data else dict(entry_data)
+        )
+        return await self._async_credentials_step(
+            credentials, "reauth", self._get_reauth_entry(), ABORT_REAUTH_SUCCESSFUL
         )
 
 

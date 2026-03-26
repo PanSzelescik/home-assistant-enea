@@ -58,7 +58,7 @@
           "fetch_power_generation": "Włącz, aby importować godzinowe statystyki mocy oddanej (kW). Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji."
         }
       },
-      "reauth_confirm": {
+      "reauth": {
         "title": "Ponowna autoryzacja z Enea",
         "description": "Dane logowania są nieprawidłowe (np. hasło zostało zmienione). Wprowadź aktualne dane logowania.",
         "data": {

@@ -58,7 +58,7 @@
           "fetch_power_generation": "Enable to import hourly power returned statistics (kW). Disable if you have no solar panels or other generation source."
         }
       },
-      "reauth_confirm": {
+      "reauth": {
         "title": "Re-authenticate with Enea",
         "description": "Your credentials are no longer valid (e.g. password was changed). Please enter your current login details.",
         "data": {

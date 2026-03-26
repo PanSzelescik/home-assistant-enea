@@ -301,6 +301,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         cost stat date and fetches/injects any missing days.  Also populates
         coordinator.cost_sums from the DB when everything is already current.
         """
+        if not (self._fetch_consumption or self._fetch_generation):
+            # Costs are derived from energy data; nothing to do in power-only mode.
+            return
         tariff = find_tariff_group(self.hass, self._tariff_name)
         if tariff is None:
             return

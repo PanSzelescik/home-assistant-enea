@@ -11,7 +11,7 @@
           "fetch_power_generation": "Pobieraj statystyki mocy oddanej"
         },
         "data_description": {
-          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 8h 30min.",
+          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 3h 30min.",
           "fetch_consumption": "Włącz, aby wyświetlać sensory energii pobranej i importować godzinowe statystyki do Energy Dashboard.",
           "fetch_generation": "Włącz, aby wyświetlać sensory energii oddanej do sieci i importować godzinowe statystyki. Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
           "fetch_power_consumption": "Włącz, aby importować godzinowe statystyki mocy pobranej (kW).",
@@ -51,7 +51,7 @@
           "fetch_power_generation": "Pobieraj statystyki mocy oddanej"
         },
         "data_description": {
-          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 8h 30min.",
+          "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 3h 30min.",
           "fetch_consumption": "Włącz, aby wyświetlać sensory energii pobranej i importować godzinowe statystyki do Energy Dashboard.",
           "fetch_generation": "Włącz, aby wyświetlać sensory energii oddanej do sieci i importować godzinowe statystyki. Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
           "fetch_power_consumption": "Włącz, aby importować godzinowe statystyki mocy pobranej (kW).",

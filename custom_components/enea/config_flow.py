@@ -348,11 +348,20 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle re-authentication triggered by an auth failure.
 
         HA triggers this initially with the full config entry data (which contains
-        CONF_METER_ID). On form submission it is called again with only the
-        credentials fields, so we distinguish the two by checking for CONF_METER_ID.
+        CONF_METER_ID and CONF_USERNAME). On form submission it is called again
+        with only the credential fields (CONF_USERNAME + CONF_PASSWORD, no
+        CONF_METER_ID).  We treat a payload as a form submission only when it
+        carries both credential keys but not CONF_METER_ID, so that an
+        unexpected or minimal initial payload never reaches credential validation.
         """
         credentials: dict[str, Any] | None = (
-            None if CONF_METER_ID in entry_data else dict(entry_data)
+            dict(entry_data)
+            if (
+                CONF_USERNAME in entry_data
+                and CONF_PASSWORD in entry_data
+                and CONF_METER_ID not in entry_data
+            )
+            else None
         )
         return await self._async_credentials_step(
             credentials, "reauth", self._get_reauth_entry(), ABORT_REAUTH_SUCCESSFUL

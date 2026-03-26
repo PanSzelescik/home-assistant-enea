@@ -11,7 +11,7 @@
           "fetch_power_generation": "Fetch power returned statistics"
         },
         "data_description": {
-          "update_interval": "How often to fetch data from the Portal Odbiorcy Enea. Minimum 30 minutes, default 8h 30min.",
+          "update_interval": "How often to fetch data from the Portal Odbiorcy Enea. Minimum 30 minutes, default 3h 30min.",
           "fetch_consumption": "Enable to show energy consumed sensors and import hourly statistics for the Energy Dashboard.",
           "fetch_generation": "Enable to show energy returned (exported) sensors and import hourly statistics. Disable if you have no solar panels or other generation source.",
           "fetch_power_consumption": "Enable to import hourly power consumed statistics (kW).",
@@ -51,7 +51,7 @@
           "fetch_power_generation": "Fetch power returned statistics"
         },
         "data_description": {
-          "update_interval": "How often to fetch data from the Portal Odbiorcy Enea. Minimum 30 minutes, default 8h 30min.",
+          "update_interval": "How often to fetch data from the Portal Odbiorcy Enea. Minimum 30 minutes, default 3h 30min.",
           "fetch_consumption": "Enable to show energy consumed sensors and import hourly statistics for the Energy Dashboard.",
           "fetch_generation": "Enable to show energy returned (exported) sensors and import hourly statistics. Disable if you have no solar panels or other generation source.",
           "fetch_power_consumption": "Enable to import hourly power consumed statistics (kW).",

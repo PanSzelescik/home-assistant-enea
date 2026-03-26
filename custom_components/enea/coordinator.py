@@ -402,7 +402,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Split each measurement-type response into per-day dicts.
         per_key_days: dict[str, dict[date, dict[str, Any]]] = {}
-        first_exc: Exception | None = None
+        first_exc: BaseException | None = None
         for (key, mtype), result in zip(keys_and_types, results):
             if isinstance(result, BaseException):
                 if isinstance(result, asyncio.CancelledError):
@@ -412,7 +412,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     key, mtype, start_date, end_date, result,
                     exc_info=True,
                 )
-                if first_exc is None and isinstance(result, Exception):
+                if first_exc is None:
                     first_exc = result
             else:
                 per_key_days[key] = self._split_range_response(
@@ -421,8 +421,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if not per_key_days:
             # All measurement-type requests failed — propagate to the caller.
-            assert first_exc is not None
-            raise first_exc
+            if first_exc is not None:
+                raise first_exc
+            raise EneaApiError("All range requests failed")
 
         # Merge: for each date present in any key, build unified day_data dict.
         all_dates: set[date] = set()

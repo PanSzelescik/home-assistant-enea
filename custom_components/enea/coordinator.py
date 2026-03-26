@@ -203,9 +203,12 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if sums:
                 self.cost_sums.update(sums)
-            elif set_pending:
+            elif set_pending and (self._fetch_consumption or self._fetch_generation):
                 # Cost sensor entities not yet registered (setup still in
                 # progress); save days for async_setup_costs() called later.
+                # Guard: skip when energy fetching is disabled (power-only mode)
+                # — async_insert_cost_statistics returns {} in that case too,
+                # but there is nothing to retry.
                 self._pending_cost_days = all_days
 
     async def _async_do_initial_backfill(self, yesterday: date) -> None:
@@ -260,6 +263,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         - Initial backfill running in background: defers cost setup so the task
           handles costs itself once it finishes and entities are registered.
         """
+        if not (self._fetch_consumption or self._fetch_generation):
+            # Costs are derived from energy data; nothing to do in power-only mode.
+            return
         yesterday = dt_util.now().date() - timedelta(days=1)
         if self._backfill_task is not None and not self._backfill_task.done():
             # Background initial backfill is still running.  It will call

@@ -93,7 +93,7 @@ class MeasurementType(IntEnum):
 
 
 class Resolution(IntEnum):
-    """API resolution identifiers (minutes per slot)."""
+    """API resolution codes (1 = 15-minute slots, 2 = 60-minute slots)."""
 
     MIN_15 = 1
     MIN_60 = 2

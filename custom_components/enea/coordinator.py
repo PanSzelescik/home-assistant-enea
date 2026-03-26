@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder.statistics import get_last_statistics
@@ -328,7 +328,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         falls back to 'valuesToTable' (the `or` operator treats [] as falsy).
 
         Only supports Resolution.MIN_60 responses (RANGE_SLOTS_PER_DAY = 24
-        slots per day).
+        slots per day).  Raises ValueError if the entry count is not a
+        multiple of RANGE_SLOTS_PER_DAY.
 
         Args:
             api_response: Raw API response from the range endpoint.
@@ -346,11 +347,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         result: dict[date, dict[str, Any]] = {}
 
         if len(entries) % RANGE_SLOTS_PER_DAY != 0:
-            _LOGGER.warning(
-                "Range response has %d entries — not a multiple of %d; "
-                "trailing incomplete day will be ignored",
-                len(entries),
-                RANGE_SLOTS_PER_DAY,
+            raise ValueError(
+                f"Range response has {len(entries)} entries — not a multiple of "
+                f"{RANGE_SLOTS_PER_DAY}. Only Resolution.MIN_60 responses are "
+                f"supported by this method."
             )
 
         num_days = len(entries) // RANGE_SLOTS_PER_DAY
@@ -402,17 +402,22 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Split each measurement-type response into per-day dicts.
         per_key_days: dict[str, dict[date, dict[str, Any]]] = {}
-        first_exc: BaseException | None = None
+        first_exc: Exception | None = None
         for (key, mtype), result in zip(keys_and_types, results):
             if isinstance(result, BaseException):
+                if isinstance(result, asyncio.CancelledError):
+                    raise result  # propagate cancellation so shutdown/reload can proceed
                 _LOGGER.warning(
                     "Range stats request failed for key=%s type=%d (%s–%s): %s",
                     key, mtype, start_date, end_date, result,
+                    exc_info=True,
                 )
-                if first_exc is None:
+                if first_exc is None and isinstance(result, Exception):
                     first_exc = result
             else:
-                per_key_days[key] = self._split_range_response(result, start_date)
+                per_key_days[key] = self._split_range_response(
+                    cast(dict[str, Any], result), start_date
+                )
 
         if not per_key_days:
             # All measurement-type requests failed — propagate to the caller.

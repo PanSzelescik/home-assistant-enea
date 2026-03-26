@@ -21,7 +21,7 @@
     },
     "error": {
       "interval_too_short": "Minimum interval is 30 minutes.",
-      "at_least_one_fetch_type": "At least one of consumption or generation statistics must be enabled."
+      "at_least_one_fetch_type": "At least one statistics type must be enabled (energy consumed, energy returned, power consumed, or power returned)."
     }
   },
   "config": {
@@ -79,7 +79,7 @@
       "invalid_auth": "Invalid email address or password",
       "cannot_connect": "Cannot connect to the Portal Odbiorcy Enea. Please check your internet connection.",
       "unknown": "An unexpected error occurred",
-      "at_least_one_fetch_type": "At least one of consumption or generation statistics must be enabled."
+      "at_least_one_fetch_type": "At least one statistics type must be enabled (energy consumed, energy returned, power consumed, or power returned)."
     },
     "abort": {
       "already_configured": "This meter is already configured",

@@ -21,7 +21,7 @@
     },
     "error": {
       "interval_too_short": "Minimalny interwał to 30 minut.",
-      "at_least_one_fetch_type": "Przynajmniej jeden z typów statystyk (pobrana lub oddana) musi być włączony."
+      "at_least_one_fetch_type": "Przynajmniej jeden typ statystyk musi być włączony (energia pobrana, oddana lub moc pobrana/oddana)."
     }
   },
   "config": {
@@ -79,7 +79,7 @@
       "invalid_auth": "Nieprawidłowy adres e-mail lub hasło",
       "cannot_connect": "Nie można połączyć się z Portalem Odbiorcy Enea. Sprawdź połączenie z internetem.",
       "unknown": "Wystąpił nieoczekiwany błąd",
-      "at_least_one_fetch_type": "Przynajmniej jeden z typów statystyk (pobrana lub oddana) musi być włączony."
+      "at_least_one_fetch_type": "Przynajmniej jeden typ statystyk musi być włączony (energia pobrana, oddana lub moc pobrana/oddana)."
     },
     "abort": {
       "already_configured": "Ten licznik jest już skonfigurowany",

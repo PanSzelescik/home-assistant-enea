@@ -137,23 +137,26 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         returns an empty dict.  On failure returns an errors dict for the form.
         """
         session = async_create_clientsession(self.hass)
-        connector = EneaApiClient(
-            session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
-        )
         try:
-            await connector.authenticate()
-            meters = await connector.get_meters()
-            dashboards = await asyncio.gather(
-                *[connector.get_ppe_dashboard(m["id"]) for m in meters],
-                return_exceptions=True,
+            connector = EneaApiClient(
+                session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
             )
-        except EneaAuthError:
-            return {"base": ERROR_INVALID_AUTH}
-        except EneaApiError:
-            return {"base": ERROR_CANNOT_CONNECT}
-        except Exception as err:
-            _LOGGER.error("Unexpected error during Enea login", exc_info=err)
-            return {"base": ERROR_UNKNOWN}
+            try:
+                await connector.authenticate()
+                meters = await connector.get_meters()
+                dashboards = await asyncio.gather(
+                    *[connector.get_ppe_dashboard(m["id"]) for m in meters],
+                    return_exceptions=True,
+                )
+            except EneaAuthError:
+                return {"base": ERROR_INVALID_AUTH}
+            except EneaApiError:
+                return {"base": ERROR_CANNOT_CONNECT}
+            except Exception as err:
+                _LOGGER.error("Unexpected error during Enea login", exc_info=err)
+                return {"base": ERROR_UNKNOWN}
+        finally:
+            await session.close()
 
         self._username = user_input[CONF_USERNAME]
         self._password = user_input[CONF_PASSWORD]
@@ -217,7 +220,14 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason=ERROR_UNKNOWN)
 
         if user_input is not None:
-            if not (
+            duration = user_input[CONF_UPDATE_INTERVAL]
+            total_minutes = (
+                int(duration.get("hours", 0)) * 60
+                + int(duration.get("minutes", 0))
+            )
+            if total_minutes < MIN_UPDATE_INTERVAL_MINUTES:
+                errors[CONF_UPDATE_INTERVAL] = ERROR_INTERVAL_TOO_SHORT
+            elif not (
                 user_input.get(CONF_FETCH_CONSUMPTION)
                 or user_input.get(CONF_FETCH_GENERATION)
                 or user_input.get(CONF_FETCH_POWER_CONSUMPTION)
@@ -246,7 +256,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
 
-        schema = _options_schema({})
+        schema = _options_schema(user_input if user_input else {})
 
         return self.async_show_form(
             step_id="configure",
@@ -275,18 +285,21 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         On success, the entry is updated in place and reloaded.
         """
         session = async_create_clientsession(self.hass)
-        connector = EneaApiClient(
-            session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
-        )
         try:
-            await connector.authenticate()
-        except EneaAuthError:
-            return {"base": ERROR_INVALID_AUTH}
-        except EneaApiError:
-            return {"base": ERROR_CANNOT_CONNECT}
-        except Exception as err:
-            _LOGGER.error(error_log_msg, exc_info=err)
-            return {"base": ERROR_UNKNOWN}
+            connector = EneaApiClient(
+                session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+            )
+            try:
+                await connector.authenticate()
+            except EneaAuthError:
+                return {"base": ERROR_INVALID_AUTH}
+            except EneaApiError:
+                return {"base": ERROR_CANNOT_CONNECT}
+            except Exception as err:
+                _LOGGER.error(error_log_msg, exc_info=err)
+                return {"base": ERROR_UNKNOWN}
+        finally:
+            await session.close()
 
         self.hass.config_entries.async_update_entry(
             entry,

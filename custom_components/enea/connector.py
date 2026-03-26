@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Awaitable
+from collections.abc import AsyncGenerator, Awaitable
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from homeassistant.util import dt as dt_util
@@ -13,11 +13,13 @@ from homeassistant.util import dt as dt_util
 import aiohttp
 
 from .const import (
-    CONST_URL_CONSUMPTION,
+    CONST_URL_CONSUMPTION_RANGE,
     CONST_URL_LOGIN,
     CONST_URL_PPE_DASHBOARD,
     CONST_URL_PPES,
     METERS_CACHE_TTL,
+    MeasurementType,
+    Resolution,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,6 +31,34 @@ class EneaApiError(Exception):
 
 class EneaAuthError(EneaApiError):
     """Authentication failure (bad credentials or session expired)."""
+
+
+@asynccontextmanager
+async def _fetch(
+    coro: Awaitable[aiohttp.ClientResponse],
+) -> AsyncGenerator[aiohttp.ClientResponse, None]:
+    """Async context manager that issues a request and translates connection errors.
+
+    Automatically releases the response on exit, so callers never need to
+    call resp.release() manually.
+    """
+    try:
+        resp = await coro
+    except aiohttp.ClientConnectorCertificateError as err:
+        raise EneaApiError(
+            f"SSL certificate error for Portal Odbiorcy Enea"
+            f" (certificate may have expired): {err}"
+        ) from err
+    except aiohttp.ClientSSLError as err:
+        raise EneaApiError(
+            f"SSL error connecting to Portal Odbiorcy Enea: {err}"
+        ) from err
+    except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as err:
+        raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+    try:
+        yield resp
+    finally:
+        resp.release()
 
 
 class EneaApiClient:
@@ -54,34 +84,6 @@ class EneaApiClient:
         """Return True if the underlying aiohttp session has been closed."""
         return self._session.closed
 
-    @asynccontextmanager
-    async def _fetch(
-        self,
-        coro: Awaitable[aiohttp.ClientResponse],
-    ) -> AsyncIterator[aiohttp.ClientResponse]:
-        """Async context manager that issues a request and translates connection errors.
-
-        Automatically releases the response on exit, so callers never need to
-        call resp.release() manually.
-        """
-        try:
-            resp = await coro
-        except aiohttp.ClientConnectorCertificateError as err:
-            raise EneaApiError(
-                f"SSL certificate error for Portal Odbiorcy Enea"
-                f" (certificate may have expired): {err}"
-            ) from err
-        except aiohttp.ClientSSLError as err:
-            raise EneaApiError(
-                f"SSL error connecting to Portal Odbiorcy Enea: {err}"
-            ) from err
-        except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as err:
-            raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
-        try:
-            yield resp
-        finally:
-            resp.release()
-
     @staticmethod
     async def _parse_response(resp: aiohttp.ClientResponse, label: str) -> Any:
         """Check response status and return the parsed JSON body."""
@@ -102,7 +104,7 @@ class EneaApiClient:
 
     async def authenticate(self) -> None:
         """Log in to the Portal Odbiorcy Enea and store the session cookie."""
-        async with self._fetch(
+        async with _fetch(
             self._session.post(
                 CONST_URL_LOGIN,
                 json={"username": self._username, "password": self._password},
@@ -122,7 +124,7 @@ class EneaApiClient:
             await self.authenticate()
 
         auth_gen = self._auth_gen
-        async with self._fetch(self._session.get(url)) as resp:
+        async with _fetch(self._session.get(url)) as resp:
             if resp.status not in (401, 403):
                 return await self._parse_response(resp, label)
 
@@ -135,7 +137,7 @@ class EneaApiClient:
                 self._meters_cache_time = None
                 await self.authenticate()
 
-        async with self._fetch(self._session.get(url)) as resp:
+        async with _fetch(self._session.get(url)) as resp:
             return await self._parse_response(resp, label)
 
     async def get_meters(self) -> list[dict[str, Any]]:
@@ -163,29 +165,42 @@ class EneaApiClient:
         url = CONST_URL_PPE_DASHBOARD.format(meter_id=meter_id)
         return await self._request(url, "dashboard")
 
-    async def get_consumption_data(
+    async def get_consumption_data_range(
         self,
         meter_id: int,
-        date: str,
-        measurement_type: int,
-        resolution: int = 1,
+        start_date: date,
+        end_date: date,
+        measurement_type: MeasurementType,
+        resolution: Resolution,
     ) -> dict[str, Any]:
-        """Return 15-min or 60-min consumption/power data for a specific date.
+        """Return consumption/power data for a date range at the given resolution.
+
+        The response has the same structure as the single-day endpoint but
+        contains resolution-dependent timeId slots per day, repeating for each
+        day in the range.  For very large ranges, data may appear in
+        'valuesToTable' instead of 'values' (same structure, different key).
 
         Args:
             meter_id: PPE identifier.
-            date: Date string in YYYY-MM-DD format.
-            measurement_type: 1=energy consumed, 5=energy returned,
-                              4=power consumed, 9=power returned.
-            resolution: 1=15-minute (96 entries), 2=60-minute (24 entries).
+            start_date: Start date (inclusive).
+            end_date: End date (inclusive); must be >= start_date.
+            measurement_type: MeasurementType (1=energy consumed, 5=energy returned,
+                              4=power consumed, 9=power returned).
+            resolution: Resolution (1=15-min/96 entries per day,
+                        2=60-min/24 entries per day).
         """
-        url = CONST_URL_CONSUMPTION.format(
+        if start_date > end_date:
+            raise ValueError(
+                f"start_date ({start_date}) must be <= end_date ({end_date})"
+            )
+        url = CONST_URL_CONSUMPTION_RANGE.format(
             meter_id=meter_id,
-            date=date,
+            start_date=start_date.isoformat(),
+            end_date=end_date.isoformat(),
             measurement_type=measurement_type,
             resolution=resolution,
         )
-        return await self._request(url, "consumption")
+        return await self._request(url, "consumption_range")
 
 
 def get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:

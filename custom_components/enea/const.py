@@ -1,5 +1,6 @@
 """Constants for the Enea Energy Meter integration."""
 from datetime import timedelta
+from enum import IntEnum
 
 from homeassistant.const import Platform
 
@@ -21,10 +22,10 @@ CONST_URL_LOGIN = f"{CONST_BASE_URL}/auth/login"
 CONST_URL_PPES = f"{CONST_BASE_URL}/user/ppes"
 CONST_URL_PPE_DASHBOARD = f"{CONST_BASE_URL}/consumptionDashboard/ppe/{{meter_id}}"
 
-# endpoint /consumption/{meter_id}/1/{date}/{measurement_type}/{resolution}
-CONST_URL_CONSUMPTION = (
+# endpoint /consumption/{meter_id}/{start_date}/{end_date}/{measurement_type}/{resolution}
+CONST_URL_CONSUMPTION_RANGE = (
     f"{CONST_BASE_URL}"
-    "/consumption/{meter_id}/1/{date}/{measurement_type}/{resolution}"
+    "/consumption/{meter_id}/{start_date}/{end_date}/{measurement_type}/{resolution}"
 )
 
 # ---------------------------------------------------------------------------
@@ -82,16 +83,25 @@ METERS_CACHE_TTL = timedelta(minutes=5)
 MEASUREMENT_ID_CONSUMPTION = 1
 MEASUREMENT_ID_GENERATION = 2
 
-STATS_ENERGY_CONSUMED = 1
-STATS_ENERGY_RETURNED = 5
-STATS_POWER_CONSUMED = 4
-STATS_POWER_RETURNED = 9
+class MeasurementType(IntEnum):
+    """API measurement type identifiers."""
 
-STATS_RESOLUTION_15MIN = 1
-STATS_RESOLUTION_60MIN = 2
+    ENERGY_CONSUMED = 1
+    ENERGY_RETURNED = 5
+    POWER_CONSUMED = 4
+    POWER_RETURNED = 9
+
+
+class Resolution(IntEnum):
+    """API resolution codes (1 = 15-minute slots, 2 = 60-minute slots)."""
+
+    MIN_15 = 1
+    MIN_60 = 2
 
 BACKFILL_DAYS_MAX = 0  # sentinel: fetch as far back as data is available
 BACKFILL_MAX_CONSECUTIVE_EMPTY = 7  # stop after this many consecutive days with no data
+RANGE_FETCH_CHUNK_DAYS = 180  # max days per single range request (~6 months)
+RANGE_SLOTS_PER_DAY = 24  # hourly slots per day in resolution=2 responses
 
 STAT_KEY_ENERGY_CONSUMED = "energy_consumed"
 STAT_KEY_ENERGY_RETURNED = "energy_returned"

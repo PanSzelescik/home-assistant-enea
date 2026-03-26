@@ -49,6 +49,14 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+BACKFILL_OPTIONS = [
+    SelectOptionDict(value="7", label="7 dni"),
+    SelectOptionDict(value="30", label="30 dni"),
+    SelectOptionDict(value="60", label="60 dni"),
+    SelectOptionDict(value="90", label="90 dni"),
+    SelectOptionDict(value="0", label="Maksymalnie (ile się da)"),
+]
+
 STEP_USER_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME): TextSelector(
@@ -79,7 +87,6 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._username: str | None = None
         self._password: str | None = None
         self._meters: list[dict[str, Any]] = []
-        self._connector: EneaApiClient | None = None
         self._dashboards: dict[int, dict[str, Any]] = {}
         self._selected_meter: dict[str, Any] | None = None
 
@@ -112,7 +119,6 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._username = user_input[CONF_USERNAME]
                 self._password = user_input[CONF_PASSWORD]
                 self._meters = meters
-                self._connector = connector
                 self._dashboards = {
                     m["id"]: d
                     for m, d in zip(meters, dashboards)
@@ -209,21 +215,13 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
 
-        backfill_options = [
-            SelectOptionDict(value="7", label="7 dni"),
-            SelectOptionDict(value="30", label="30 dni"),
-            SelectOptionDict(value="60", label="60 dni"),
-            SelectOptionDict(value="90", label="90 dni"),
-            SelectOptionDict(value="0", label="Maksymalnie (ile się da)"),
-        ]
-
         schema = vol.Schema(
             {
                 vol.Required(
                     CONF_BACKFILL_DAYS, default=str(DEFAULT_BACKFILL_DAYS)
                 ): SelectSelector(
                     SelectSelectorConfig(
-                        options=backfill_options,
+                        options=BACKFILL_OPTIONS,
                         mode=SelectSelectorMode.LIST,
                     )
                 ),
@@ -369,39 +367,32 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
                 return self.async_create_entry(data=user_input)
 
         opts = self.config_entry.options
-        current_interval = opts.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_DICT)
+
+        def _val(key: str, fallback: object) -> object:
+            """Return submitted value on re-render after error, otherwise current option."""
+            return user_input[key] if user_input else opts.get(key, fallback)
 
         schema = vol.Schema(
             {
                 vol.Required(
                     CONF_UPDATE_INTERVAL,
-                    default=user_input[CONF_UPDATE_INTERVAL]
-                    if user_input
-                    else current_interval,
+                    default=_val(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_DICT),
                 ): DurationSelector(DurationSelectorConfig(enable_day=False)),
                 vol.Required(
                     CONF_FETCH_CONSUMPTION,
-                    default=user_input[CONF_FETCH_CONSUMPTION]
-                    if user_input
-                    else opts.get(CONF_FETCH_CONSUMPTION, True),
+                    default=_val(CONF_FETCH_CONSUMPTION, True),
                 ): BooleanSelector(),
                 vol.Required(
                     CONF_FETCH_GENERATION,
-                    default=user_input[CONF_FETCH_GENERATION]
-                    if user_input
-                    else opts.get(CONF_FETCH_GENERATION, True),
+                    default=_val(CONF_FETCH_GENERATION, True),
                 ): BooleanSelector(),
                 vol.Required(
                     CONF_FETCH_POWER_CONSUMPTION,
-                    default=user_input[CONF_FETCH_POWER_CONSUMPTION]
-                    if user_input
-                    else opts.get(CONF_FETCH_POWER_CONSUMPTION, False),
+                    default=_val(CONF_FETCH_POWER_CONSUMPTION, False),
                 ): BooleanSelector(),
                 vol.Required(
                     CONF_FETCH_POWER_GENERATION,
-                    default=user_input[CONF_FETCH_POWER_GENERATION]
-                    if user_input
-                    else opts.get(CONF_FETCH_POWER_GENERATION, False),
+                    default=_val(CONF_FETCH_POWER_GENERATION, False),
                 ): BooleanSelector(),
             }
         )

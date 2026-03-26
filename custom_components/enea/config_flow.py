@@ -49,6 +49,36 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+def _options_schema_fields(defaults: dict[str, Any]) -> dict:
+    """Return vol.Schema field dict for update interval and fetch flags.
+
+    Shared by the initial configure step and the options flow so both
+    forms stay in sync when options are added or removed.
+    """
+    return {
+        vol.Required(
+            CONF_UPDATE_INTERVAL,
+            default=defaults.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_DICT),
+        ): DurationSelector(DurationSelectorConfig(enable_day=False)),
+        vol.Required(
+            CONF_FETCH_CONSUMPTION,
+            default=defaults.get(CONF_FETCH_CONSUMPTION, True),
+        ): BooleanSelector(),
+        vol.Required(
+            CONF_FETCH_GENERATION,
+            default=defaults.get(CONF_FETCH_GENERATION, True),
+        ): BooleanSelector(),
+        vol.Required(
+            CONF_FETCH_POWER_CONSUMPTION,
+            default=defaults.get(CONF_FETCH_POWER_CONSUMPTION, False),
+        ): BooleanSelector(),
+        vol.Required(
+            CONF_FETCH_POWER_GENERATION,
+            default=defaults.get(CONF_FETCH_POWER_GENERATION, False),
+        ): BooleanSelector(),
+    }
+
+
 BACKFILL_OPTIONS = [
     SelectOptionDict(value="7", label="7 dni"),
     SelectOptionDict(value="30", label="30 dni"),
@@ -235,13 +265,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         mode=SelectSelectorMode.LIST,
                     )
                 ),
-                vol.Required(
-                    CONF_UPDATE_INTERVAL, default=DEFAULT_UPDATE_INTERVAL_DICT
-                ): DurationSelector(DurationSelectorConfig(enable_day=False)),
-                vol.Required(CONF_FETCH_CONSUMPTION, default=True): BooleanSelector(),
-                vol.Required(CONF_FETCH_GENERATION, default=True): BooleanSelector(),
-                vol.Required(CONF_FETCH_POWER_CONSUMPTION, default=False): BooleanSelector(),
-                vol.Required(CONF_FETCH_POWER_GENERATION, default=False): BooleanSelector(),
+                **_options_schema_fields({}),
             }
         )
 
@@ -371,34 +395,6 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
                 return self.async_create_entry(data=user_input)
 
         opts = self.config_entry.options
-
-        def _val(key: str, fallback: object) -> object:
-            """Return submitted value on re-render after error, otherwise current option."""
-            return user_input[key] if user_input else opts.get(key, fallback)
-
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_UPDATE_INTERVAL,
-                    default=_val(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_DICT),
-                ): DurationSelector(DurationSelectorConfig(enable_day=False)),
-                vol.Required(
-                    CONF_FETCH_CONSUMPTION,
-                    default=_val(CONF_FETCH_CONSUMPTION, True),
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_FETCH_GENERATION,
-                    default=_val(CONF_FETCH_GENERATION, True),
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_FETCH_POWER_CONSUMPTION,
-                    default=_val(CONF_FETCH_POWER_CONSUMPTION, False),
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_FETCH_POWER_GENERATION,
-                    default=_val(CONF_FETCH_POWER_GENERATION, False),
-                ): BooleanSelector(),
-            }
-        )
+        schema = vol.Schema(_options_schema_fields(user_input if user_input else opts))
 
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

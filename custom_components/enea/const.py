@@ -36,7 +36,6 @@ CONF_METER_ID = "meter_id"
 CONF_METER_NAME = "meter_name"
 CONF_TARIFF = "tariff"
 CONF_UPDATE_INTERVAL = "update_interval"
-CONF_BACKFILL_DAYS = "backfill_days"
 CONF_FETCH_CONSUMPTION = "fetch_consumption"
 CONF_FETCH_GENERATION = "fetch_generation"
 CONF_FETCH_POWER_CONSUMPTION = "fetch_power_consumption"
@@ -74,7 +73,6 @@ SERVICE_BACKFILL = "backfill"
 # ---------------------------------------------------------------------------
 
 DEFAULT_UPDATE_INTERVAL_DICT: dict[str, int] = {"hours": 3, "minutes": 30, "seconds": 0}
-DEFAULT_BACKFILL_DAYS = 0  # BACKFILL_DAYS_MAX — fetch as far back as data is available
 MIN_UPDATE_INTERVAL_MINUTES = 30
 METERS_CACHE_TTL = timedelta(minutes=5)
 

@@ -44,7 +44,6 @@
       "configure": {
         "title": "Configure integration",
         "data": {
-          "backfill_days": "History to import (days)",
           "update_interval": "Refresh interval",
           "fetch_consumption": "Fetch consumption statistics",
           "fetch_generation": "Fetch generation statistics",

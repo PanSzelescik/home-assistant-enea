@@ -27,7 +27,6 @@ from .connector import EneaApiClient, EneaAuthError, EneaApiError, format_addres
 from .const import (
     ABORT_REAUTH_SUCCESSFUL,
     ABORT_RECONFIGURE_SUCCESSFUL,
-    CONF_BACKFILL_DAYS,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
     CONF_FETCH_POWER_CONSUMPTION,
@@ -36,7 +35,6 @@ from .const import (
     CONF_METER_NAME,
     CONF_TARIFF,
     CONF_UPDATE_INTERVAL,
-    DEFAULT_BACKFILL_DAYS,
     DEFAULT_UPDATE_INTERVAL_DICT,
     MIN_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
@@ -49,13 +47,13 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-def _options_schema_fields(defaults: Mapping[str, Any]) -> dict:
-    """Return vol.Schema field dict for update interval and fetch flags.
+def _options_schema(defaults: Mapping[str, Any]) -> vol.Schema:
+    """Build the options schema for update interval and fetch flags.
 
     Shared by the initial configure step and the options flow so both
     forms stay in sync when options are added or removed.
     """
-    return {
+    return vol.Schema({
         vol.Required(
             CONF_UPDATE_INTERVAL,
             default=defaults.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_DICT),
@@ -76,16 +74,8 @@ def _options_schema_fields(defaults: Mapping[str, Any]) -> dict:
             CONF_FETCH_POWER_GENERATION,
             default=defaults.get(CONF_FETCH_POWER_GENERATION, False),
         ): BooleanSelector(),
-    }
+    })
 
-
-BACKFILL_OPTIONS = [
-    SelectOptionDict(value="7", label="7 dni"),
-    SelectOptionDict(value="30", label="30 dni"),
-    SelectOptionDict(value="60", label="60 dni"),
-    SelectOptionDict(value="90", label="90 dni"),
-    SelectOptionDict(value="0", label="Maksymalnie (ile się da)"),
-]
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -244,7 +234,6 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_METER_ID: meter["id"],
                         CONF_METER_NAME: meter["code"],
                         CONF_TARIFF: meter.get("tariffGroup", {}).get("name", ""),
-                        CONF_BACKFILL_DAYS: int(user_input[CONF_BACKFILL_DAYS]),
                     },
                     options={
                         CONF_UPDATE_INTERVAL: user_input[CONF_UPDATE_INTERVAL],
@@ -255,19 +244,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
 
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_BACKFILL_DAYS, default=str(DEFAULT_BACKFILL_DAYS)
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=BACKFILL_OPTIONS,
-                        mode=SelectSelectorMode.LIST,
-                    )
-                ),
-                **_options_schema_fields({}),
-            }
-        )
+        schema = _options_schema({})
 
         return self.async_show_form(
             step_id="configure",
@@ -395,6 +372,6 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
                 return self.async_create_entry(data=user_input)
 
         opts = self.config_entry.options
-        schema = vol.Schema(_options_schema_fields(user_input if user_input else opts))
+        schema = _options_schema(user_input if user_input else opts)
 
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

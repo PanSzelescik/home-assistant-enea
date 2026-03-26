@@ -15,7 +15,6 @@ from homeassistant.util import dt as dt_util
 
 from .connector import EneaApiClient, EneaAuthError, EneaApiError, get_active_meter
 from .const import (
-    BACKFILL_DAYS_MAX,
     BACKFILL_MAX_CONSECUTIVE_EMPTY,
     DOMAIN,
     RANGE_FETCH_CHUNK_DAYS,
@@ -47,7 +46,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         connector: EneaApiClient,
         meter_id: int,
         meter_code: str,
-        backfill_days: int,
         update_interval: timedelta,
         fetch_consumption: bool = True,
         fetch_generation: bool = True,
@@ -63,7 +61,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.connector = connector
         self.meter_id = meter_id
         self._meter_code = meter_code
-        self._backfill_days = backfill_days
         self._fetch_consumption = fetch_consumption
         self._fetch_generation = fetch_generation
         self._fetch_power_consumption = fetch_power_consumption
@@ -164,7 +161,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 latest_date + timedelta(days=1), yesterday
             )
         else:
-            all_days = await self._fetch_initial(yesterday)
+            all_days = await self._fetch_days_backward(yesterday)
 
         if all_days:
             await self._async_inject_days(all_days, set_pending=True)
@@ -256,13 +253,11 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         elif self._assembly_datetime is not None:
             # Start from assembly date — matches the lower bound used for energy stats.
             start = self._assembly_datetime.date()
-        elif self._backfill_days == BACKFILL_DAYS_MAX:
+        else:
             # No assembly date known (meter never replaced). Fall back to 365 days
             # to avoid unbounded API calls; a more precise start would require
             # querying the earliest energy statistic from the DB.
             start = yesterday - timedelta(days=364)
-        else:
-            start = yesterday - timedelta(days=max(self._backfill_days - 1, 0))
 
         days = await self._fetch_days_forward(start, yesterday)
         if days:
@@ -277,16 +272,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.cost_sums.update(sums)
             self.async_update_listeners()
             _LOGGER.debug("Injected cost statistics for %d day(s)", len(days))
-
-    async def _fetch_initial(
-        self, yesterday: date
-    ) -> list[tuple[date, dict[str, Any]]]:
-        """Fetch the initial batch of days (no existing statistics in DB)."""
-        if self._backfill_days == BACKFILL_DAYS_MAX:
-            # Search backwards until data runs out.
-            return await self._fetch_days_backward(yesterday)
-        start_date = yesterday - timedelta(days=max(self._backfill_days - 1, 0))
-        return await self._fetch_days_forward(start_date, yesterday)
 
     def _strip_pre_assembly_slots(
         self, day: date, day_data: dict[str, Any]

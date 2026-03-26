@@ -44,7 +44,6 @@
       "configure": {
         "title": "Skonfiguruj integrację",
         "data": {
-          "backfill_days": "Ile dni historii pobrać",
           "update_interval": "Interwał odświeżania",
           "fetch_consumption": "Pobieraj statystyki energii pobranej",
           "fetch_generation": "Pobieraj statystyki energii oddanej",

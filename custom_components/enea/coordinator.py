@@ -398,18 +398,21 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Split each measurement-type response into per-day dicts.
         per_key_days: dict[str, dict[date, dict[str, Any]]] = {}
+        first_exc: BaseException | None = None
         for (key, mtype), result in zip(keys_and_types, results):
             if isinstance(result, BaseException):
-                _LOGGER.debug(
-                    "No range stats data for key=%s type=%d (%s–%s): %s",
+                _LOGGER.warning(
+                    "Range stats request failed for key=%s type=%d (%s–%s): %s",
                     key, mtype, start_date, end_date, result,
-                    exc_info=(type(result), result, result.__traceback__),
                 )
+                if first_exc is None:
+                    first_exc = result
                 continue
             per_key_days[key] = self._split_range_response(result, start_date)
 
         if not per_key_days:
-            return []
+            # All measurement-type requests failed — propagate to the caller.
+            raise first_exc  # type: ignore[misc]
 
         # Merge: for each date present in any key, build unified day_data dict.
         all_dates: set[date] = set()
@@ -469,8 +472,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         When the assembly date is known, delegates to _fetch_days_forward because
         the exact start is known. When the assembly date is unknown, fetches
         RANGE_FETCH_CHUNK_DAYS-sized chunks going backward and stops after
-        BACKFILL_MAX_CONSECUTIVE_EMPTY consecutive days with no data at the tail
-        of a chunk.
+        BACKFILL_MAX_CONSECUTIVE_EMPTY consecutive days with no data at the
+        start (oldest end) of a chunk.
 
         Returns days in chronological (ascending) order.
         """

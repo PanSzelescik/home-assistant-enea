@@ -173,12 +173,12 @@ class EneaApiClient:
         measurement_type: MeasurementType,
         resolution: Resolution,
     ) -> dict[str, Any]:
-        """Return 60-min consumption/power data for a date range.
+        """Return consumption/power data for a date range at the given resolution.
 
         The response has the same structure as the single-day endpoint but
-        contains 24 timeId slots per day, repeating for each day in the range.
-        For very large ranges, data may appear in 'valuesToTable' instead of
-        'values' (same structure, different key).
+        contains resolution-dependent timeId slots per day, repeating for each
+        day in the range.  For very large ranges, data may appear in
+        'valuesToTable' instead of 'values' (same structure, different key).
 
         Args:
             meter_id: PPE identifier.

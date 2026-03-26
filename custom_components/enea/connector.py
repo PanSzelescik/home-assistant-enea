@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable
+from collections.abc import AsyncGenerator, Awaitable
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Any
@@ -36,7 +36,7 @@ class EneaAuthError(EneaApiError):
 @asynccontextmanager
 async def _fetch(
     coro: Awaitable[aiohttp.ClientResponse],
-):
+) -> AsyncGenerator[aiohttp.ClientResponse, None]:
     """Async context manager that issues a request and translates connection errors.
 
     Automatically releases the response on exit, so callers never need to

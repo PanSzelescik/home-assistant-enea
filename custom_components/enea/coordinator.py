@@ -324,7 +324,11 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _collect_series and cost statistics need no changes.
 
         For very large ranges the API stores data in 'valuesToTable' instead of
-        'values' — both are checked, with 'values' taking priority.
+        'values' — non-empty 'values' takes priority; an empty 'values' list
+        falls back to 'valuesToTable' (the `or` operator treats [] as falsy).
+
+        Only supports Resolution.MIN_60 responses (RANGE_SLOTS_PER_DAY = 24
+        slots per day).
 
         Args:
             api_response: Raw API response from the range endpoint.
@@ -407,12 +411,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 if first_exc is None:
                     first_exc = result
-                continue
-            per_key_days[key] = self._split_range_response(result, start_date)
+            else:
+                per_key_days[key] = self._split_range_response(result, start_date)
 
         if not per_key_days:
             # All measurement-type requests failed — propagate to the caller.
-            raise first_exc  # type: ignore[misc]
+            assert first_exc is not None
+            raise first_exc
 
         # Merge: for each date present in any key, build unified day_data dict.
         all_dates: set[date] = set()

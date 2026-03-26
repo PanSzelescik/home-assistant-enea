@@ -38,7 +38,12 @@
         "title": "Wybierz licznik energii",
         "description": "Wybierz licznik energii (PPE) do monitorowania",
         "data": {
-          "meter_id": "Licznik energii",
+          "meter_id": "Licznik energii"
+        }
+      },
+      "configure": {
+        "title": "Skonfiguruj integrację",
+        "data": {
           "backfill_days": "Ile dni historii pobrać",
           "update_interval": "Interwał odświeżania",
           "fetch_consumption": "Pobieraj statystyki energii pobranej",

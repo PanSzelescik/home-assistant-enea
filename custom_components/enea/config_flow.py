@@ -81,6 +81,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._meters: list[dict[str, Any]] = []
         self._connector: EneaApiClient | None = None
         self._dashboards: dict[int, dict[str, Any]] = {}
+        self._selected_meter: dict[str, Any] | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -117,6 +118,9 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     for m, d in zip(meters, dashboards)
                     if isinstance(d, dict)
                 }
+                if len(meters) == 1:
+                    self._selected_meter = meters[0]
+                    return await self.async_step_configure()
                 return await self.async_step_select_meter()
 
         return self.async_show_form(
@@ -128,7 +132,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_select_meter(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Handle meter selection step."""
+        """Handle meter selection step (shown only when account has multiple meters)."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -138,7 +142,46 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             if meter is None:
                 errors["base"] = ERROR_UNKNOWN
-            elif (
+            else:
+                self._selected_meter = meter
+                return await self.async_step_configure()
+
+        options = [
+            SelectOptionDict(
+                value=str(m["id"]),
+                label=self._meter_label(m),
+            )
+            for m in self._meters
+        ]
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_METER_ID): SelectSelector(
+                    SelectSelectorConfig(
+                        options=options,
+                        mode=SelectSelectorMode.LIST,
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="select_meter",
+            data_schema=schema,
+            errors=errors,
+        )
+
+    async def async_step_configure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle options step (backfill history, update interval, fetch flags)."""
+        errors: dict[str, str] = {}
+        meter = self._selected_meter
+        if meter is None:
+            return self.async_abort(reason=ERROR_UNKNOWN)
+
+        if user_input is not None:
+            if (
                 not user_input.get(CONF_FETCH_CONSUMPTION)
                 and not user_input.get(CONF_FETCH_GENERATION)
             ):
@@ -166,14 +209,6 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
 
-        options = [
-            SelectOptionDict(
-                value=str(m["id"]),
-                label=self._meter_label(m),
-            )
-            for m in self._meters
-        ]
-
         backfill_options = [
             SelectOptionDict(value="7", label="7 dni"),
             SelectOptionDict(value="30", label="30 dni"),
@@ -184,12 +219,6 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_METER_ID): SelectSelector(
-                    SelectSelectorConfig(
-                        options=options,
-                        mode=SelectSelectorMode.LIST,
-                    )
-                ),
                 vol.Required(
                     CONF_BACKFILL_DAYS, default=str(DEFAULT_BACKFILL_DAYS)
                 ): SelectSelector(
@@ -209,7 +238,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         return self.async_show_form(
-            step_id="select_meter",
+            step_id="configure",
             data_schema=schema,
             errors=errors,
         )

@@ -38,7 +38,12 @@
         "title": "Select Energy Meter",
         "description": "Choose the energy meter (PPE) to monitor",
         "data": {
-          "meter_id": "Energy meter",
+          "meter_id": "Energy meter"
+        }
+      },
+      "configure": {
+        "title": "Configure integration",
+        "data": {
           "backfill_days": "History to import (days)",
           "update_interval": "Refresh interval",
           "fetch_consumption": "Fetch consumption statistics",

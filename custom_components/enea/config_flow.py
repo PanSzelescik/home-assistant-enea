@@ -210,16 +210,18 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_configure(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Handle options step (backfill history, update interval, fetch flags)."""
+        """Handle options step (update interval, fetch flags)."""
         errors: dict[str, str] = {}
         meter = self._selected_meter
         if meter is None:
             return self.async_abort(reason=ERROR_UNKNOWN)
 
         if user_input is not None:
-            if (
-                not user_input.get(CONF_FETCH_CONSUMPTION)
-                and not user_input.get(CONF_FETCH_GENERATION)
+            if not (
+                user_input.get(CONF_FETCH_CONSUMPTION)
+                or user_input.get(CONF_FETCH_GENERATION)
+                or user_input.get(CONF_FETCH_POWER_CONSUMPTION)
+                or user_input.get(CONF_FETCH_POWER_GENERATION)
             ):
                 errors["base"] = ERROR_AT_LEAST_ONE_FETCH_TYPE
             else:
@@ -361,9 +363,11 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
             )
             if total_minutes < MIN_UPDATE_INTERVAL_MINUTES:
                 errors[CONF_UPDATE_INTERVAL] = ERROR_INTERVAL_TOO_SHORT
-            elif (
-                not user_input.get(CONF_FETCH_CONSUMPTION)
-                and not user_input.get(CONF_FETCH_GENERATION)
+            elif not (
+                user_input.get(CONF_FETCH_CONSUMPTION)
+                or user_input.get(CONF_FETCH_GENERATION)
+                or user_input.get(CONF_FETCH_POWER_CONSUMPTION)
+                or user_input.get(CONF_FETCH_POWER_GENERATION)
             ):
                 errors["base"] = ERROR_AT_LEAST_ONE_FETCH_TYPE
             else:

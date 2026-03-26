@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Mapping
 
 import voluptuous as vol
 
@@ -49,7 +49,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-def _options_schema_fields(defaults: dict[str, Any]) -> dict:
+def _options_schema_fields(defaults: Mapping[str, Any]) -> dict:
     """Return vol.Schema field dict for update interval and fetch flags.
 
     Shared by the initial configure step and the options flow so both

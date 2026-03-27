@@ -13,10 +13,10 @@ from homeassistant.util import dt as dt_util
 import aiohttp
 
 from .const import (
-    CONST_URL_CONSUMPTION_RANGE,
-    CONST_URL_LOGIN,
-    CONST_URL_PPE_DASHBOARD,
-    CONST_URL_PPES,
+    URL_CONSUMPTION_RANGE,
+    URL_LOGIN,
+    URL_PPE_DASHBOARD,
+    URL_PPES,
     METERS_CACHE_TTL,
     MeasurementType,
     Resolution,
@@ -106,7 +106,7 @@ class EneaApiClient:
         """Log in to the Portal Odbiorcy Enea and store the session cookie."""
         async with _fetch(
             self._session.post(
-                CONST_URL_LOGIN,
+                URL_LOGIN,
                 json={"username": self._username, "password": self._password},
             )
         ) as resp:
@@ -155,14 +155,14 @@ class EneaApiClient:
             _LOGGER.debug("Returning cached meters list")
             return self._meters_cache
 
-        data: list[dict[str, Any]] = await self._request(CONST_URL_PPES, "ppes")
+        data: list[dict[str, Any]] = await self._request(URL_PPES, "ppes")
         self._meters_cache = data
         self._meters_cache_time = now
         return data
 
     async def get_ppe_dashboard(self, meter_id: int) -> dict[str, Any]:
         """Return full consumption dashboard data for a specific meter."""
-        url = CONST_URL_PPE_DASHBOARD.format(meter_id=meter_id)
+        url = URL_PPE_DASHBOARD.format(meter_id=meter_id)
         return await self._request(url, "dashboard")
 
     async def get_consumption_data_range(
@@ -193,7 +193,7 @@ class EneaApiClient:
             raise ValueError(
                 f"start_date ({start_date}) must be <= end_date ({end_date})"
             )
-        url = CONST_URL_CONSUMPTION_RANGE.format(
+        url = URL_CONSUMPTION_RANGE.format(
             meter_id=meter_id,
             start_date=start_date.isoformat(),
             end_date=end_date.isoformat(),

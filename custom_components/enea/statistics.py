@@ -68,37 +68,20 @@ async def async_insert_historical_statistics(
     if not all_days:
         return
 
-    # Process energy (kWh) — requires cumulative sum chaining
-    for key, type_label in (
-        (STAT_KEY_ENERGY_CONSUMED, "pobrana"),
-        (STAT_KEY_ENERGY_RETURNED, "oddana"),
+    for key, type_label, prefix, inject_fn in (
+        (STAT_KEY_ENERGY_CONSUMED, "pobrana", "Energia", _inject_energy_series),
+        (STAT_KEY_ENERGY_RETURNED, "oddana", "Energia", _inject_energy_series),
+        (STAT_KEY_POWER_CONSUMED, "pobrana", "Moc", _inject_power_series),
+        (STAT_KEY_POWER_RETURNED, "oddana", "Moc", _inject_power_series),
     ):
         series_by_name: dict[str, list[tuple[datetime, float]]] = {}
-
         for day, data in all_days:
             api = data.get(key)
             if not api or not has_data(api):
                 continue
-            _collect_series(api, day, type_label, "Energia", series_by_name)
-
+            _collect_series(api, day, type_label, prefix, series_by_name)
         for name, series in series_by_name.items():
-            await _inject_energy_series(hass, meter_code, name, series)
-
-    # Process power (kW) — mean values, no cumulative sum
-    for key, type_label in (
-        (STAT_KEY_POWER_CONSUMED, "pobrana"),
-        (STAT_KEY_POWER_RETURNED, "oddana"),
-    ):
-        series_by_name = {}
-
-        for day, data in all_days:
-            api = data.get(key)
-            if not api or not has_data(api):
-                continue
-            _collect_series(api, day, type_label, "Moc", series_by_name)
-
-        for name, series in series_by_name.items():
-            _inject_power_series(hass, meter_code, name, series)
+            await inject_fn(hass, meter_code, name, series)
 
 
 def _collect_series(
@@ -181,7 +164,7 @@ async def _inject_energy_series(
     _LOGGER.debug("Injected %d energy stats for %s", len(stats_data), statistic_id)
 
 
-def _inject_power_series(
+async def _inject_power_series(
     hass: HomeAssistant,
     meter_code: str,
     name: str,

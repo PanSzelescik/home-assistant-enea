@@ -47,6 +47,25 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _validate_options(user_input: dict[str, Any]) -> dict[str, str]:
+    """Validate update interval and fetch flags; return a dict of form errors."""
+    duration = user_input[CONF_UPDATE_INTERVAL]
+    total_minutes = (
+        int(duration.get("hours", 0)) * 60 + int(duration.get("minutes", 0))
+    )
+    if total_minutes < MIN_UPDATE_INTERVAL_MINUTES:
+        return {CONF_UPDATE_INTERVAL: ERROR_INTERVAL_TOO_SHORT}
+    if not (
+        user_input.get(CONF_FETCH_CONSUMPTION)
+        or user_input.get(CONF_FETCH_GENERATION)
+        or user_input.get(CONF_FETCH_POWER_CONSUMPTION)
+        or user_input.get(CONF_FETCH_POWER_GENERATION)
+    ):
+        return {"base": ERROR_AT_LEAST_ONE_FETCH_TYPE}
+    return {}
+
+
 def _options_schema(defaults: Mapping[str, Any]) -> vol.Schema:
     """Build the options schema for update interval and fetch flags.
 
@@ -138,14 +157,14 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         session = async_create_clientsession(self.hass)
         try:
-            connector = EneaApiClient(
+            client = EneaApiClient(
                 session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
             )
             try:
-                await connector.authenticate()
-                meters = await connector.get_meters()
+                await client.authenticate()
+                meters = await client.get_meters()
                 dashboards = await asyncio.gather(
-                    *[connector.get_ppe_dashboard(m["id"]) for m in meters],
+                    *[client.get_ppe_dashboard(m["id"]) for m in meters],
                     return_exceptions=True,
                 )
             except EneaAuthError:
@@ -220,21 +239,8 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason=ERROR_UNKNOWN)
 
         if user_input is not None:
-            duration = user_input[CONF_UPDATE_INTERVAL]
-            total_minutes = (
-                int(duration.get("hours", 0)) * 60
-                + int(duration.get("minutes", 0))
-            )
-            if total_minutes < MIN_UPDATE_INTERVAL_MINUTES:
-                errors[CONF_UPDATE_INTERVAL] = ERROR_INTERVAL_TOO_SHORT
-            elif not (
-                user_input.get(CONF_FETCH_CONSUMPTION)
-                or user_input.get(CONF_FETCH_GENERATION)
-                or user_input.get(CONF_FETCH_POWER_CONSUMPTION)
-                or user_input.get(CONF_FETCH_POWER_GENERATION)
-            ):
-                errors["base"] = ERROR_AT_LEAST_ONE_FETCH_TYPE
-            else:
+            errors = _validate_options(user_input)
+            if not errors:
                 await self.async_set_unique_id(meter["code"])
                 self._abort_if_unique_id_configured()
 
@@ -286,11 +292,11 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         session = async_create_clientsession(self.hass)
         try:
-            connector = EneaApiClient(
+            client = EneaApiClient(
                 session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
             )
             try:
-                await connector.authenticate()
+                await client.authenticate()
             except EneaAuthError:
                 return {"base": ERROR_INVALID_AUTH}
             except EneaApiError:
@@ -378,21 +384,8 @@ class EneaOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            duration = user_input[CONF_UPDATE_INTERVAL]
-            total_minutes = (
-                int(duration.get("hours", 0)) * 60
-                + int(duration.get("minutes", 0))
-            )
-            if total_minutes < MIN_UPDATE_INTERVAL_MINUTES:
-                errors[CONF_UPDATE_INTERVAL] = ERROR_INTERVAL_TOO_SHORT
-            elif not (
-                user_input.get(CONF_FETCH_CONSUMPTION)
-                or user_input.get(CONF_FETCH_GENERATION)
-                or user_input.get(CONF_FETCH_POWER_CONSUMPTION)
-                or user_input.get(CONF_FETCH_POWER_GENERATION)
-            ):
-                errors["base"] = ERROR_AT_LEAST_ONE_FETCH_TYPE
-            else:
+            errors = _validate_options(user_input)
+            if not errors:
                 return self.async_create_entry(data=user_input)
 
         opts = self.config_entry.options

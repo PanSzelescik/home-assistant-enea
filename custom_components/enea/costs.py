@@ -42,6 +42,19 @@ from .statistics import time_id_to_dt, has_data
 _LOGGER = logging.getLogger(__name__)
 
 
+def _get_cost_entries(
+    hass: HomeAssistant, meter_code: str
+) -> list[er.RegistryEntry]:
+    """Return entity registry entries for cost sensors of the given meter."""
+    registry = er.async_get(hass)
+    prefix = f"enea-{meter_code}-koszt_"
+    return [
+        e
+        for e in registry.entities.values()
+        if e.platform == DOMAIN and (e.unique_id or "").startswith(prefix)
+    ]
+
+
 def get_cost_unique_id(meter_code: str, direction: str, zone: str) -> str:
     """Return the unique_id for a cost sensor entity."""
     return f"enea-{meter_code}-koszt_{direction}_{zone}"
@@ -241,13 +254,7 @@ async def async_inject_today_cost_bridge(
     Safe to call on every coordinator refresh — _inject_cost_series uses
     INSERT OR REPLACE so the operation is idempotent.
     """
-    registry = er.async_get(hass)
-    prefix = f"enea-{meter_code}-koszt_"
-    entries = [
-        e
-        for e in registry.entities.values()
-        if e.platform == DOMAIN and (e.unique_id or "").startswith(prefix)
-    ]
+    entries = _get_cost_entries(hass, meter_code)
     if not entries:
         return
 
@@ -288,13 +295,7 @@ async def get_cost_stats(
     Used to check if cost injection is needed and to pre-populate
     coordinator.cost_sums without triggering a new injection.
     """
-    registry = er.async_get(hass)
-    prefix = f"enea-{meter_code}-koszt_"
-    entries = [
-        e
-        for e in registry.entities.values()
-        if e.platform == DOMAIN and (e.unique_id or "").startswith(prefix)
-    ]
+    entries = _get_cost_entries(hass, meter_code)
     if not entries:
         return None, {}
 

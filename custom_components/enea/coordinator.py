@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import date, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder.statistics import get_last_statistics
@@ -44,7 +44,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(
         self,
         hass: HomeAssistant,
-        connector: EneaApiClient,
+        client: EneaApiClient,
         meter_id: int,
         meter_code: str,
         update_interval: timedelta,
@@ -59,7 +59,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name=DOMAIN,
             update_interval=update_interval,
         )
-        self.connector = connector
+        self.client = client
         self.meter_id = meter_id
         self._meter_code = meter_code
         self._fetch_consumption = fetch_consumption
@@ -86,7 +86,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch meter data from the API."""
         try:
-            data = await self.connector.get_ppe_dashboard(self.meter_id)
+            data = await self.client.get_ppe_dashboard(self.meter_id)
         except EneaAuthError as err:
             raise ConfigEntryAuthFailed("Invalid credentials") from err
         except EneaApiError as err:
@@ -465,7 +465,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         results = await asyncio.gather(
             *(
-                self.connector.get_consumption_data_range(
+                self.client.get_consumption_data_range(
                     self.meter_id, start_date, end_date, mtype, Resolution.MIN_60
                 )
                 for _, mtype in keys_and_types
@@ -488,9 +488,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if first_exc is None:
                     first_exc = result
             else:
-                per_key_days[key] = self._split_range_response(
-                    cast(dict[str, Any], result), start_date
-                )
+                per_key_days[key] = self._split_range_response(result, start_date)
 
         if not per_key_days:
             # All measurement-type requests failed — propagate to the caller.

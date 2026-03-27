@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.recorder.models import (
@@ -23,7 +23,7 @@ from homeassistant.components.recorder.models import (
 )
 from homeassistant.components.recorder.statistics import (
     async_import_statistics,
-    get_last_statistics,
+    statistics_during_period,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -124,15 +124,23 @@ async def async_insert_cost_statistics(
                 zone = period.get_zone_at_hour(dt.hour, day=day)
                 zone_str = str(zone)
 
-                if zone_str not in allowed_zone_strs:
-                    continue
-
                 total_kwh = sum(
                     item.get("value") or 0.0
                     for item in entry.get("items", [])
                 )
-                price: float = period.zones[zone].total_brutto
-                series_by_zone.setdefault(zone_str, []).append((dt, total_kwh * price))
+                # Compute cost for the actual zone; other zones get 0.0 for this hour.
+                # Every zone receives an entry for every hour of the day so that
+                # async_import_statistics overwrites HA auto-recorder entries that
+                # would otherwise corrupt the running sum with sum=0 values.
+                actual_cost = (
+                    total_kwh * period.zones[zone].total_brutto
+                    if zone_str in allowed_zone_strs
+                    else 0.0
+                )
+                for z_str in allowed_zone_strs:
+                    series_by_zone.setdefault(z_str, []).append(
+                        (dt, actual_cost if z_str == zone_str else 0.0)
+                    )
 
         for zone_str, series in series_by_zone.items():
             unique_id = get_cost_unique_id(meter_code, direction, zone_str)
@@ -153,25 +161,43 @@ async def _inject_cost_series(
 ) -> float:
     """Inject cumulative PLN statistics for a single cost sensor entity.
 
+    Chains the running sum from the last correctly injected entry before
+    series[0].  Uses statistics_during_period with a 30-day lookback and
+    takes max(sum) so that auto-recorder entries written by HA's recorder
+    (sum=0 for a constant sensor state) do not corrupt the chain point —
+    our injected entries always have a strictly positive and increasing sum.
+
+    Does not filter the input series: async_import_statistics uses
+    INSERT OR REPLACE, making re-injection idempotent, so there is no risk
+    of double-counting when the same date range is injected more than once.
+
     Returns the final running sum after injection (PLN).
     """
     if not series:
         return 0.0
 
-    last_stats = await get_instance(hass).async_add_executor_job(
-        get_last_statistics, hass, 1, entity_id, True, {"sum"}
+    first_dt = series[0][0]
+
+    # Find the correct chain point: the highest cumulative sum recorded before
+    # our first entry.  HA's recorder writes sum=0 when the sensor value is
+    # constant (no new injections); our entries always have a growing sum.
+    # max() therefore picks our last real injection value over the HA noise.
+    base_stats = await get_instance(hass).async_add_executor_job(
+        statistics_during_period,
+        hass,
+        first_dt - timedelta(days=30),
+        first_dt,
+        {entity_id},
+        "hour",
+        None,
+        {"sum"},
     )
     running_sum: float = 0.0
-    if last_stats.get(entity_id):
-        record = last_stats[entity_id][0]
-        running_sum = record.get("sum") or 0.0
-        last_ts = record.get("start")
-        if last_ts is not None:
-            last_dt = dt_util.utc_from_timestamp(last_ts)
-            series = [(dt, cost) for dt, cost in series if dt > last_dt]
-
-    if not series:
-        return running_sum
+    if base_stats.get(entity_id):
+        running_sum = max(
+            (r.get("sum") or 0.0 for r in base_stats[entity_id]),
+            default=0.0,
+        )
 
     stats_data = []
     for dt, cost in series:
@@ -198,15 +224,66 @@ async def _inject_cost_series(
     return running_sum
 
 
+async def async_inject_today_cost_bridge(
+    hass: HomeAssistant,
+    meter_code: str,
+    fetch_consumption: bool,
+    fetch_generation: bool,
+) -> None:
+    """Inject zero-cost placeholder entries for all hours of today up to now.
+
+    Called when energy statistics are up to date but today's cost statistics
+    contain HA auto-recorder entries with incorrect sum=0 values (written while
+    the sensor was in a wrong state after restart or bug recovery).  Zero-cost
+    entries keep the running sum constant through the day so the Energy
+    Dashboard shows 0 PLN cost until real energy data is injected next day.
+
+    Safe to call on every coordinator refresh — _inject_cost_series uses
+    INSERT OR REPLACE so the operation is idempotent.
+    """
+    registry = er.async_get(hass)
+    prefix = f"enea-{meter_code}-koszt_"
+    entries = [
+        e
+        for e in registry.entities.values()
+        if e.platform == DOMAIN and (e.unique_id or "").startswith(prefix)
+    ]
+    if not entries:
+        return
+
+    now = dt_util.now()
+    today = now.date()
+    # timeId N covers (N-1):00–N:00; include the currently-running hour.
+    series: list[tuple[datetime, float]] = [
+        (time_id_to_dt(today, tid), 0.0)
+        for tid in range(1, now.hour + 2)
+    ]
+
+    for entry in entries:
+        uid = entry.unique_id or ""
+        if "pobrana" in uid and not fetch_consumption:
+            continue
+        if "oddana" in uid and not fetch_generation:
+            continue
+        await _inject_cost_series(hass, entry.entity_id, series)
+
+
 async def get_cost_stats(
     hass: HomeAssistant, meter_code: str
 ) -> tuple[date | None, dict[str, float]]:
     """Return current cost statistics summary for all cost sensors of this meter.
 
     Scans the entity registry for cost sensors matching this meter, queries the
-    statistics DB once per entity, and returns:
-      - latest_date: the most recent date for which any cost stat exists, or None
-      - sums: {unique_id: last_sum} for each sensor that has statistics
+    statistics DB for each entity over a 30-day lookback window, and returns:
+      - latest_date: the most recent date for which any entry exists, or None
+      - sums: {unique_id: max_sum} where max_sum is the highest cumulative sum
+              found in the lookback window
+
+    Uses statistics_during_period with max(sum) so that auto-recorder entries
+    (written by HA for a constant sensor state with sum=0) do not corrupt the
+    coordinator.cost_sums used to display the sensor state.  Our injected entries
+    always carry a strictly positive and growing sum, so max() reliably picks
+    the last correctly injected value.
 
     Used to check if cost injection is needed and to pre-populate
     coordinator.cost_sums without triggering a new injection.
@@ -221,28 +298,43 @@ async def get_cost_stats(
     if not entries:
         return None, {}
 
-    last_stats_list = await asyncio.gather(*(
+    now = dt_util.utcnow()
+    all_stats_list = await asyncio.gather(*(
         get_instance(hass).async_add_executor_job(
-            get_last_statistics, hass, 1, e.entity_id, True, {"sum"}
+            statistics_during_period,
+            hass,
+            now - timedelta(days=30),
+            now,
+            {e.entity_id},
+            "hour",
+            None,
+            {"sum"},
         )
         for e in entries
     ))
 
     latest: date | None = None
     sums: dict[str, float] = {}
-    for entry, last in zip(entries, last_stats_list):
-        if last.get(entry.entity_id):
-            record = last[entry.entity_id][0]
-            ts = record.get("start")
-            if ts is not None:
-                d = (
-                    dt_util.utc_from_timestamp(ts)
-                    .astimezone(dt_util.DEFAULT_TIME_ZONE)
-                    .date()
-                )
-                if latest is None or d > latest:
-                    latest = d
-            s = record.get("sum")
-            if s is not None:
-                sums[entry.unique_id or ""] = s
+    for entry, stats in zip(entries, all_stats_list):
+        records = stats.get(entry.entity_id)
+        if not records:
+            continue
+        # Latest date from the most recent record (statistics_during_period returns
+        # ascending order by start time, so the last element is the newest).
+        ts = records[-1].get("start")
+        if ts is not None:
+            d = (
+                dt_util.utc_from_timestamp(ts)
+                .astimezone(dt_util.DEFAULT_TIME_ZONE)
+                .date()
+            )
+            if latest is None or d > latest:
+                latest = d
+        # Correct cumulative sum: max() ignores HA auto-recorder entries (sum=0).
+        best_sum = max(
+            (r.get("sum") or 0.0 for r in records),
+            default=0.0,
+        )
+        if best_sum > 0:
+            sums[entry.unique_id or ""] = best_sum
     return latest, sums

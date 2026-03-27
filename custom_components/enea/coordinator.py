@@ -28,6 +28,7 @@ from .const import (
     STAT_NAME_BY_KEY,
 )
 from .costs import (
+    async_inject_today_cost_bridge,
     async_insert_cost_statistics,
     find_tariff_group,
     get_cost_stats,
@@ -70,6 +71,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.cost_sums: dict[str, float] = {}
         self._pending_cost_days: list[tuple[date, dict[str, Any]]] = []
         self._backfill_task: asyncio.Task[None] | None = None
+        self._today_bridge_injected: date | None = None
 
     def _get_measurement_types(self) -> list[tuple[str, MeasurementType]]:
         """Return active (key, measurement_type) pairs based on fetch settings."""
@@ -165,6 +167,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if all_days:
                 await self._async_inject_days(all_days, set_pending=True)
                 _LOGGER.debug("Injected statistics for %d day(s)", len(all_days))
+            else:
+                _LOGGER.debug(
+                    "No new statistics available yet (last: %s, waiting for: %s)",
+                    latest_date,
+                    yesterday,
+                )
+                await self._async_inject_missing_costs(yesterday)
         else:
             # Initial backfill — potentially years of data (slow).
             # Schedule as a background task so the first coordinator refresh
@@ -314,6 +323,18 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not self.cost_sums:
                 self.cost_sums.update(existing_sums)
                 self.async_update_listeners()
+            # Inject zero-cost bridge entries for today's hours once per day.
+            # Overwrites any HA auto-recorder entries with incorrect sum values
+            # that may have been written while the sensor was in a wrong state.
+            today = yesterday + timedelta(days=1)
+            if self._today_bridge_injected != today:
+                await async_inject_today_cost_bridge(
+                    self.hass,
+                    self._meter_code,
+                    self._fetch_consumption,
+                    self._fetch_generation,
+                )
+                self._today_bridge_injected = today
             return
 
         if cost_latest is not None:
@@ -597,6 +618,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         all_days = await self._fetch_days_forward(start_date, end_date)
         if all_days:
             await self._async_inject_days(all_days)
+            self._today_bridge_injected = None  # force bridge re-injection on next refresh
             self.async_update_listeners()
             _LOGGER.info(
                 "Backfill injected %d day(s) for meter %s (%s – %s)",

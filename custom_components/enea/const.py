@@ -16,15 +16,15 @@ DEFAULT_NAME = "Enea"
 # API URLs
 # ---------------------------------------------------------------------------
 
-CONST_PORTAL_URL = "https://portalodbiorcy.operator.enea.pl"
-CONST_BASE_URL = f"{CONST_PORTAL_URL}/portalOdbiorcy/api"
-CONST_URL_LOGIN = f"{CONST_BASE_URL}/auth/login"
-CONST_URL_PPES = f"{CONST_BASE_URL}/user/ppes"
-CONST_URL_PPE_DASHBOARD = f"{CONST_BASE_URL}/consumptionDashboard/ppe/{{meter_id}}"
+PORTAL_URL = "https://portalodbiorcy.operator.enea.pl"
+BASE_URL = f"{PORTAL_URL}/portalOdbiorcy/api"
+URL_LOGIN = f"{BASE_URL}/auth/login"
+URL_PPES = f"{BASE_URL}/user/ppes"
+URL_PPE_DASHBOARD = f"{BASE_URL}/consumptionDashboard/ppe/{{meter_id}}"
 
 # endpoint /consumption/{meter_id}/{start_date}/{end_date}/{measurement_type}/{resolution}
-CONST_URL_CONSUMPTION_RANGE = (
-    f"{CONST_BASE_URL}"
+URL_CONSUMPTION_RANGE = (
+    f"{BASE_URL}"
     "/consumption/{meter_id}/{start_date}/{end_date}/{measurement_type}/{resolution}"
 )
 
@@ -81,7 +81,6 @@ METERS_CACHE_TTL = timedelta(minutes=5)
 # ---------------------------------------------------------------------------
 
 MEASUREMENT_ID_CONSUMPTION = 1
-MEASUREMENT_ID_GENERATION = 2
 
 class MeasurementType(IntEnum):
     """API measurement type identifiers."""
@@ -98,7 +97,6 @@ class Resolution(IntEnum):
     MIN_15 = 1
     MIN_60 = 2
 
-BACKFILL_DAYS_MAX = 0  # sentinel: fetch as far back as data is available
 BACKFILL_MAX_CONSECUTIVE_EMPTY = 7  # stop after this many consecutive days with no data
 RANGE_FETCH_CHUNK_DAYS = 180  # max days per single range request (~6 months)
 RANGE_SLOTS_PER_DAY = 24  # hourly slots per day in resolution=2 responses

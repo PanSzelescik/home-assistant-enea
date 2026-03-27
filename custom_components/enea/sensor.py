@@ -25,7 +25,7 @@ from .const import (
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
     CONF_METER_NAME,
-    CONST_PORTAL_URL,
+    PORTAL_URL,
     COST_ZONE_DISPLAY,
     DEFAULT_NAME,
     DOMAIN,
@@ -51,7 +51,7 @@ def _get_device_info(meter_code: str, data: dict[str, Any] | None) -> DeviceInfo
         manufacturer="Enea",
         model=active["typeName"] if active else None,
         serial_number=active["serialNumber"] if active else None,
-        configuration_url=CONST_PORTAL_URL,
+        configuration_url=PORTAL_URL,
     )
 
 
@@ -270,7 +270,7 @@ async def async_setup_entry(
     async_add_entities(sensors)
 
 
-class EneaSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
+class EneaSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  # pyright: ignore[reportIncompatibleVariableOverride]
     """Diagnostic sensor entity for an Enea meter."""
 
     entity_description: EneaSensorEntityDescription  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -287,11 +287,6 @@ class EneaSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
         self._meter_code = meter_code
         self._attr_unique_id = f"enea-{meter_code}-{description.key}"
         self._attr_device_info = _get_device_info(meter_code, coordinator.data)
-
-    @property
-    def available(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
-        """Return whether the entity is available."""
-        return super().available
 
     @cached_property
     def native_value(self) -> Any:
@@ -310,7 +305,7 @@ class EneaSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
         return self.entity_description.attr_fn(self.coordinator.data)
 
 
-class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
+class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  # pyright: ignore[reportIncompatibleVariableOverride]
     """Energy sensor for a specific measurement/zone of an Enea meter."""
 
     _attr_has_entity_name = True
@@ -341,11 +336,6 @@ class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
         else:
             self._attr_name = sensor_name
 
-    @property
-    def available(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
-        """Return whether the entity is available."""
-        return super().available
-
     @cached_property
     def native_value(self) -> float | None:
         """Return the energy value in kWh."""
@@ -361,7 +351,7 @@ class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
         return None
 
 
-class EneaCostSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
+class EneaCostSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  # pyright: ignore[reportIncompatibleVariableOverride]
     """Sensor tracking accumulated electricity cost (PLN) for a single tariff zone.
 
     Created only when the enea_prices integration is configured with a tariff
@@ -393,11 +383,6 @@ class EneaCostSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):
         self._attr_unique_id = get_cost_unique_id(meter_code, direction, zone_str)
         self._attr_name = f"Koszt energii {direction} \u2013 {zone_display}"
         self._attr_device_info = _get_device_info(meter_code, coordinator.data)
-
-    @property
-    def available(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
-        """Return whether the entity is available."""
-        return super().available
 
     @cached_property
     def native_value(self) -> float | None:  # pyright: ignore[reportIncompatibleVariableOverride]

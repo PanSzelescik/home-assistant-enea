@@ -5,7 +5,7 @@
 - Wszystkie stałe konfiguracyjne i behawioralne trzymaj w **`const.py`** — nie definiuj stałych modułowych w innych plikach, jeśli mają szerszy kontekst.
 - Zachowuj w `const.py` następującą kolejność sekcji:
   1. **Integration identity** — `DOMAIN`, `PLATFORMS`, `DEFAULT_NAME`
-  2. **API URLs** — `CONST_BASE_URL`, `CONST_URL_*`
+  2. **API URLs** — `BASE_URL`, `URL_*`
   3. **Config entry keys** — `CONF_*`
   4. **Defaults** — `DEFAULT_*`
   5. **Statistics API** — `MEASUREMENT_ID_*`, `MeasurementType`, `Resolution`, `BACKFILL_*`, `RANGE_FETCH_CHUNK_DAYS`
@@ -25,13 +25,13 @@ Niniejszy projekt to custom component dla Home Assistant integrujący liczniki z
 
 ```
 custom_components/enea/
-├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, serwisy refresh/backfill
+├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, _matching_coordinators, serwisy refresh/backfill
 ├── connector.py     — klient HTTP (EneaApiClient, _request helper), wyjątki, get_active_meter(), format_address()
-├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill
-├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", reconfigure; EneaOptionsFlow; _async_validate_and_update_credentials
+├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill; klient API jako self.client
+├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", reconfigure; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
 ├── sensor.py        — EneaSensor, EneaEnergySensor, EneaCostSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date
-├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy/power_series
-├── costs.py         — async_insert_cost_statistics, get_cost_stats, _inject_cost_series, find_tariff_group
+├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series
+├── costs.py         — async_insert_cost_statistics, get_cost_stats, _inject_cost_series, _get_cost_entries, find_tariff_group
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem)
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
 ├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk, stałe kosztów (ENEA_PRICES_DOMAIN, UNIT_COST, COST_ZONE_DISPLAY)

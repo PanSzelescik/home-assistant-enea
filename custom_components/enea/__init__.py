@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
-
-_LOGGER = logging.getLogger(__name__)
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
@@ -31,6 +30,8 @@ from .const import (
 )
 from .coordinator import EneaUpdateCoordinator
 
+_LOGGER = logging.getLogger(__name__)
+
 
 @dataclass
 class EneaRuntimeData:
@@ -40,6 +41,26 @@ class EneaRuntimeData:
 
 
 type EneaConfigEntry = ConfigEntry[EneaRuntimeData]
+
+
+def _matching_coordinators(
+    hass: HomeAssistant, call: ServiceCall
+) -> Iterator[EneaUpdateCoordinator]:
+    """Yield coordinators for entries matching the device_id filter in a service call.
+
+    When no device_id is provided, yields coordinators for all loaded entries.
+    """
+    device_ids: list[str] = call.data.get("device_id", [])
+    if isinstance(device_ids, str):
+        device_ids = [device_ids]
+    dev_reg = dr.async_get(hass)
+    for config_entry in hass.config_entries.async_entries(DOMAIN):
+        if not hasattr(config_entry, "runtime_data"):
+            continue
+        meter_code: str = config_entry.data[CONF_METER_NAME]
+        device = dev_reg.async_get_device(identifiers={(DOMAIN, meter_code)})
+        if device and (not device_ids or device.id in device_ids):
+            yield config_entry.runtime_data.coordinator
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool:
@@ -97,20 +118,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
             Triggers an immediate data refresh for each matching device.
             If no device_id is provided, all Enea devices are refreshed.
             """
-            device_ids: list[str] = call.data.get("device_id", [])
-            if isinstance(device_ids, str):
-                device_ids = [device_ids]
-
-            dev_reg = dr.async_get(hass)
-            for config_entry in hass.config_entries.async_entries(DOMAIN):
-                if not hasattr(config_entry, "runtime_data"):
-                    continue
-                meter_code: str = config_entry.data[CONF_METER_NAME]
-                device = dev_reg.async_get_device(
-                    identifiers={(DOMAIN, meter_code)}
-                )
-                if device and (not device_ids or device.id in device_ids):
-                    await config_entry.runtime_data.coordinator.async_request_refresh()
+            for coordinator in _matching_coordinators(hass, call):
+                await coordinator.async_request_refresh()
 
         hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh)
 
@@ -121,12 +130,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
 
             Imports historical statistics for the specified date range.
             Accepts start_date/end_date (ISO format), days_back, or defaults
-            to the last DEFAULT_BACKFILL_DAYS days when no parameters are given.
+            to the last 30 days when no parameters are given.
             """
-            device_ids: list[str] = call.data.get("device_id", [])
-            if isinstance(device_ids, str):
-                device_ids = [device_ids]
-
             today = dt_util.now().date()
             yesterday = today - timedelta(days=1)
 
@@ -144,18 +149,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
                 end_date = yesterday
                 start_date = yesterday - timedelta(days=29)  # default: last 30 days
 
-            dev_reg = dr.async_get(hass)
-            for config_entry in hass.config_entries.async_entries(DOMAIN):
-                if not hasattr(config_entry, "runtime_data"):
-                    continue
-                meter_code: str = config_entry.data[CONF_METER_NAME]
-                device = dev_reg.async_get_device(
-                    identifiers={(DOMAIN, meter_code)}
-                )
-                if device and (not device_ids or device.id in device_ids):
-                    await config_entry.runtime_data.coordinator.async_backfill(
-                        start_date, end_date
-                    )
+            for coordinator in _matching_coordinators(hass, call):
+                await coordinator.async_backfill(start_date, end_date)
 
         hass.services.async_register(DOMAIN, SERVICE_BACKFILL, _handle_backfill)
 

@@ -212,6 +212,11 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if sums:
                 self.cost_sums.update(sums)
+                # Reset bridge flag so the today-bridge is re-injected on next refresh
+                # with the updated running sum.  Without this, a stale bridge (injected
+                # before yesterday's data arrived) would show a lower sum than the
+                # last injected cost entry, causing a negative cost in Energy Dashboard.
+                self._today_bridge_injected = None
             elif set_pending and (self._fetch_consumption or self._fetch_generation):
                 # Cost sensor entities not yet registered (setup still in
                 # progress); save days for async_setup_costs() called later.

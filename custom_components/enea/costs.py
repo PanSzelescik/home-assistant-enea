@@ -215,7 +215,13 @@ async def _inject_cost_series(
     stats_data = []
     for dt, cost in series:
         running_sum += cost
-        stats_data.append(StatisticData(start=dt, state=cost, sum=running_sum))
+        # state must equal running_sum (the cumulative total), not the hourly delta.
+        # For state_class=TOTAL, HA's auto-recorder uses the last statistics.state
+        # as its "previous entity state" baseline.  If we stored the hourly delta
+        # here, the recorder would see a mismatch between statistics.state and the
+        # entity's actual state (also the cumulative total), compute a spurious
+        # increase, and corrupt the running sum on the next write.
+        stats_data.append(StatisticData(start=dt, state=running_sum, sum=running_sum))
 
     metadata = StatisticMetaData(
         has_mean=False,

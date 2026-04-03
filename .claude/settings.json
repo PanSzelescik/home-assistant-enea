@@ -10,13 +10,20 @@
   },
   "enabledPlugins": {
     "home-assistant-skills@home-assistant-skills": true,
-    "pyright-lsp@claude-plugins-official": true
+    "pyright-lsp@claude-plugins-official": true,
+    "codex@openai-codex": true
   },
   "extraKnownMarketplaces": {
     "home-assistant-skills": {
       "source": {
         "source": "github",
         "repo": "homeassistant-ai/skills"
+      }
+    },
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
       }
     }
   }

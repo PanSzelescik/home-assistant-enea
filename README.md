@@ -47,24 +47,26 @@ Po dodaniu integracji automatycznie pobierane są historyczne dane energii i moc
 
 | Statystyk | Typ | Opis |
 |-----------|-----|------|
-| `enea:{kod}_energia_pobrana` | kWh | Energia pobrana — suma wszystkich stref |
-| `enea:{kod}_energia_pobrana_dzien` | kWh | Energia pobrana — strefa dzienna (G12/G13) |
-| `enea:{kod}_energia_pobrana_noc` | kWh | Energia pobrana — strefa nocna (G12/G13) |
-| `enea:{kod}_energia_oddana` | kWh | Energia oddana (fotowoltaika) — suma |
-| `enea:{kod}_moc_pobrana` | kW | Chwilowa moc pobrana — suma |
-| `enea:{kod}_moc_pobrana_dzien` | kW | Chwilowa moc pobrana — strefa dzienna |
+| `enea:{numer_PPE}_energia_pobrana` | kWh | Energia pobrana — suma wszystkich stref |
+| `enea:{numer_PPE}_energia_pobrana_dzien` | kWh | Energia pobrana — strefa dzienna (G12/G13) |
+| `enea:{numer_PPE}_energia_pobrana_noc` | kWh | Energia pobrana — strefa nocna (G12/G13) |
+| `enea:{numer_PPE}_energia_oddana` | kWh | Energia oddana (fotowoltaika) — suma |
+| `enea:{numer_PPE}_moc_pobrana` | kW | Chwilowa moc pobrana — suma |
+| `enea:{numer_PPE}_moc_pobrana_dzien` | kW | Chwilowa moc pobrana — strefa dzienna |
 | *(analogicznie dla oddanej)* | | |
 
 Liczba statystyk strefowych zależy od taryfy (G11 = brak stref, G12 = 2 strefy, G13 = 3 strefy). Nazwy stref są pobierane dynamicznie z API.
+
+> `{numer_PPE}` to numer PPE Twojego licznika (18 cyfr, np. `590310600000000001`).
 
 ### Konfiguracja Energy Dashboard
 
 Aby zobaczyć dane historyczne w panelu Energia:
 
 1. **Ustawienia → Energia → Sieć elektryczna**
-2. Kliknij **Dodaj zużycie** i wyszukaj `enea:{kod}_energia_pobrana`
-3. Jeśli masz fotowoltaikę, dodaj **Energia zwrócona**: `enea:{kod}_energia_oddana`
-4. Opcjonalnie: jeśli masz zainstalowaną integrację `enea_prices`, możesz w konfiguracji źródła energii wskazać sensor kosztów jako **encję śledzącą całkowite koszty** — np. `sensor.enea_..._koszt_energii_pobrana_dzien`
+2. Kliknij **Dodaj zużycie** i wyszukaj `enea:{numer_PPE}_energia_pobrana`
+3. Jeśli masz fotowoltaikę, dodaj **Energia zwrócona**: `enea:{numer_PPE}_energia_oddana`
+4. Opcjonalnie: jeśli masz zainstalowaną integrację `enea_prices`, w konfiguracji źródła energii możesz wskazać statystykę kosztów jako **encję śledzącą całkowite koszty** — np. `enea:{numer_PPE}_koszt_energii_pobrana_dzien` (szczegóły niżej, sekcja **Koszty energii**)
 
 > **Uwaga:** Nie dodawaj sensorów `sensor.enea_...` do wykresu zużycia — używaj statystyk zewnętrznych `enea:...`, które mają prawidłowe znaczniki czasu.
 
@@ -84,7 +86,7 @@ Gdy obie integracje są skonfigurowane i taryfy się zgadzają, Enea Licznik aut
    - Koszt energii pobrana – Dzień
    - Koszt energii pobrana – Noc
    - Koszt energii oddana – Dzień *(jeśli włączone pobieranie generacji)*
-2. Wstrzykuje godzinowe statystyki kosztów w PLN, obliczone na podstawie danych energetycznych i cennika z `enea_prices`
+2. Wstrzykuje godzinowe **statystyki zewnętrzne** kosztów w PLN (`enea:{numer_PPE}_koszt_...`), obliczone na podstawie danych energetycznych i cennika z `enea_prices` — to ich używasz w panelu Energia (tak jak statystyk energii)
 
 ### Sensory kosztów
 
@@ -94,7 +96,7 @@ Gdy obie integracje są skonfigurowane i taryfy się zgadzają, Enea Licznik aut
 | Koszt energii pobrana – Noc | Skumulowany całkowity koszt energii pobranej w strefie nocnej (PLN) |
 | *(analogicznie dla energii oddanej)* | |
 
-> **Ważne:** Stan sensora kosztów pokazuje **skumulowaną sumę od początku danych** — nie jest to koszt za bieżący dzień ani miesiąc. Taka architektura jest wymagana przez Home Assistant: Energy Dashboard oblicza koszty dla wybranego okresu jako różnicę między wartościami sum. Sam sensor nie jest szczególnie przydatny do bezpośredniego odczytu.
+> **Ważne:** W panelu Energia używasz **statystyk zewnętrznych** `enea:{numer_PPE}_koszt_...` (nie encji `sensor.…`). Encje `sensor.enea_…_koszt_…` istnieją wyłącznie jako podgląd w Lovelace (pokazują skumulowaną sumę od początku danych) i celowo **nie mają `state_class`** — dzięki temu rekorder HA nie kompiluje dla nich konkurencyjnych statystyk (co wcześniej powodowało błędy `UNIQUE constraint`). Energy Dashboard liczy koszt dla wybranego okresu jako różnicę między wartościami sum.
 
 ### Konfiguracja Energy Dashboard z kosztami
 
@@ -102,7 +104,9 @@ Aby śledzić koszty w panelu Energia:
 
 1. **Ustawienia → Energia → Sieć elektryczna**
 2. Kliknij ikonę edycji przy dodanym źródle zużycia energii
-3. W polu **Encja śledząca całkowite koszty** wybierz odpowiedni sensor kosztów, np. `sensor.enea_..._koszt_energia_pobrana_dzien`
+3. W polu **Encja śledząca całkowite koszty** wybierz odpowiednią statystykę kosztów `enea:{numer_PPE}_koszt_energii_pobrana_dzien` (lista jest filtrowana po walucie PLN; właściwą pozycję rozpoznasz po prefiksie `enea:`)
+
+> **Aktualizacja z wersji ≤ 1.2:** Wcześniej koszty były podpięte pod encję `sensor.…_koszt_…`. Od **1.3** są zewnętrznymi statystykami `enea:…_koszt_…` (naprawia to konflikt z rekorderem HA powodujący błędy `UNIQUE constraint`). Po aktualizacji **przepnij** w panelu Energia źródło kosztów na `enea:…_koszt_…`, a starą statystykę encji `sensor.…_koszt_…` możesz usunąć (*Narzędzia deweloperskie → Statystyki*).
 
 ### Automatyczne przeładowanie
 

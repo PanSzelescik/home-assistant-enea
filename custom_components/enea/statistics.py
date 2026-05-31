@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.helpers.recorder import get_instance
@@ -41,14 +41,15 @@ def has_data(api_response: dict[str, Any]) -> bool:
     return False
 
 
-def time_id_to_dt(stats_date: date, time_id: int) -> datetime:
-    """Convert 1-based timeId (60-min resolution) to a timezone-aware datetime.
+def slot_start_dt(entry: dict[str, Any]) -> datetime:
+    """Return the local-aware start datetime of an hourly slot.
 
-    timeId=1  → 00:00 local time on stats_date
-    timeId=24 → 23:00 local time on stats_date
+    Derived from the slot's ``integrationEnd`` (ms epoch, end of the hour) rather
+    than from ``timeId``, so it stays correct across DST transitions — the API
+    returns 23 or 25 slots on the spring/autumn switch days, not a fixed 24.
     """
-    midnight = datetime.combine(stats_date, time(0, 0), tzinfo=dt_util.DEFAULT_TIME_ZONE)
-    return midnight + timedelta(hours=time_id - 1)
+    end = dt_util.utc_from_timestamp(entry["integrationEnd"] / 1000)
+    return (end - timedelta(hours=1)).astimezone(dt_util.DEFAULT_TIME_ZONE)
 
 
 async def async_insert_historical_statistics(
@@ -75,18 +76,17 @@ async def async_insert_historical_statistics(
         (STAT_KEY_POWER_RETURNED, "oddana", "Moc", _inject_power_series),
     ):
         series_by_name: dict[str, list[tuple[datetime, float]]] = {}
-        for day, data in all_days:
+        for _, data in all_days:
             api = data.get(key)
             if not api or not has_data(api):
                 continue
-            _collect_series(api, day, type_label, prefix, series_by_name)
+            _collect_series(api, type_label, prefix, series_by_name)
         for name, series in series_by_name.items():
             await inject_fn(hass, meter_code, name, series)
 
 
 def _collect_series(
     api_response: dict[str, Any],
-    stats_date: date,
     type_label: str,
     prefix: str,
     series_by_name: dict[str, list[tuple[datetime, float]]],
@@ -100,7 +100,7 @@ def _collect_series(
     }
 
     for entry in api_response.get("values", []):
-        dt = time_id_to_dt(stats_date, entry["timeId"])
+        dt = slot_start_dt(entry)
         slot_total = 0.0
         for item in entry.get("items", []):
             zone_id = item.get("tarifZoneId")

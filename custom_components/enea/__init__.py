@@ -1,7 +1,6 @@
 """Enea Energy Meter integration for Home Assistant."""
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -29,8 +28,6 @@ from .const import (
     SERVICE_REFRESH,
 )
 from .coordinator import EneaUpdateCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -102,12 +99,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
     await update_coordinator.async_config_entry_first_refresh()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_options))
-
-    # Cost sensor entities are now registered; inject any pending cost statistics.
-    try:
-        await update_coordinator.async_setup_costs()
-    except Exception as err:
-        _LOGGER.debug("Failed to set up cost statistics: %s", err, exc_info=True)
 
     # Register the refresh service once for the whole domain.
     if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):

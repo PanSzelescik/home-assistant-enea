@@ -358,13 +358,15 @@ class EneaCostSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
     matching the meter's tariffGroupName.  One sensor is created per active
     zone (e.g. Dzień / Noc for G12) per energy direction (consumed/returned).
 
-    Historical cost statistics are injected by costs.py using
-    async_import_statistics so that the Energy Dashboard can use this entity
-    as "entity tracking total costs".
+    This entity is display-only: the cumulative cost shown comes from
+    coordinator.cost_sums.  Historical cost statistics are injected by costs.py
+    as external statistics ("enea:..._koszt_...") and are what the Energy
+    Dashboard selects under "entity tracking total costs".  No state_class is
+    set on purpose — it would make the recorder compile competing long-term
+    statistics for this entity and collide with the injected ones.
     """
 
     _attr_has_entity_name = True
-    _attr_state_class = SensorStateClass.TOTAL
     _attr_native_unit_of_measurement = UNIT_COST
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_suggested_display_precision = 2

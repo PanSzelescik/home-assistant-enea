@@ -18,7 +18,6 @@ from .const import (
     BACKFILL_MAX_CONSECUTIVE_EMPTY,
     DOMAIN,
     RANGE_FETCH_CHUNK_DAYS,
-    RANGE_SLOTS_PER_DAY,
     STAT_KEY_ENERGY_CONSUMED,
     STAT_KEY_ENERGY_RETURNED,
     STAT_KEY_POWER_CONSUMED,
@@ -28,12 +27,16 @@ from .const import (
     STAT_NAME_BY_KEY,
 )
 from .costs import (
-    async_inject_today_cost_bridge,
     async_insert_cost_statistics,
     find_tariff_group,
     get_cost_stats,
 )
-from .statistics import async_insert_historical_statistics, get_statistic_id, has_data
+from .statistics import (
+    async_insert_historical_statistics,
+    get_statistic_id,
+    has_data,
+    slot_start_dt,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,9 +72,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._tariff_name: str | None = None
         self._assembly_datetime: datetime | None = None
         self.cost_sums: dict[str, float] = {}
-        self._pending_cost_days: list[tuple[date, dict[str, Any]]] = []
         self._backfill_task: asyncio.Task[None] | None = None
-        self._today_bridge_injected: date | None = None
 
     def _get_measurement_types(self) -> list[tuple[str, MeasurementType]]:
         """Return active (key, measurement_type) pairs based on fetch settings."""
@@ -165,7 +166,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 latest_date + timedelta(days=1), yesterday
             )
             if all_days:
-                await self._async_inject_days(all_days, set_pending=True)
+                await self._async_inject_days(all_days)
                 _LOGGER.debug("Injected statistics for %d day(s)", len(all_days))
             else:
                 _LOGGER.debug(
@@ -187,15 +188,15 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_inject_days(
         self,
         all_days: list[tuple[date, dict[str, Any]]],
-        *,
-        set_pending: bool = False,
     ) -> None:
         """Inject energy statistics and, if a matching tariff exists, cost statistics.
 
+        Cost statistics are external ("enea:..._koszt_...") and do not require the
+        EneaCostSensor entities to be registered, so injection works during the
+        first refresh or background backfill regardless of setup ordering.
+
         Args:
             all_days: Chronologically sorted list of (date, data_dict) tuples.
-            set_pending: When True and cost sensor entities are not yet registered,
-                save the days list so async_setup_costs() can retry after setup.
         """
         if not all_days:
             return
@@ -212,32 +213,18 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if sums:
                 self.cost_sums.update(sums)
-                # Reset bridge flag so the today-bridge is re-injected on next refresh
-                # with the updated running sum.  Without this, a stale bridge (injected
-                # before yesterday's data arrived) would show a lower sum than the
-                # last injected cost entry, causing a negative cost in Energy Dashboard.
-                self._today_bridge_injected = None
-            elif set_pending and (self._fetch_consumption or self._fetch_generation):
-                # Cost sensor entities not yet registered (setup still in
-                # progress); save days for async_setup_costs() called later.
-                # Guard: skip when energy fetching is disabled (power-only mode)
-                # — async_insert_cost_statistics returns {} in that case too,
-                # but there is nothing to retry.
-                self._pending_cost_days = all_days
 
     async def _async_do_initial_backfill(self, yesterday: date) -> None:
         """Fetch all historical data and inject statistics.
 
         Runs as a background task (started from _async_fetch_and_inject_stats)
         so that the first coordinator refresh does not block while years of data
-        are being downloaded.  Uses set_pending=True so that if entities are not
-        yet registered when the task finishes, async_setup_costs can pick up
-        the days and inject cost statistics once they are.
+        are being downloaded.
         """
         try:
             all_days = await self._fetch_days_backward(yesterday)
             if all_days:
-                await self._async_inject_days(all_days, set_pending=True)
+                await self._async_inject_days(all_days)
                 self.async_update_listeners()
                 _LOGGER.debug(
                     "Initial backfill complete for meter %s: injected %d day(s)",
@@ -265,58 +252,20 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._backfill_task.cancel()
             _LOGGER.debug("Cancelled initial backfill for meter %s", self._meter_code)
 
-    async def async_setup_costs(self) -> None:
-        """Inject cost statistics after sensor entities have been registered.
-
-        Called from async_setup_entry after async_forward_entry_setups so that
-        EneaCostSensor entities exist in the entity registry.  Handles two cases:
-
-        - Pending days saved during first refresh (energy newly fetched but cost
-          injection failed because entities were not yet registered).
-        - Energy already up to date (e.g. reload triggered by enea_prices install).
-        - Initial backfill running in background: defers cost setup so the task
-          handles costs itself once it finishes and entities are registered.
-        """
-        if not (self._fetch_consumption or self._fetch_generation):
-            # Costs are derived from energy data; nothing to do in power-only mode.
-            return
-        yesterday = dt_util.now().date() - timedelta(days=1)
-        if self._backfill_task is not None and not self._backfill_task.done():
-            # Background initial backfill is still running.  It will call
-            # _async_inject_days(set_pending=True) when done, so cost statistics
-            # will be handled then (either directly or via _pending_cost_days).
-            _LOGGER.debug(
-                "Cost setup deferred: initial backfill running for meter %s",
-                self._meter_code,
-            )
-            return
-        if self._pending_cost_days:
-            days = self._pending_cost_days
-            self._pending_cost_days = []
-            tariff = find_tariff_group(self.hass, self._tariff_name)
-            if tariff is not None:
-                sums = await async_insert_cost_statistics(
-                    self.hass,
-                    self._meter_code,
-                    days,
-                    tariff,
-                    self._fetch_consumption,
-                    self._fetch_generation,
-                )
-                self.cost_sums.update(sums)
-                self.async_update_listeners()
-        else:
-            await self._async_inject_missing_costs(yesterday)
-
     async def _async_inject_missing_costs(self, yesterday: date) -> None:
         """Inject cost statistics for days not yet covered, independently of energy.
 
-        Called when energy statistics are already up to date.  Checks the last
-        cost stat date and fetches/injects any missing days.  Also populates
-        coordinator.cost_sums from the DB when everything is already current.
+        Called from _async_fetch_and_inject_stats when energy statistics are
+        already up to date.  Checks the last cost stat date and fetches/injects
+        any missing days.  Also populates coordinator.cost_sums from the DB when
+        everything is already current.  Cost statistics are external, so this
+        needs no entities and there is no separate post-setup pass.
         """
         if not (self._fetch_consumption or self._fetch_generation):
             # Costs are derived from energy data; nothing to do in power-only mode.
+            return
+        if self._backfill_task is not None and not self._backfill_task.done():
+            # Initial backfill still running; it injects costs (energy + cost) itself.
             return
         tariff = find_tariff_group(self.hass, self._tariff_name)
         if tariff is None:
@@ -328,18 +277,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not self.cost_sums:
                 self.cost_sums.update(existing_sums)
                 self.async_update_listeners()
-            # Inject zero-cost bridge entries for today's hours once per day.
-            # Overwrites any HA auto-recorder entries with incorrect sum values
-            # that may have been written while the sensor was in a wrong state.
-            today = yesterday + timedelta(days=1)
-            if self._today_bridge_injected != today:
-                await async_inject_today_cost_bridge(
-                    self.hass,
-                    self._meter_code,
-                    self._fetch_consumption,
-                    self._fetch_generation,
-                )
-                self._today_bridge_injected = today
             return
 
         if cost_latest is not None:
@@ -372,19 +309,21 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> dict[str, Any]:
         """Remove hourly slots that predate the meter assembly on the assembly day.
 
-        timeId N covers the hour (N-1):00–N:00.  We keep timeId > HH, where HH
-        is the assembly hour, so the slot that contains the assembly moment is
-        included (it carries new-meter readings from the assembly minute onwards).
-        Example: assembly at 12:13 → cutoff=12 → keep timeId > 12 (13+, i.e. 12:00 onwards).
+        Keeps slots whose hour starts at or after the assembly hour, so the slot
+        containing the assembly moment is included (it carries new-meter readings
+        from the assembly minute onwards).  Compares each slot's actual start time
+        (slot_start_dt, derived from integrationEnd) rather than timeId, so it
+        stays correct even if the meter was assembled on a DST transition day.
+        Example: assembly at 12:13 → keep slots starting 12:00 onwards.
         """
         if self._assembly_datetime is None or day != self._assembly_datetime.date():
             return day_data
-        cutoff_time_id = self._assembly_datetime.hour
+        cutoff = self._assembly_datetime.replace(minute=0, second=0, microsecond=0)
         result: dict[str, Any] = {}
         for key, api_response in day_data.items():
             filtered_values = [
                 entry for entry in api_response.get("values", [])
-                if entry.get("timeId", 0) > cutoff_time_id
+                if slot_start_dt(entry) >= cutoff
             ]
             result[key] = {**api_response, "values": filtered_values}
         return result
@@ -392,51 +331,37 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @staticmethod
     def _split_range_response(
         api_response: dict[str, Any],
-        start_date: date,
     ) -> dict[date, dict[str, Any]]:
-        """Split a range API response into per-day response dicts.
+        """Split a flat range API response into per-day response dicts.
 
-        The range endpoint returns 24 timeId slots per day concatenated in a flat
-        list (timeId repeats 1-24 for each day).  This method groups them back into
-        per-day structures identical to single-day responses so that has_data,
-        _collect_series and cost statistics need no changes.
+        Groups the hourly slots by each slot's actual local date (derived from
+        ``integrationEnd``) rather than by fixed 24-slot blocks, so DST transition
+        days — which carry 23 or 25 slots, not 24 — are split correctly.  Each
+        per-day dict has the same {'values', 'zones'} shape as a single-day
+        response, so has_data, _collect_series and cost statistics need no changes.
 
-        For very large ranges the API stores data in 'valuesToTable' instead of
-        'values' — non-empty 'values' takes priority; an empty 'values' list
-        falls back to 'valuesToTable' (the `or` operator treats [] as falsy).
-
-        Only supports Resolution.MIN_60 responses (RANGE_SLOTS_PER_DAY = 24
-        slots per day).  Raises ValueError if the entry count is not a
-        multiple of RANGE_SLOTS_PER_DAY.
+        For very large ranges the API may return the per-hour data in
+        'valuesToTable' instead of 'values', and can even leave a short partial
+        slice in 'values'; whichever holds more entries is used so a partial
+        'values' never shadows a complete 'valuesToTable'.
 
         Args:
             api_response: Raw API response from the range endpoint.
-            start_date: The first date of the requested range.
 
         Returns:
             Mapping of date → single-day response dict with 'values' and 'zones'.
         """
-        entries: list[dict[str, Any]] = (
-            api_response.get("values")
-            or api_response.get("valuesToTable")
-            or []
-        )
+        values: list[dict[str, Any]] = api_response.get("values") or []
+        values_to_table: list[dict[str, Any]] = api_response.get("valuesToTable") or []
+        entries = values_to_table if len(values_to_table) > len(values) else values
         zones = api_response.get("zones", [])
+
         result: dict[date, dict[str, Any]] = {}
-
-        if len(entries) % RANGE_SLOTS_PER_DAY != 0:
-            raise ValueError(
-                f"Range response has {len(entries)} entries — not a multiple of "
-                f"{RANGE_SLOTS_PER_DAY}. Only Resolution.MIN_60 responses are "
-                f"supported by this method."
-            )
-
-        num_days = len(entries) // RANGE_SLOTS_PER_DAY
-        for i in range(num_days):
-            block = entries[i * RANGE_SLOTS_PER_DAY : (i + 1) * RANGE_SLOTS_PER_DAY]
-            day = start_date + timedelta(days=i)
-            result[day] = {"values": block, "zones": zones}
-
+        for entry in entries:
+            if entry.get("integrationEnd") is None:
+                continue
+            day = slot_start_dt(entry).date()
+            result.setdefault(day, {"values": [], "zones": zones})["values"].append(entry)
         return result
 
     async def _fetch_range(
@@ -493,7 +418,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if first_exc is None:
                     first_exc = result
             else:
-                per_key_days[key] = self._split_range_response(result, start_date)
+                per_key_days[key] = self._split_range_response(result)
 
         if not per_key_days:
             # All measurement-type requests failed — propagate to the caller.
@@ -621,7 +546,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         all_days = await self._fetch_days_forward(start_date, end_date)
         if all_days:
             await self._async_inject_days(all_days)
-            self._today_bridge_injected = None  # force bridge re-injection on next refresh
             self.async_update_listeners()
             _LOGGER.info(
                 "Backfill injected %d day(s) for meter %s (%s – %s)",

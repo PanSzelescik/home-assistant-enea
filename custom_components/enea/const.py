@@ -99,7 +99,6 @@ class Resolution(IntEnum):
 
 BACKFILL_MAX_CONSECUTIVE_EMPTY = 7  # stop after this many consecutive days with no data
 RANGE_FETCH_CHUNK_DAYS = 180  # max days per single range request (~6 months)
-RANGE_SLOTS_PER_DAY = 24  # hourly slots per day in resolution=2 responses
 
 STAT_KEY_ENERGY_CONSUMED = "energy_consumed"
 STAT_KEY_ENERGY_RETURNED = "energy_returned"

@@ -192,12 +192,15 @@ async def _inject_cost_series(
     statistic_id = get_statistic_id(meter_code, name)
     first_dt = series[0][0]
 
-    # Look up the sum for the hour ending exactly at series[0] so we can chain
-    # correctly even when overwriting an already-injected range.
+    # Look up the most recent sum before series[0].  Zone-specific series have
+    # gaps (e.g. last "Dzień" slot at 21:00, next at 06:00 — 9 h gap), so
+    # looking back only 1 h misses the previous record and resets running_sum
+    # to 0, producing a large negative delta.  25 h covers any zone gap
+    # including DST days (max gap is still well under 24 h).
     base_stats = await get_instance(hass).async_add_executor_job(
         statistics_during_period,
         hass,
-        first_dt - timedelta(hours=1),
+        first_dt - timedelta(hours=25),
         first_dt,
         {statistic_id},
         "hour",

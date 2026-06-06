@@ -129,12 +129,15 @@ async def _inject_energy_series(
     statistic_id = get_statistic_id(meter_code, name)
     first_dt = series[0][0]
 
-    # Look up the sum for the hour that ends exactly at series[0] so we can
-    # chain correctly even when overwriting already-injected data.
+    # Look up the most recent sum before series[0].  Zone-specific series have
+    # gaps (e.g. last "Dzień" slot is at 21:00, next is at 6:00 — 9h gap), so
+    # looking back only 1 h misses the previous record and resets running_sum
+    # to 0, producing a large negative delta in the Energy Dashboard.  25 h
+    # safely covers any zone configuration including DST days.
     base_stats = await get_instance(hass).async_add_executor_job(
         statistics_during_period,
         hass,
-        first_dt - timedelta(hours=1),
+        first_dt - timedelta(hours=25),
         first_dt,
         {statistic_id},
         "hour",

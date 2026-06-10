@@ -82,21 +82,8 @@ Integracja obsługuje automatyczne obliczanie kosztów energii we współpracy z
 
 Gdy obie integracje są skonfigurowane i taryfy się zgadzają, Enea Licznik automatycznie:
 
-1. Tworzy sensory kosztów per strefa i kierunek, np.:
-   - Koszt energii pobrana – Dzień
-   - Koszt energii pobrana – Noc
-   - Koszt energii oddana – Dzień *(jeśli włączone pobieranie generacji)*
-2. Wstrzykuje godzinowe **statystyki zewnętrzne** kosztów w PLN (`enea:{numer_PPE}_koszt_...`), obliczone na podstawie danych energetycznych i cennika z `enea_prices` — to ich używasz w panelu Energia (tak jak statystyk energii)
-
-### Sensory kosztów
-
-| Encja | Opis |
-|-------|------|
-| Koszt energii pobrana – Dzień | Skumulowany całkowity koszt energii pobranej w strefie dziennej (PLN) |
-| Koszt energii pobrana – Noc | Skumulowany całkowity koszt energii pobranej w strefie nocnej (PLN) |
-| *(analogicznie dla energii oddanej)* | |
-
-> **Ważne:** W panelu Energia używasz **statystyk zewnętrznych** `enea:{numer_PPE}_koszt_...` (nie encji `sensor.…`). Encje `sensor.enea_…_koszt_…` istnieją wyłącznie jako podgląd w Lovelace (pokazują skumulowaną sumę od początku danych) i celowo **nie mają `state_class`** — dzięki temu rekorder HA nie kompiluje dla nich konkurencyjnych statystyk (co wcześniej powodowało błędy `UNIQUE constraint`). Energy Dashboard liczy koszt dla wybranego okresu jako różnicę między wartościami sum.
+- Wstrzykuje godzinowe **statystyki zewnętrzne** kosztów w PLN (`enea:{numer_PPE}_koszt_...`), obliczone na podstawie danych energetycznych i cennika z `enea_prices` — to ich używasz w panelu Energia (tak jak statystyk energii)
+- Tworzy **sensory szacowania rachunku** i **encje daty odczytu** (szczegóły niżej)
 
 ### Konfiguracja Energy Dashboard z kosztami
 
@@ -108,9 +95,24 @@ Aby śledzić koszty w panelu Energia:
 
 > **Aktualizacja z wersji ≤ 1.2:** Wcześniej koszty były podpięte pod encję `sensor.…_koszt_…`. Od **1.3** są zewnętrznymi statystykami `enea:…_koszt_…` (naprawia to konflikt z rekorderem HA powodujący błędy `UNIQUE constraint`). Po aktualizacji **przepnij** w panelu Energia źródło kosztów na `enea:…_koszt_…`, a starą statystykę encji `sensor.…_koszt_…` możesz usunąć (*Narzędzia deweloperskie → Statystyki*).
 
+### Szacowanie rachunku
+
+Gdy `enea_prices` jest skonfigurowane, dla każdego licznika tworzone są dwie edytowalne encje daty i dwa sensory szacunkowego kosztu:
+
+| Encja | Opis |
+|-------|------|
+| Data poprzedniego odczytu | Wpisz datę poprzedniego odczytu licznika (d1) |
+| Data ostatniego odczytu | Wpisz datę ostatniego odczytu licznika (d2) |
+| Szacowany rachunek – poprzedni okres | Szacunkowy koszt za okres `(d1, d2]` — ostatni rozliczony rachunek |
+| Szacowany rachunek – bieżący okres | Szacunkowy koszt za okres `(d2, wczoraj]` — narastający bieżący rachunek |
+
+Kwota w PLN = koszt zmienny (kWh × cena brutto per strefa) + opłaty stałe (sieć, abonament, moc) za pełne miesiące.
+
+Sensory rachunku mają dodatkowe atrybuty: `start`, `end`, `months`, `variable_cost`, `fixed_cost`, `kwh_dzien`, `cost_dzien`, `kwh_noc`, `cost_noc`.
+
 ### Automatyczne przeładowanie
 
-Jeśli `enea_prices` zostanie zainstalowane po Enea Licznik, integracja Enea automatycznie się przeładuje i utworzy sensory kosztów — nie jest wymagane ręczne przeładowanie.
+Jeśli `enea_prices` zostanie zainstalowane po Enea Licznik, integracja Enea automatycznie się przeładuje — nie jest wymagane ręczne przeładowanie.
 
 ## Encje
 
@@ -127,15 +129,16 @@ Widoczne w panelu **Energia** Home Assistant. Liczba sensorów strefowych zależ
 | Energia oddana – Dzień  | Energia oddana w strefie dziennej | 0,1080 kWh |
 | Energia oddana – Noc    | Energia oddana w strefie nocnej | 0,0000 kWh |
 
-### Sensory kosztów *(wymaga enea_prices)*
+### Szacowanie rachunku *(wymaga enea_prices)*
 
-Tworzone per strefa i kierunek, gdy integracja `enea_prices` jest skonfigurowana z pasującą taryfą.
+Tworzone gdy integracja `enea_prices` jest skonfigurowana z pasującą taryfą.
 
 | Encja | Opis | Przykład |
 |-------|------|---------|
-| Koszt energii pobrana – Dzień | Skumulowany koszt energii pobranej w strefie dziennej | 1234,56 PLN |
-| Koszt energii pobrana – Noc | Skumulowany koszt energii pobranej w strefie nocnej | 234,56 PLN |
-| *(analogicznie dla energii oddanej)* | | |
+| Data poprzedniego odczytu | Edytowalna data d1 | 2026-03-20 |
+| Data ostatniego odczytu | Edytowalna data d2 | 2026-04-06 |
+| Szacowany rachunek – poprzedni okres | Koszt za `(d1, d2]` | 157,43 PLN |
+| Szacowany rachunek – bieżący okres | Koszt za `(d2, wczoraj]` | 807,67 PLN |
 
 ### Sensory diagnostyczne
 

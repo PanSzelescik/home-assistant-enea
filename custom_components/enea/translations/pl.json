@@ -122,6 +122,14 @@
     }
   },
   "entity": {
+    "date": {
+      "bill_prev_reading": {
+        "name": "Data poprzedniego odczytu"
+      },
+      "bill_last_reading": {
+        "name": "Data ostatniego odczytu"
+      }
+    },
     "sensor": {
       "tariff": {
         "name": "Grupa taryfowa"
@@ -146,6 +154,66 @@
       },
       "generation_total": {
         "name": "Energia oddana"
+      },
+      "bill_previous": {
+        "name": "Szacowany rachunek – poprzedni okres",
+        "state_attributes": {
+          "start": { "name": "Początek okresu" },
+          "end": { "name": "Koniec okresu" },
+          "months": { "name": "Miesiące" },
+          "total_netto": { "name": "Łącznie (netto)" },
+          "variable_cost": { "name": "Koszt energii (brutto)" },
+          "variable_cost_netto": { "name": "Koszt energii (netto)" },
+          "fixed_cost": { "name": "Opłaty stałe łącznie (brutto)" },
+          "fixed_network": { "name": "Opłata stała sieciowa (brutto)" },
+          "fixed_network_netto": { "name": "Opłata stała sieciowa (netto)" },
+          "fixed_subscription": { "name": "Opłata abonamentowa (brutto)" },
+          "fixed_subscription_netto": { "name": "Opłata abonamentowa (netto)" },
+          "fixed_capacity": { "name": "Opłata mocowa (brutto)" },
+          "fixed_capacity_netto": { "name": "Opłata mocowa (netto)" },
+          "kwh_dzien": { "name": "Zużycie Dzień (kWh)" },
+          "cost_dzien": { "name": "Koszt Dzień (brutto)" },
+          "cost_dzien_netto": { "name": "Koszt Dzień (netto)" },
+          "kwh_noc": { "name": "Zużycie Noc (kWh)" },
+          "cost_noc": { "name": "Koszt Noc (brutto)" },
+          "cost_noc_netto": { "name": "Koszt Noc (netto)" },
+          "kwh_szczyt": { "name": "Zużycie Szczyt (kWh)" },
+          "cost_szczyt": { "name": "Koszt Szczyt (brutto)" },
+          "cost_szczyt_netto": { "name": "Koszt Szczyt (netto)" },
+          "kwh_poza_szczytem": { "name": "Zużycie Poza szczytem (kWh)" },
+          "cost_poza_szczytem": { "name": "Koszt Poza szczytem (brutto)" },
+          "cost_poza_szczytem_netto": { "name": "Koszt Poza szczytem (netto)" }
+        }
+      },
+      "bill_current": {
+        "name": "Szacowany rachunek – bieżący okres",
+        "state_attributes": {
+          "start": { "name": "Początek okresu" },
+          "end": { "name": "Koniec okresu" },
+          "months": { "name": "Miesiące" },
+          "total_netto": { "name": "Łącznie (netto)" },
+          "variable_cost": { "name": "Koszt energii (brutto)" },
+          "variable_cost_netto": { "name": "Koszt energii (netto)" },
+          "fixed_cost": { "name": "Opłaty stałe łącznie (brutto)" },
+          "fixed_network": { "name": "Opłata stała sieciowa (brutto)" },
+          "fixed_network_netto": { "name": "Opłata stała sieciowa (netto)" },
+          "fixed_subscription": { "name": "Opłata abonamentowa (brutto)" },
+          "fixed_subscription_netto": { "name": "Opłata abonamentowa (netto)" },
+          "fixed_capacity": { "name": "Opłata mocowa (brutto)" },
+          "fixed_capacity_netto": { "name": "Opłata mocowa (netto)" },
+          "kwh_dzien": { "name": "Zużycie Dzień (kWh)" },
+          "cost_dzien": { "name": "Koszt Dzień (brutto)" },
+          "cost_dzien_netto": { "name": "Koszt Dzień (netto)" },
+          "kwh_noc": { "name": "Zużycie Noc (kWh)" },
+          "cost_noc": { "name": "Koszt Noc (brutto)" },
+          "cost_noc_netto": { "name": "Koszt Noc (netto)" },
+          "kwh_szczyt": { "name": "Zużycie Szczyt (kWh)" },
+          "cost_szczyt": { "name": "Koszt Szczyt (brutto)" },
+          "cost_szczyt_netto": { "name": "Koszt Szczyt (netto)" },
+          "kwh_poza_szczytem": { "name": "Zużycie Poza szczytem (kWh)" },
+          "cost_poza_szczytem": { "name": "Koszt Poza szczytem (brutto)" },
+          "cost_poza_szczytem_netto": { "name": "Koszt Poza szczytem (netto)" }
+        }
       }
     }
   }

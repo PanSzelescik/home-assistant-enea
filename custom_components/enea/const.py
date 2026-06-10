@@ -9,7 +9,7 @@ from homeassistant.const import Platform
 # ---------------------------------------------------------------------------
 
 DOMAIN = "enea"
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.DATE]
 DEFAULT_NAME = "Enea"
 
 # ---------------------------------------------------------------------------
@@ -120,9 +120,17 @@ ENEA_PRICES_DOMAIN = "enea_prices"
 
 UNIT_COST = "PLN"
 
+VAT_RATE = 0.23
+
 COST_ZONE_DISPLAY: dict[str, str] = {
     "day": "Dzień",
     "night": "Noc",
     "peak": "Szczyt",
     "off_peak": "Poza szczytem",
 }
+
+# Bill estimate entity keys
+BILL_KEY_PREV_READING = "bill_prev_reading"
+BILL_KEY_LAST_READING = "bill_last_reading"
+BILL_KEY_PREVIOUS = "bill_previous"
+BILL_KEY_CURRENT = "bill_current"

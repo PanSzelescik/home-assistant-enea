@@ -122,6 +122,14 @@
     }
   },
   "entity": {
+    "date": {
+      "bill_prev_reading": {
+        "name": "Previous Reading Date"
+      },
+      "bill_last_reading": {
+        "name": "Last Reading Date"
+      }
+    },
     "sensor": {
       "tariff": {
         "name": "Tariff Group"
@@ -146,6 +154,66 @@
       },
       "generation_total": {
         "name": "Energy Returned"
+      },
+      "bill_previous": {
+        "name": "Estimated bill – previous period",
+        "state_attributes": {
+          "start": { "name": "Period start" },
+          "end": { "name": "Period end" },
+          "months": { "name": "Months" },
+          "total_netto": { "name": "Total (net)" },
+          "variable_cost": { "name": "Variable cost (gross)" },
+          "variable_cost_netto": { "name": "Variable cost (net)" },
+          "fixed_cost": { "name": "Fixed fees (gross)" },
+          "fixed_network": { "name": "Fixed network fee (gross)" },
+          "fixed_network_netto": { "name": "Fixed network fee (net)" },
+          "fixed_subscription": { "name": "Subscription (gross)" },
+          "fixed_subscription_netto": { "name": "Subscription (net)" },
+          "fixed_capacity": { "name": "Capacity fee (gross)" },
+          "fixed_capacity_netto": { "name": "Capacity fee (net)" },
+          "kwh_dzien": { "name": "Day consumption (kWh)" },
+          "cost_dzien": { "name": "Day cost (gross)" },
+          "cost_dzien_netto": { "name": "Day cost (net)" },
+          "kwh_noc": { "name": "Night consumption (kWh)" },
+          "cost_noc": { "name": "Night cost (gross)" },
+          "cost_noc_netto": { "name": "Night cost (net)" },
+          "kwh_szczyt": { "name": "Peak consumption (kWh)" },
+          "cost_szczyt": { "name": "Peak cost (gross)" },
+          "cost_szczyt_netto": { "name": "Peak cost (net)" },
+          "kwh_poza_szczytem": { "name": "Off-peak consumption (kWh)" },
+          "cost_poza_szczytem": { "name": "Off-peak cost (gross)" },
+          "cost_poza_szczytem_netto": { "name": "Off-peak cost (net)" }
+        }
+      },
+      "bill_current": {
+        "name": "Estimated bill – current period",
+        "state_attributes": {
+          "start": { "name": "Period start" },
+          "end": { "name": "Period end" },
+          "months": { "name": "Months" },
+          "total_netto": { "name": "Total (net)" },
+          "variable_cost": { "name": "Variable cost (gross)" },
+          "variable_cost_netto": { "name": "Variable cost (net)" },
+          "fixed_cost": { "name": "Fixed fees (gross)" },
+          "fixed_network": { "name": "Fixed network fee (gross)" },
+          "fixed_network_netto": { "name": "Fixed network fee (net)" },
+          "fixed_subscription": { "name": "Subscription (gross)" },
+          "fixed_subscription_netto": { "name": "Subscription (net)" },
+          "fixed_capacity": { "name": "Capacity fee (gross)" },
+          "fixed_capacity_netto": { "name": "Capacity fee (net)" },
+          "kwh_dzien": { "name": "Day consumption (kWh)" },
+          "cost_dzien": { "name": "Day cost (gross)" },
+          "cost_dzien_netto": { "name": "Day cost (net)" },
+          "kwh_noc": { "name": "Night consumption (kWh)" },
+          "cost_noc": { "name": "Night cost (gross)" },
+          "cost_noc_netto": { "name": "Night cost (net)" },
+          "kwh_szczyt": { "name": "Peak consumption (kWh)" },
+          "cost_szczyt": { "name": "Peak cost (gross)" },
+          "cost_szczyt_netto": { "name": "Peak cost (net)" },
+          "kwh_poza_szczytem": { "name": "Off-peak consumption (kWh)" },
+          "cost_poza_szczytem": { "name": "Off-peak cost (gross)" },
+          "cost_poza_szczytem_netto": { "name": "Off-peak cost (net)" }
+        }
       }
     }
   }

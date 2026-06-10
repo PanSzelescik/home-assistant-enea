@@ -29,12 +29,14 @@ custom_components/enea/
 ├── connector.py     — klient HTTP (EneaApiClient, _request helper), wyjątki, get_active_meter(), format_address()
 ├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill; klient API jako self.client
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", reconfigure; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
-├── sensor.py        — EneaSensor, EneaEnergySensor, EneaCostSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date
+├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date
+├── date.py          — EneaBillDateEntity (Platform.DATE): edytowalne daty odczytu z RestoreEntity
+├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill; szacowanie rachunku z long-term statistics
 ├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series
-├── costs.py         — async_insert_cost_statistics, get_cost_stats, _inject_cost_series, get_cost_statistic_name, _get_cost_entries, find_tariff_group
+├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, _inject_cost_series, get_cost_statistic_name, find_tariff_group
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem)
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
-├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk, stałe kosztów (ENEA_PRICES_DOMAIN, UNIT_COST, COST_ZONE_DISPLAY)
+├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk, stałe kosztów (ENEA_PRICES_DOMAIN, UNIT_COST, COST_ZONE_DISPLAY, VAT_RATE, BILL_KEY_*)
 ├── manifest.json    — metadane integracji (wymagane przez HA/HACS/hassfest)
 └── translations/
     ├── en.json      — angielski (kopia strings.json)
@@ -120,22 +122,11 @@ Statystyki kosztów używają **`async_add_external_statistics`** z `source=DOMA
 
 W Energy Dashboard koszt wybierasz przez **„Użyj encji śledzącej całkowite koszty"** — lista pokazuje statystyki w walucie HA (PLN), w tym zewnętrzne `enea:..._koszt_...` (z `name` jako etykietą, np. „Koszt energii pobrana – Dzień").
 
-### EneaCostSensor — encja podglądowa
-
-`EneaCostSensor` w `sensor.py` ma:
-- `device_class=MONETARY`, `native_unit_of_measurement="PLN"` — **bez `state_class`** (świadomie: `state_class` kazałby rekorderowi kompilować konkurencyjne statystyki długoterminowe dla tej encji i kolidować z naszymi zewnętrznymi)
-- Stan encji = skumulowana suma kosztów od początku danych (`native_value` z `coordinator.cost_sums[unique_id]`) — wyłącznie do podglądu w Lovelace
-- Tworzone tylko gdy `find_tariff_group` zwraca pasującą taryfę
-
-Funkcję „encji śledzącej całkowite koszty" w Energy Dashboard pełni **statystyka zewnętrzna** `enea:..._koszt_...` (nie ta encja) — patrz wyżej.
-
 ### Timing wstrzykiwania kosztów
 
 Statystyki zewnętrzne **nie wymagają** istnienia encji w rejestrze, więc wstrzykiwanie kosztów może iść tą samą ścieżką co energia (`_async_inject_days`) podczas pierwszego odświeżenia lub backfillu w tle — niezależnie od kolejności setupu. Nie ma już mechanizmu `_pending_cost_days`/`set_pending`.
 
-`async_setup_costs()` (wołane z `__init__.py` po `async_forward_entry_setups`) wykonuje tylko `_async_inject_missing_costs(yesterday)` — uzupełnia brakujące koszty i pre-populuje `coordinator.cost_sums` dla encji podglądowych (np. po reloadzie wywołanym instalacją `enea_prices`). Defer, gdy trwa jeszcze backfill w tle (ten wstrzykuje koszty sam).
-
-`get_cost_stats` enumeruje serie kosztów po encjach z rejestru (trwałych między restartami) i odpytuje odpowiadające im zewnętrzne `enea:..._koszt_...`.
+`_async_inject_missing_costs` (wołane z `_async_fetch_and_inject_stats`) uzupełnia brakujące koszty, gdy statystyki energii są już aktualne. `async_get_cost_latest_date` odpytuje recorder po stat IDs wyliczonych z bieżących stref taryfy — nie wymaga rejestrów encji.
 
 ### Obsługa świąt (G12w)
 
@@ -144,6 +135,22 @@ Koszty są obliczane przez `period.get_zone_at_hour(hour, day=day)` — `enea_pr
 ### Deduplikacja przy backfill
 
 `_inject_cost_series` w `costs.py` łączy bieżącą sumę (`running_sum`) ze statystyką tuż przed `series[0]` (jak `_inject_energy_series`), a `async_add_external_statistics` używa `INSERT OR REPLACE` — dzięki czemu ponowny backfill tego samego zakresu jest idempotentny (nadpisuje, nie dolicza).
+
+### Szacowanie rachunku (billing.py)
+
+`find_prices_config(hass, tariff_name)` zwraca `PricesConfig` (duck-typed z `enea_prices.runtime_data`: `tariff`, `phases`, `annual_kwh`, `billing_months`).
+
+`async_estimate_bill(hass, meter_code, cfg, start, end)` → `BillEstimate`:
+- kWh per strefa = różnica sum skumulowanych statystyk zewnętrznych `enea:..._energia_pobrana_{strefa}` na granicach `(start, end]` (start wyłącznie, end włącznie — zweryfikowane na danych z API).
+- Koszt zmienny brutto = `kWh × period.zones[zone].total_brutto` per strefa.
+- Opłaty stałe brutto = `(network_fixed + subscription + capacity) × (1 + VAT_RATE) × months`, gdzie `months = max(1, round(days / 30.44))`.
+- Metoda `tariff.get_period_for_date(end)` wybiera właściwy cennik.
+
+`coordinator.async_recompute_bills()` oblicza dwa okresy:
+- **poprzedni**: `(bill_prev_reading, bill_last_reading]`
+- **bieżący**: `(bill_last_reading, yesterday]`
+
+Wywoływana: po zmianie daty przez użytkownika (z `EneaBillDateEntity.async_set_value`) i po każdym odświeżeniu danych, gdy co najmniej jedna data jest ustawiona.
 
 ### Automatyczne przeładowanie
 
@@ -264,11 +271,12 @@ Tworzone dynamicznie w `async_setup_entry` na podstawie `currentValues[]`. Senso
 - `consumption_total` / `generation_total` — sumy stref (statyczne)
 - `consumption_zone{i}` / `generation_zone{i}` — per strefa (dynamiczne, nazwy z `ppeZones[]`)
 
-### Koszty (EneaCostSensor, opcjonalne)
-Tworzone dynamicznie per strefa i kierunek, gdy `find_tariff_group` zwraca pasującą taryfę z `enea_prices`.
-- `device_class=MONETARY`, jednostka PLN — **bez `state_class`** (encja podglądowa; statystyki dostarcza `enea:..._koszt_...`)
-- Stan = skumulowana suma kosztów od początku danych (`native_value` z `coordinator.cost_sums`) — do podglądu w Lovelace
-- `unique_id` format: `enea-{meter_code}-koszt_{direction}_{zone}`; statystyka kosztu to zewnętrzny `enea:{meter_code}_{slugify(get_cost_statistic_name(...))}`, nie `entity_id`
+### Szacowanie rachunku (EneaBillSensor + EneaBillDateEntity, opcjonalne)
+Tworzone gdy `find_tariff_group` zwraca pasującą taryfę z `enea_prices`.
+- Dwie encje `DateEntity` (Platform.DATE, `RestoreEntity`) — „Data poprzedniego odczytu" i „Data ostatniego odczytu". Po zmianie daty wołają `coordinator.async_recompute_bills()`.
+- Dwa sensory `EneaBillSensor` (Platform.SENSOR) — „Szacowany rachunek – poprzedni okres" i „Szacowany rachunek – bieżący okres". `device_class=MONETARY`, PLN, **bez `state_class`**. `native_value` z `coordinator.bill_estimates[key].total`.
+- `coordinator.bill_estimates` (dict `BILL_KEY_PREVIOUS/CURRENT → BillEstimate | None`) przeliczany przez `async_recompute_bills()` — wywołanie: po zmianie daty, po każdym odświeżeniu gdy daty są ustawione.
+- `BillEstimate` z `billing.py`: `kwh_by_zone`, `cost_by_zone`, `variable_cost`, `fixed_cost`, `months`, `total`, `start`, `end`. Atrybuty sensora: `kwh_{strefa}`, `cost_{strefa}`, `variable_cost`, `fixed_cost`, `months`, `start`, `end`.
 
 ## Obsługa sesji
 
@@ -286,9 +294,9 @@ Tworzone dynamicznie per strefa i kierunek, gdy `find_tariff_group` zwraca pasuj
 | `sensor.enea_*_energia_pobrana` | `/ppe/{id}` dashboard | Energy Dashboard (encje) |
 | `enea:..._energia_pobrana` | `/consumption/...` | Energy Dashboard (statystyki zewnętrzne) |
 | `enea:..._koszt_energii_pobrana_dzien` | obliczone z energii + cennik enea_prices | Energy Dashboard (encja śledząca koszty) |
-| `sensor.enea_*_koszt_energii_pobrana_dzien` | `coordinator.cost_sums` | podgląd w Lovelace |
+| `sensor.enea_*_szacowany_rachunek_*` | `coordinator.bill_estimates` | podgląd kwoty rachunku w Lovelace |
 
-W Energy Dashboard **nie** dodajemy sensorów energii (`sensor.enea_..._energia_...`) do wykresu historii — zamiast tego dodajemy statystyki zewnętrzne (`enea:...`). Sensory energii/kosztów (`sensor.enea_...`) służą do bieżącego wyświetlania wartości na dashboardach Lovelace. Jako „encję śledzącą całkowite koszty" w Energy Dashboard wskazujemy **statystykę zewnętrzną** `enea:..._koszt_...` (widoczną na liście po jednostce PLN), nie encję.
+W Energy Dashboard **nie** dodajemy sensorów energii (`sensor.enea_..._energia_...`) do wykresu historii — zamiast tego dodajemy statystyki zewnętrzne (`enea:...`). Jako „encję śledzącą całkowite koszty" w Energy Dashboard wskazujemy **statystykę zewnętrzną** `enea:..._koszt_...` (widoczną na liście po jednostce PLN), nie encję.
 
 ## Opcje integracji (options flow)
 

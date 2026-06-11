@@ -379,8 +379,10 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
         Top-level keys: start, end, months, total_netto, total (brutto = state).
         Section 'Sprzedaż energii': energy_netto + per-zone kwh_<zone> and
         energy_<zone>_netto.
-        Section 'Usługa dystrybucji': distribution_netto + per-zone
-        distribution_<zone>_netto + fixed fees (network, capacity, subscription).
+        Section 'Usługa dystrybucji': distribution_netto (sum) + fixed fees
+        (fixed_network_netto, fixed_capacity_netto, fixed_subscription_netto) +
+        per-zone components: variable_network_<zone>_netto, quality_<zone>_netto,
+        oze_<zone>_netto, cogeneration_<zone>_netto.
         """
         est = self.coordinator.bill_estimates.get(self._bill_key)
         if est is None:

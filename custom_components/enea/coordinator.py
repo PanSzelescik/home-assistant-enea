@@ -123,7 +123,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Recompute bill estimates if reading dates are configured (new stats may have arrived).
         if self.bill_prev_reading is not None or self.bill_last_reading is not None:
-            self.hass.async_create_task(self.async_recompute_bills())
+            await self.async_recompute_bills()
 
         return data
 

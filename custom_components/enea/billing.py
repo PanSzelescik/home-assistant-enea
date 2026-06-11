@@ -3,7 +3,7 @@
 Computes an estimated electricity bill for a date period (start, end] using the
 same calculation method as Enea's invoices:
 
-1. kWh per zone is rounded to whole numbers (as printed on the invoice).
+1. kWh per zone is taken directly from long-term statistics (precise, not rounded).
 2. Every line item is multiplied and rounded to 2 decimal places at **netto**
    (pre-VAT) prices.  The bill is split into two sections mirroring the invoice:
    - Sprzedaż energii – energy price including the excise duty (akcyza).
@@ -148,7 +148,7 @@ async def async_estimate_bill(
     """Estimate the electricity bill for the period (start, end].
 
     Mirrors the calculation method used on Enea invoices:
-    - kWh per zone is rounded to a whole number before multiplication.
+    - kWh per zone is taken directly from long-term statistics (precise, not rounded).
     - Each line item is rounded to 2 decimal places at netto prices.
     - Variable distribution fees per zone are summed from four components
       rounded individually (variable_network, quality, oze, cogeneration).

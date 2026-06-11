@@ -28,7 +28,7 @@ custom_components/enea/
 ├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, _matching_coordinators, serwisy refresh/backfill
 ├── connector.py     — klient HTTP (EneaApiClient, _request helper), wyjątki, get_active_meter(), format_address()
 ├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill; klient API jako self.client
-├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", reconfigure; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
+├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", "configure", reconfigure, reauth; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
 ├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date
 ├── date.py          — EneaBillDateEntity (Platform.DATE): edytowalne daty odczytu z RestoreEntity
 ├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill; szacowanie rachunku z long-term statistics
@@ -184,7 +184,7 @@ GET /user/ppes
 Cookie: PER_JSESSIONID=<wartość>
 ```
 
-Zwraca listę punktów poboru energii przypisanych do konta. Pole `address` jest zawsze `null` — adres dostępny tylko przez endpoint dashboard. Odpowiedź cachowana przez 5 minut (patrz `METERS_CACHE_TTL` w `connector.py`).
+Zwraca listę punktów poboru energii przypisanych do konta. Pole `address` jest zawsze `null` — adres dostępny tylko przez endpoint dashboard. Odpowiedź cachowana przez 5 minut (patrz `METERS_CACHE_TTL` w `const.py`).
 
 Przykład odpowiedzi: patrz `data/ppes.json`.
 

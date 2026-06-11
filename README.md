@@ -106,9 +106,9 @@ Gdy `enea_prices` jest skonfigurowane, dla każdego licznika tworzone są dwie e
 | Szacowany rachunek – poprzedni okres | Szacunkowy koszt za okres `(d1, d2]` — ostatni rozliczony rachunek |
 | Szacowany rachunek – bieżący okres | Szacunkowy koszt za okres `(d2, wczoraj]` — narastający bieżący rachunek |
 
-Kwota w PLN = koszt zmienny (kWh × cena brutto per strefa) + opłaty stałe (sieć, abonament, moc) za pełne miesiące.
+Kwota brutto w PLN obliczana metodą identyczną z fakturą Enea: kWh zaokrąglone do pełnych liczb, każda pozycja mnożona po cenach netto, VAT 23% doliczany raz do sumy końcowej.
 
-Sensory rachunku mają dodatkowe atrybuty: `start`, `end`, `months`, `variable_cost`, `fixed_cost`, `kwh_dzien`, `cost_dzien`, `kwh_noc`, `cost_noc`.
+Sensory rachunku mają dodatkowe atrybuty: `start`, `end`, `months`, `total_netto`, `energy_netto`, `distribution_netto`, `fixed_network_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `kwh_{strefa}`, `energy_{strefa}_netto`, `distribution_{strefa}_netto`.
 
 ### Automatyczne przeładowanie
 

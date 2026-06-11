@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -40,6 +41,7 @@ from .const import (
     STAT_KEY_ENERGY_CONSUMED,
     STAT_KEY_ENERGY_RETURNED,
     UNIT_COST,
+    VAT_RATE,
 )
 from .statistics import get_statistic_id, has_data, slot_start_dt
 
@@ -86,7 +88,8 @@ async def async_insert_cost_statistics(
     """Inject hourly cumulative cost statistics (PLN) per zone.
 
     For each hour in all_days, determines the active tariff zone using the
-    tariff schedule, multiplies the total kWh by the zone's total_brutto price
+    tariff schedule, multiplies the total kWh by the zone's brutto price
+    (computed inline as `(energy + AKCYZA + total_distribution) × 1.23`)
     and accumulates the result into per-zone cost series.  Each series is then
     injected as an external statistic ("enea:..._koszt_...") mirroring the
     energy statistics.
@@ -103,6 +106,9 @@ async def async_insert_cost_statistics(
     """
     if not all_days:
         return
+
+    _enea_prices_const = sys.modules.get("custom_components.enea_prices.const")
+    akcyza: float = getattr(_enea_prices_const, "AKCYZA", 0.0)
 
     for key, direction in (
         (STAT_KEY_ENERGY_CONSUMED, "pobrana"),
@@ -135,7 +141,10 @@ async def async_insert_cost_statistics(
                     item.get("value") or 0.0
                     for item in entry.get("items", [])
                 )
-                cost = total_kwh * period.zones[zone].total_brutto
+                pricing = period.zones[zone]
+                cost = total_kwh * round(
+                    (pricing.energy + akcyza + pricing.total_distribution) * (1 + VAT_RATE), 4
+                )
                 series_by_zone.setdefault(zone_str, []).append((dt, cost))
 
         for zone_str, series in series_by_zone.items():

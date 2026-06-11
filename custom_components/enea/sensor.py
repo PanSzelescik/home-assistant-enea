@@ -374,7 +374,14 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return cost breakdown: kWh per zone, variable/fixed costs, period dates."""
+        """Return cost breakdown mirroring the Enea invoice structure.
+
+        Top-level keys: start, end, months, total_netto, total (brutto = state).
+        Section 'Sprzedaż energii': energy_netto + per-zone kwh_<zone> and
+        energy_<zone>_netto.
+        Section 'Usługa dystrybucji': distribution_netto + per-zone
+        distribution_<zone>_netto + fixed fees (network, capacity, subscription).
+        """
         est = self.coordinator.bill_estimates.get(self._bill_key)
         if est is None:
             return None
@@ -388,21 +395,31 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
             "start": est.start.isoformat(),
             "end": est.end.isoformat(),
             "months": est.months,
-            "total_netto": est.total_netto,
-            "variable_cost": est.variable_cost,
-            "variable_cost_netto": est.variable_cost_netto,
-            "fixed_cost": est.fixed_cost,
-            "fixed_network": est.fixed_network,
-            "fixed_network_netto": est.fixed_network_netto,
-            "fixed_subscription": est.fixed_subscription,
-            "fixed_subscription_netto": est.fixed_subscription_netto,
-            "fixed_capacity": est.fixed_capacity,
-            "fixed_capacity_netto": est.fixed_capacity_netto,
         }
+        # Sprzedaż energii — per strefa (kWh + koszt), potem suma
         for zone_display, kwh in est.kwh_by_zone.items():
             safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
             attrs[f"kwh_{safe}"] = kwh
-            attrs[f"cost_{safe}"] = est.cost_by_zone.get(zone_display, 0.0)
-            attrs[f"cost_{safe}_netto"] = est.cost_by_zone_netto.get(zone_display, 0.0)
+            attrs[f"energy_{safe}_netto"] = est.energy_by_zone_netto.get(zone_display, 0.0)
+        attrs["energy_netto"] = est.energy_netto
+        # Usługa dystrybucji — kolejność jak na fakturze Enea
+        attrs["fixed_network_netto"] = est.fixed_network_netto
+        attrs["fixed_capacity_netto"] = est.fixed_capacity_netto
+        for zone_display in est.kwh_by_zone:
+            safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
+            attrs[f"variable_network_{safe}_netto"] = est.variable_network_by_zone_netto.get(zone_display, 0.0)
+        for zone_display in est.kwh_by_zone:
+            safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
+            attrs[f"quality_{safe}_netto"] = est.quality_by_zone_netto.get(zone_display, 0.0)
+        for zone_display in est.kwh_by_zone:
+            safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
+            attrs[f"oze_{safe}_netto"] = est.oze_by_zone_netto.get(zone_display, 0.0)
+        for zone_display in est.kwh_by_zone:
+            safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
+            attrs[f"cogeneration_{safe}_netto"] = est.cogeneration_by_zone_netto.get(zone_display, 0.0)
+        attrs["fixed_subscription_netto"] = est.fixed_subscription_netto
+        attrs["distribution_netto"] = est.distribution_netto
+        # Podsumowanie
+        attrs["total_netto"] = est.total_netto
         return attrs
 

@@ -1,10 +1,16 @@
 """Bill estimation for the Enea Energy Meter integration.
 
-Computes an estimated electricity bill for a date period (start, end] using:
-- kWh consumed per tariff zone, read from long-term external statistics
-  (cumulative sum difference at the period boundaries).
-- Per-zone variable costs (energy + distribution, brutto) from enea_prices.
-- Fixed monthly fees (network, subscription, capacity, brutto) for whole months.
+Computes an estimated electricity bill for a date period (start, end] using the
+same calculation method as Enea's invoices:
+
+1. kWh per zone is rounded to whole numbers (as printed on the invoice).
+2. Every line item is multiplied and rounded to 2 decimal places at **netto**
+   (pre-VAT) prices.  The bill is split into two sections mirroring the invoice:
+   - Sprzedaż energii – energy price including the excise duty (akcyza).
+   - Usługa dystrybucji – variable distribution fees per zone (grid, quality,
+     OZE, cogeneration) plus fixed monthly fees (network, capacity, subscription).
+3. VAT (23%) is applied **once** to the total netto at the very end:
+   total = round(total_netto × 1.23, 2).
 
 Requires the enea_prices integration to be configured with a matching tariff.
 """
@@ -12,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -39,41 +46,64 @@ class PricesConfig:
     phases: int
     annual_kwh: int
     billing_months: int
+    akcyza: float
 
 
 @dataclass
 class BillEstimate:
-    """Estimated electricity bill for the period (start, end]."""
+    """Estimated electricity bill for the period (start, end].
+
+    All monetary amounts are netto (pre-VAT) except ``total``, which is the
+    final brutto amount (total_netto × 1.23) shown on the invoice.
+    """
 
     kwh_by_zone: dict[str, float]
-    """Consumed kWh per zone display name (e.g. 'Dzień', 'Noc')."""
-    cost_by_zone: dict[str, float]
-    """Variable cost brutto per zone display name (PLN)."""
-    cost_by_zone_netto: dict[str, float]
-    """Variable cost netto per zone display name (PLN)."""
-    variable_cost: float
-    """Energy + distribution cost, brutto (PLN)."""
-    variable_cost_netto: float
-    """Energy + distribution cost, netto (PLN)."""
+    """Consumed kWh per zone (precise, from long-term statistics)."""
+
+    energy_by_zone_netto: dict[str, float]
+    """Energy sale cost netto per zone (energy price + akcyza), PLN."""
+
+    variable_network_by_zone_netto: dict[str, float]
+    """Variable network fee netto per zone (składnik zmienny stawki sieciowej), PLN."""
+
+    quality_by_zone_netto: dict[str, float]
+    """Quality fee netto per zone (opłata jakościowa), PLN."""
+
+    oze_by_zone_netto: dict[str, float]
+    """OZE fee netto per zone (opłata OZE), PLN."""
+
+    cogeneration_by_zone_netto: dict[str, float]
+    """Cogeneration fee netto per zone (opłata kogeneracyjna), PLN."""
+
+    energy_netto: float
+    """Total energy sale cost netto — section 'Sprzedaż energii', PLN."""
+
+    distribution_netto: float
+    """Total distribution service cost netto — section 'Usługa dystrybucji'
+    (variable fees across all zones + fixed monthly fees), PLN."""
+
     fixed_network_netto: float
-    """Fixed network fee, netto (PLN), for `months` full months."""
-    fixed_network: float
-    """Fixed network fee, brutto (PLN), for `months` full months."""
-    fixed_subscription_netto: float
-    """Subscription fee, netto (PLN), for `months` full months."""
-    fixed_subscription: float
-    """Subscription fee, brutto (PLN), for `months` full months."""
+    """Fixed network fee netto for ``months`` full months, PLN."""
+
     fixed_capacity_netto: float
-    """Capacity fee, netto (PLN), for `months` full months."""
-    fixed_capacity: float
-    """Capacity fee, brutto (PLN), for `months` full months."""
-    fixed_cost: float
-    """Total fixed monthly fees, brutto (PLN) — sum of network + subscription + capacity."""
-    months: int
-    total: float
+    """Capacity fee netto for ``months`` full months, PLN."""
+
+    fixed_subscription_netto: float
+    """Subscription fee netto for ``months`` full months, PLN."""
+
     total_netto: float
+    """Grand total netto (energy + distribution), PLN."""
+
+    total: float
+    """Grand total brutto = round(total_netto × 1.23, 2), PLN.
+    This is the only brutto value — VAT is applied once at the end."""
+
+    months: int
+    """Number of full billing months in the period."""
+
     start: date
     """Period start (exclusive) — day of the previous meter reading."""
+
     end: date
     """Period end (inclusive) — day of the current meter reading."""
 
@@ -82,7 +112,9 @@ def find_prices_config(hass: HomeAssistant, tariff_name: str | None) -> PricesCo
     """Return PricesConfig from the matching enea_prices entry, or None.
 
     Uses duck typing on entry.runtime_data to avoid a hard import dependency
-    on the enea_prices package.
+    on the enea_prices package.  AKCYZA is read from the already-loaded
+    enea_prices.const module via sys.modules (the module is in memory whenever
+    a config entry for the integration exists).
     """
     if not tariff_name:
         return None
@@ -95,11 +127,13 @@ def find_prices_config(hass: HomeAssistant, tariff_name: str | None) -> PricesCo
         tariff = getattr(runtime, "tariff", None)
         if tariff is None:
             continue
+        enea_prices_const = sys.modules.get("custom_components.enea_prices.const")
         return PricesConfig(
             tariff=tariff,
             phases=getattr(runtime, "phases", 1),
             annual_kwh=getattr(runtime, "annual_kwh", 1200),
             billing_months=getattr(runtime, "billing_months", 1),
+            akcyza=getattr(enea_prices_const, "AKCYZA", 0.0),
         )
     return None
 
@@ -113,9 +147,13 @@ async def async_estimate_bill(
 ) -> BillEstimate | None:
     """Estimate the electricity bill for the period (start, end].
 
-    kWh per zone = difference of cumulative statistics sums at the end of
-    start-day and end-day respectively (convention: start exclusive, end
-    inclusive — verified against actual meter readings, see data/verify.json).
+    Mirrors the calculation method used on Enea invoices:
+    - kWh per zone is rounded to a whole number before multiplication.
+    - Each line item is rounded to 2 decimal places at netto prices.
+    - Variable distribution fees per zone are summed from four components
+      rounded individually (variable_network, quality, oze, cogeneration).
+    - Fixed monthly fees are rounded individually.
+    - VAT (23%) is applied once to the grand total netto at the very end.
 
     Args:
         hass: Home Assistant instance.
@@ -144,53 +182,70 @@ async def async_estimate_bill(
 
     kwh_by_zone = await _query_zone_kwh(hass, zone_stat_ids, start, end)
 
-    cost_by_zone: dict[str, float] = {}
-    cost_by_zone_netto: dict[str, float] = {}
+    energy_by_zone_netto: dict[str, float] = {}
+    variable_network_by_zone_netto: dict[str, float] = {}
+    quality_by_zone_netto: dict[str, float] = {}
+    oze_by_zone_netto: dict[str, float] = {}
+    cogeneration_by_zone_netto: dict[str, float] = {}
+
     for zone in period.zones:
         zone_display = COST_ZONE_DISPLAY.get(str(zone), str(zone))
-        kwh = kwh_by_zone.get(zone_display, 0.0)
-        brutto = round(kwh * period.zones[zone].total_brutto, 2)
-        cost_by_zone[zone_display] = brutto
-        cost_by_zone_netto[zone_display] = round(brutto / (1 + VAT_RATE), 2)
-    variable_cost = sum(cost_by_zone.values())
-    variable_cost_netto = sum(cost_by_zone_netto.values())
+        kwh = kwh_by_zone.get(zone_display, 0)
+        pricing = period.zones[zone]
+
+        # Sprzedaż energii: energia netto = (cena energii + akcyza) × kWh
+        energy_by_zone_netto[zone_display] = round(kwh * (pricing.energy + cfg.akcyza), 2)
+
+        # Usługa dystrybucji (zmienne): każdy składnik zaokrąglony osobno jak na fakturze
+        variable_network_by_zone_netto[zone_display] = round(kwh * pricing.variable_network, 2)
+        quality_by_zone_netto[zone_display] = round(kwh * pricing.quality, 2)
+        oze_by_zone_netto[zone_display] = round(kwh * pricing.oze, 2)
+        cogeneration_by_zone_netto[zone_display] = round(kwh * pricing.cogeneration, 2)
+
+    energy_netto = round(sum(energy_by_zone_netto.values()), 2)
 
     days = (end - start).days
     months = max(1, round(days / 30.44)) if days > 0 else 0
-    vat = 1 + VAT_RATE
+
     if months == 0:
-        fixed_network_netto = fixed_network = 0.0
-        fixed_subscription_netto = fixed_subscription = 0.0
-        fixed_capacity_netto = fixed_capacity = 0.0
-        fixed_cost = 0.0
+        fixed_network_netto = 0.0
+        fixed_capacity_netto = 0.0
+        fixed_subscription_netto = 0.0
     else:
         m = period.monthly
         fixed_network_netto = round(m.get_network_fixed(cfg.phases) * months, 2)
-        fixed_network = round(fixed_network_netto * vat, 2)
-        fixed_subscription_netto = round(m.get_subscription(cfg.billing_months) * months, 2)
-        fixed_subscription = round(fixed_subscription_netto * vat, 2)
         fixed_capacity_netto = round(m.get_capacity(cfg.annual_kwh) * months, 2)
-        fixed_capacity = round(fixed_capacity_netto * vat, 2)
-        fixed_cost = round(fixed_network + fixed_subscription + fixed_capacity, 2)
+        fixed_subscription_netto = round(m.get_subscription(cfg.billing_months) * months, 2)
 
-    total = round(variable_cost + fixed_cost, 2)
+    distribution_netto = round(
+        sum(variable_network_by_zone_netto.values())
+        + sum(quality_by_zone_netto.values())
+        + sum(oze_by_zone_netto.values())
+        + sum(cogeneration_by_zone_netto.values())
+        + fixed_network_netto
+        + fixed_capacity_netto
+        + fixed_subscription_netto,
+        2,
+    )
+
+    total_netto = round(energy_netto + distribution_netto, 2)
+    total = round(total_netto * (1 + VAT_RATE), 2)
 
     return BillEstimate(
         kwh_by_zone=kwh_by_zone,
-        cost_by_zone=cost_by_zone,
-        cost_by_zone_netto=cost_by_zone_netto,
-        variable_cost=round(variable_cost, 2),
-        variable_cost_netto=round(variable_cost_netto, 2),
+        energy_by_zone_netto=energy_by_zone_netto,
+        variable_network_by_zone_netto=variable_network_by_zone_netto,
+        quality_by_zone_netto=quality_by_zone_netto,
+        oze_by_zone_netto=oze_by_zone_netto,
+        cogeneration_by_zone_netto=cogeneration_by_zone_netto,
+        energy_netto=energy_netto,
+        distribution_netto=distribution_netto,
         fixed_network_netto=fixed_network_netto,
-        fixed_network=fixed_network,
-        fixed_subscription_netto=fixed_subscription_netto,
-        fixed_subscription=fixed_subscription,
         fixed_capacity_netto=fixed_capacity_netto,
-        fixed_capacity=fixed_capacity,
-        fixed_cost=fixed_cost,
-        months=months,
+        fixed_subscription_netto=fixed_subscription_netto,
+        total_netto=total_netto,
         total=total,
-        total_netto=round(total / vat, 2),
+        months=months,
         start=start,
         end=end,
     )

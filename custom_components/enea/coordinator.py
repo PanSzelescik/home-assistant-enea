@@ -16,6 +16,8 @@ from homeassistant.util import dt as dt_util
 from .connector import EneaApiClient, EneaAuthError, EneaApiError, get_active_meter
 from .const import (
     BACKFILL_MAX_CONSECUTIVE_EMPTY,
+    BILL_KEY_CURRENT,
+    BILL_KEY_PREVIOUS,
     DOMAIN,
     RANGE_FETCH_CHUNK_DAYS,
     STAT_KEY_ENERGY_CONSUMED,
@@ -26,10 +28,11 @@ from .const import (
     Resolution,
     STAT_NAME_BY_KEY,
 )
+from .billing import BillEstimate, async_estimate_bill, find_prices_config
 from .costs import (
+    async_get_cost_latest_date,
     async_insert_cost_statistics,
     find_tariff_group,
-    get_cost_stats,
 )
 from .statistics import (
     async_insert_historical_statistics,
@@ -71,8 +74,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._fetch_power_generation = fetch_power_generation
         self._tariff_name: str | None = None
         self._assembly_datetime: datetime | None = None
-        self.cost_sums: dict[str, float] = {}
         self._backfill_task: asyncio.Task[None] | None = None
+        self.bill_prev_reading: date | None = None
+        self.bill_last_reading: date | None = None
+        self.bill_estimates: dict[str, BillEstimate | None] = {
+            BILL_KEY_PREVIOUS: None,
+            BILL_KEY_CURRENT: None,
+        }
 
     def _get_measurement_types(self) -> list[tuple[str, MeasurementType]]:
         """Return active (key, measurement_type) pairs based on fetch settings."""
@@ -112,6 +120,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self._async_fetch_and_inject_stats()
         except Exception as err:
             _LOGGER.warning("Failed to update historical statistics: %s", err, exc_info=True)
+
+        # Recompute bill estimates if reading dates are configured (new stats may have arrived).
+        if self.bill_prev_reading is not None or self.bill_last_reading is not None:
+            await self.async_recompute_bills()
 
         return data
 
@@ -191,9 +203,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Inject energy statistics and, if a matching tariff exists, cost statistics.
 
-        Cost statistics are external ("enea:..._koszt_...") and do not require the
-        EneaCostSensor entities to be registered, so injection works during the
-        first refresh or background backfill regardless of setup ordering.
+        Cost statistics are external ("enea:..._koszt_...") and do not require any
+        entities to be registered, so injection works during the first refresh or
+        background backfill regardless of setup ordering.
 
         Args:
             all_days: Chronologically sorted list of (date, data_dict) tuples.
@@ -203,7 +215,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await async_insert_historical_statistics(self.hass, self._meter_code, all_days)
         tariff = find_tariff_group(self.hass, self._tariff_name)
         if tariff is not None:
-            sums = await async_insert_cost_statistics(
+            await async_insert_cost_statistics(
                 self.hass,
                 self._meter_code,
                 all_days,
@@ -211,8 +223,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._fetch_consumption,
                 self._fetch_generation,
             )
-            if sums:
-                self.cost_sums.update(sums)
 
     async def _async_do_initial_backfill(self, yesterday: date) -> None:
         """Fetch all historical data and inject statistics.
@@ -257,9 +267,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         Called from _async_fetch_and_inject_stats when energy statistics are
         already up to date.  Checks the last cost stat date and fetches/injects
-        any missing days.  Also populates coordinator.cost_sums from the DB when
-        everything is already current.  Cost statistics are external, so this
-        needs no entities and there is no separate post-setup pass.
+        any missing days.  Cost statistics are external, so this needs no
+        entities and there is no separate post-setup pass.
         """
         if not (self._fetch_consumption or self._fetch_generation):
             # Costs are derived from energy data; nothing to do in power-only mode.
@@ -271,12 +280,12 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if tariff is None:
             return
 
-        cost_latest, existing_sums = await get_cost_stats(self.hass, self._meter_code)
+        cost_latest = await async_get_cost_latest_date(
+            self.hass, self._meter_code, tariff,
+            self._fetch_consumption, self._fetch_generation,
+        )
         if cost_latest is not None and cost_latest >= yesterday:
             _LOGGER.debug("Cost statistics already up to date (last: %s)", cost_latest)
-            if not self.cost_sums:
-                self.cost_sums.update(existing_sums)
-                self.async_update_listeners()
             return
 
         if cost_latest is not None:
@@ -292,7 +301,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         days = await self._fetch_days_forward(start, yesterday)
         if days:
-            sums = await async_insert_cost_statistics(
+            await async_insert_cost_statistics(
                 self.hass,
                 self._meter_code,
                 days,
@@ -300,8 +309,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._fetch_consumption,
                 self._fetch_generation,
             )
-            self.cost_sums.update(sums)
-            self.async_update_listeners()
             _LOGGER.debug("Injected cost statistics for %d day(s)", len(days))
 
     def _strip_pre_assembly_slots(
@@ -555,3 +562,42 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 end_date,
             )
         return len(all_days)
+
+    async def async_recompute_bills(self) -> None:
+        """Recompute bill estimates for both reading periods and notify listeners.
+
+        Previous period: (bill_prev_reading, bill_last_reading].
+        Current period:  (bill_last_reading, yesterday].
+
+        Sets the corresponding entry in bill_estimates to None when a period
+        is empty, dates are missing, or statistics are unavailable.
+        """
+        cfg = find_prices_config(self.hass, self._tariff_name)
+        if cfg is None:
+            return
+
+        today = dt_util.now().date()
+        yesterday = today - timedelta(days=1)
+
+        d1 = self.bill_prev_reading
+        d2 = self.bill_last_reading
+
+        prev: BillEstimate | None = None
+        if d1 is not None and d2 is not None and d1 < d2:
+            try:
+                prev = await async_estimate_bill(self.hass, self._meter_code, cfg, d1, d2)
+            except Exception as err:
+                _LOGGER.warning("Failed to estimate previous bill: %s", err, exc_info=True)
+
+        current: BillEstimate | None = None
+        if d2 is not None and d2 < yesterday:
+            try:
+                current = await async_estimate_bill(
+                    self.hass, self._meter_code, cfg, d2, yesterday
+                )
+            except Exception as err:
+                _LOGGER.warning("Failed to estimate current bill: %s", err, exc_info=True)
+
+        self.bill_estimates[BILL_KEY_PREVIOUS] = prev
+        self.bill_estimates[BILL_KEY_CURRENT] = current
+        self.async_update_listeners()

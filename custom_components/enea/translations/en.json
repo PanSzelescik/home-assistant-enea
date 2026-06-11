@@ -122,6 +122,14 @@
     }
   },
   "entity": {
+    "date": {
+      "bill_prev_reading": {
+        "name": "Previous Reading Date"
+      },
+      "bill_last_reading": {
+        "name": "Last Reading Date"
+      }
+    },
     "sensor": {
       "tariff": {
         "name": "Tariff Group"
@@ -146,6 +154,82 @@
       },
       "generation_total": {
         "name": "Energy Returned"
+      },
+      "bill_previous": {
+        "name": "Estimated bill – previous period",
+        "state_attributes": {
+          "start": { "name": "Period start" },
+          "end": { "name": "Period end" },
+          "months": { "name": "Months" },
+          "kwh_dzien": { "name": "Day consumption (kWh)" },
+          "energy_dzien_netto": { "name": "Active electrical energy Day (net)" },
+          "kwh_noc": { "name": "Night consumption (kWh)" },
+          "energy_noc_netto": { "name": "Active electrical energy Night (net)" },
+          "kwh_szczyt": { "name": "Peak consumption (kWh)" },
+          "energy_szczyt_netto": { "name": "Active electrical energy Peak (net)" },
+          "kwh_poza_szczytem": { "name": "Off-peak consumption (kWh)" },
+          "energy_poza_szczytem_netto": { "name": "Active electrical energy Off-peak (net)" },
+          "energy_netto": { "name": "Total – energy sale (net)" },
+          "fixed_network_netto": { "name": "Fixed network fee (net)" },
+          "fixed_capacity_netto": { "name": "Capacity fee (net)" },
+          "variable_network_dzien_netto": { "name": "Variable network fee Day (net)" },
+          "variable_network_noc_netto": { "name": "Variable network fee Night (net)" },
+          "variable_network_szczyt_netto": { "name": "Variable network fee Peak (net)" },
+          "variable_network_poza_szczytem_netto": { "name": "Variable network fee Off-peak (net)" },
+          "quality_dzien_netto": { "name": "Quality fee Day (net)" },
+          "quality_noc_netto": { "name": "Quality fee Night (net)" },
+          "quality_szczyt_netto": { "name": "Quality fee Peak (net)" },
+          "quality_poza_szczytem_netto": { "name": "Quality fee Off-peak (net)" },
+          "oze_dzien_netto": { "name": "RES fee Day (net)" },
+          "oze_noc_netto": { "name": "RES fee Night (net)" },
+          "oze_szczyt_netto": { "name": "RES fee Peak (net)" },
+          "oze_poza_szczytem_netto": { "name": "RES fee Off-peak (net)" },
+          "cogeneration_dzien_netto": { "name": "Cogeneration fee Day (net)" },
+          "cogeneration_noc_netto": { "name": "Cogeneration fee Night (net)" },
+          "cogeneration_szczyt_netto": { "name": "Cogeneration fee Peak (net)" },
+          "cogeneration_poza_szczytem_netto": { "name": "Cogeneration fee Off-peak (net)" },
+          "fixed_subscription_netto": { "name": "Subscription (net)" },
+          "distribution_netto": { "name": "Total – distribution service (net)" },
+          "total_netto": { "name": "Grand total (net)" }
+        }
+      },
+      "bill_current": {
+        "name": "Estimated bill – current period",
+        "state_attributes": {
+          "start": { "name": "Period start" },
+          "end": { "name": "Period end" },
+          "months": { "name": "Months" },
+          "kwh_dzien": { "name": "Day consumption (kWh)" },
+          "energy_dzien_netto": { "name": "Active electrical energy Day (net)" },
+          "kwh_noc": { "name": "Night consumption (kWh)" },
+          "energy_noc_netto": { "name": "Active electrical energy Night (net)" },
+          "kwh_szczyt": { "name": "Peak consumption (kWh)" },
+          "energy_szczyt_netto": { "name": "Active electrical energy Peak (net)" },
+          "kwh_poza_szczytem": { "name": "Off-peak consumption (kWh)" },
+          "energy_poza_szczytem_netto": { "name": "Active electrical energy Off-peak (net)" },
+          "energy_netto": { "name": "Total – energy sale (net)" },
+          "fixed_network_netto": { "name": "Fixed network fee (net)" },
+          "fixed_capacity_netto": { "name": "Capacity fee (net)" },
+          "variable_network_dzien_netto": { "name": "Variable network fee Day (net)" },
+          "variable_network_noc_netto": { "name": "Variable network fee Night (net)" },
+          "variable_network_szczyt_netto": { "name": "Variable network fee Peak (net)" },
+          "variable_network_poza_szczytem_netto": { "name": "Variable network fee Off-peak (net)" },
+          "quality_dzien_netto": { "name": "Quality fee Day (net)" },
+          "quality_noc_netto": { "name": "Quality fee Night (net)" },
+          "quality_szczyt_netto": { "name": "Quality fee Peak (net)" },
+          "quality_poza_szczytem_netto": { "name": "Quality fee Off-peak (net)" },
+          "oze_dzien_netto": { "name": "RES fee Day (net)" },
+          "oze_noc_netto": { "name": "RES fee Night (net)" },
+          "oze_szczyt_netto": { "name": "RES fee Peak (net)" },
+          "oze_poza_szczytem_netto": { "name": "RES fee Off-peak (net)" },
+          "cogeneration_dzien_netto": { "name": "Cogeneration fee Day (net)" },
+          "cogeneration_noc_netto": { "name": "Cogeneration fee Night (net)" },
+          "cogeneration_szczyt_netto": { "name": "Cogeneration fee Peak (net)" },
+          "cogeneration_poza_szczytem_netto": { "name": "Cogeneration fee Off-peak (net)" },
+          "fixed_subscription_netto": { "name": "Subscription (net)" },
+          "distribution_netto": { "name": "Total – distribution service (net)" },
+          "total_netto": { "name": "Grand total (net)" }
+        }
       }
     }
   }

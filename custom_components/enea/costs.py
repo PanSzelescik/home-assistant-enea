@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -30,7 +31,6 @@ from homeassistant.components.recorder.statistics import (
     statistics_during_period,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
@@ -41,36 +41,18 @@ from .const import (
     STAT_KEY_ENERGY_CONSUMED,
     STAT_KEY_ENERGY_RETURNED,
     UNIT_COST,
+    VAT_RATE,
 )
 from .statistics import get_statistic_id, has_data, slot_start_dt
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _get_cost_entries(
-    hass: HomeAssistant, meter_code: str
-) -> list[er.RegistryEntry]:
-    """Return entity registry entries for cost sensors of the given meter."""
-    registry = er.async_get(hass)
-    prefix = f"enea-{meter_code}-koszt_"
-    return [
-        e
-        for e in registry.entities.values()
-        if e.platform == DOMAIN and (e.unique_id or "").startswith(prefix)
-    ]
-
-
-def get_cost_unique_id(meter_code: str, direction: str, zone: str) -> str:
-    """Return the unique_id for a cost sensor entity."""
-    return f"enea-{meter_code}-koszt_{direction}_{zone}"
-
-
 def get_cost_statistic_name(direction: str, zone_str: str) -> str:
     """Return the human-readable name for a cost statistic.
 
-    Matches the EneaCostSensor friendly name so the external statistic is shown
-    under the same label (e.g. "Koszt energii pobrana – Dzień") in the Energy
-    Dashboard cost picker.
+    Returns the human-readable label shown for the statistic in the Energy
+    Dashboard cost picker (e.g. "Koszt energii pobrana – Dzień").
     """
     zone_display = COST_ZONE_DISPLAY.get(zone_str, zone_str)
     return f"Koszt energii {direction} – {zone_display}"
@@ -102,17 +84,15 @@ async def async_insert_cost_statistics(
     tariff: Any,
     fetch_consumption: bool = True,
     fetch_generation: bool = True,
-) -> dict[str, float]:
+) -> None:
     """Inject hourly cumulative cost statistics (PLN) per zone.
 
     For each hour in all_days, determines the active tariff zone using the
-    tariff schedule, multiplies the total kWh by the zone's total_brutto price
+    tariff schedule, multiplies the total kWh by the zone's brutto price
+    (computed inline as `(energy + AKCYZA + total_distribution) × 1.23`)
     and accumulates the result into per-zone cost series.  Each series is then
     injected as an external statistic ("enea:..._koszt_...") mirroring the
     energy statistics.
-
-    Returns {unique_id: running_sum} for the corresponding EneaCostSensor
-    entities so the coordinator can populate their displayed state.
 
     Args:
         hass: The Home Assistant instance.
@@ -125,9 +105,10 @@ async def async_insert_cost_statistics(
         fetch_generation: Whether to inject costs for returned energy.
     """
     if not all_days:
-        return {}
+        return
 
-    result: dict[str, float] = {}
+    _enea_prices_const = sys.modules.get("custom_components.enea_prices.const")
+    akcyza: float = getattr(_enea_prices_const, "AKCYZA", 0.0)
 
     for key, direction in (
         (STAT_KEY_ENERGY_CONSUMED, "pobrana"),
@@ -160,15 +141,15 @@ async def async_insert_cost_statistics(
                     item.get("value") or 0.0
                     for item in entry.get("items", [])
                 )
-                cost = total_kwh * period.zones[zone].total_brutto
+                pricing = period.zones[zone]
+                cost = total_kwh * round(
+                    (pricing.energy + akcyza + pricing.total_distribution) * (1 + VAT_RATE), 4
+                )
                 series_by_zone.setdefault(zone_str, []).append((dt, cost))
 
         for zone_str, series in series_by_zone.items():
             name = get_cost_statistic_name(direction, zone_str)
-            last_sum = await _inject_cost_series(hass, meter_code, name, series)
-            result[get_cost_unique_id(meter_code, direction, zone_str)] = last_sum
-
-    return result
+            await _inject_cost_series(hass, meter_code, name, series)
 
 
 async def _inject_cost_series(
@@ -236,34 +217,34 @@ async def _inject_cost_series(
     return running_sum
 
 
-async def get_cost_stats(
-    hass: HomeAssistant, meter_code: str
-) -> tuple[date | None, dict[str, float]]:
-    """Return current cost statistics summary for all cost sensors of this meter.
+async def async_get_cost_latest_date(
+    hass: HomeAssistant,
+    meter_code: str,
+    tariff: Any,
+    fetch_consumption: bool,
+    fetch_generation: bool,
+) -> date | None:
+    """Return the most recent date for which cost statistics exist for this meter.
 
-    Enumerates cost sensor entities in the registry, builds the corresponding
-    external statistic_id ("enea:..._koszt_...") for each, queries the statistics
-    DB over a 30-day lookback window, and returns:
-      - latest_date: the most recent date for which any entry exists, or None
-      - sums: {unique_id: last_sum} cumulative cost per zone (PLN)
-
-    Used to check if cost injection is needed and to pre-populate
-    coordinator.cost_sums without triggering a new injection.
+    Enumerates statistic IDs from the current tariff period and enabled
+    directions, queries the recorder over a 30-day window, and returns the
+    latest date found — or None when no cost statistics exist yet.
     """
-    entries = _get_cost_entries(hass, meter_code)
-    if not entries:
-        return None, {}
+    period = tariff.get_current_period()
+    if period is None:
+        return None
 
-    prefix = f"enea-{meter_code}-koszt_"
-    uids: list[str] = []
     stat_ids: list[str] = []
-    for entry in entries:
-        uid = entry.unique_id or ""
-        direction, _, zone_str = uid[len(prefix):].partition("_")
-        uids.append(uid)
-        stat_ids.append(
-            get_statistic_id(meter_code, get_cost_statistic_name(direction, zone_str))
-        )
+    for direction, enabled in (("pobrana", fetch_consumption), ("oddana", fetch_generation)):
+        if not enabled:
+            continue
+        for zone in period.zones:
+            stat_ids.append(
+                get_statistic_id(meter_code, get_cost_statistic_name(direction, str(zone)))
+            )
+
+    if not stat_ids:
+        return None
 
     now = dt_util.utcnow()
     all_stats_list = await asyncio.gather(*(
@@ -281,13 +262,10 @@ async def get_cost_stats(
     ))
 
     latest: date | None = None
-    sums: dict[str, float] = {}
-    for uid, sid, stats in zip(uids, stat_ids, all_stats_list):
+    for sid, stats in zip(stat_ids, all_stats_list):
         records = stats.get(sid)
         if not records:
             continue
-        # statistics_during_period returns ascending order, so the last record is
-        # the newest and carries the highest cumulative sum.
         ts = records[-1].get("start")
         if ts is not None:
             d = (
@@ -297,7 +275,4 @@ async def get_cost_stats(
             )
             if latest is None or d > latest:
                 latest = d
-        last_sum = records[-1].get("sum") or 0.0
-        if last_sum:
-            sums[uid] = last_sum
-    return latest, sums
+    return latest

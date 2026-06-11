@@ -22,11 +22,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import EneaConfigEntry
 from .connector import format_address, get_active_meter
 from .const import (
+    BILL_KEY_CURRENT,
+    BILL_KEY_PREVIOUS,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
     CONF_METER_NAME,
     PORTAL_URL,
-    COST_ZONE_DISPLAY,
     DEFAULT_NAME,
     DOMAIN,
     MEASUREMENT_ID_CONSUMPTION,
@@ -39,7 +40,7 @@ from .const import (
     UNIT_COST,
 )
 from .coordinator import EneaUpdateCoordinator
-from .costs import find_tariff_group, get_cost_unique_id
+from .costs import find_tariff_group
 
 
 def _get_device_info(meter_code: str, data: dict[str, Any] | None) -> DeviceInfo:
@@ -244,28 +245,11 @@ async def async_setup_entry(
                     )
                 )
 
-    # Cost sensors — created only when enea_prices is configured with matching tariff
+    # Bill sensors — created only when enea_prices is configured with matching tariff
     tariff_name = data.get("tariffGroupName")
-    tariff = find_tariff_group(hass, tariff_name)
-    if tariff is not None:
-        period = tariff.get_current_period()
-        if period is not None:
-            for direction, is_consumption in (("pobrana", True), ("oddana", False)):
-                if is_consumption and not fetch_consumption:
-                    continue
-                if not is_consumption and not fetch_generation:
-                    continue
-                for zone in period.zones:
-                    zone_str = str(zone)
-                    sensors.append(
-                        EneaCostSensor(
-                            coordinator=coordinator,
-                            meter_code=meter_code,
-                            direction=direction,
-                            zone_str=zone_str,
-                            zone_display=COST_ZONE_DISPLAY.get(zone_str, zone_str),
-                        )
-                    )
+    if find_tariff_group(hass, tariff_name) is not None:
+        sensors.append(EneaBillSensor(coordinator, meter_code, BILL_KEY_PREVIOUS))
+        sensors.append(EneaBillSensor(coordinator, meter_code, BILL_KEY_CURRENT))
 
     async_add_entities(sensors)
 
@@ -351,19 +335,17 @@ class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity): 
         return None
 
 
-class EneaCostSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  # pyright: ignore[reportIncompatibleVariableOverride]
-    """Sensor tracking accumulated electricity cost (PLN) for a single tariff zone.
 
-    Created only when the enea_prices integration is configured with a tariff
-    matching the meter's tariffGroupName.  One sensor is created per active
-    zone (e.g. Dzień / Noc for G12) per energy direction (consumed/returned).
+class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  # pyright: ignore[reportIncompatibleVariableOverride]
+    """Sensor showing an estimated electricity bill for a billing period.
 
-    This entity is display-only: the cumulative cost shown comes from
-    coordinator.cost_sums.  Historical cost statistics are injected by costs.py
-    as external statistics ("enea:..._koszt_...") and are what the Energy
-    Dashboard selects under "entity tracking total costs".  No state_class is
-    set on purpose — it would make the recorder compile competing long-term
-    statistics for this entity and collide with the injected ones.
+    Two sensors are created per meter (previous closed period and current
+    running period).  Values are recomputed by the coordinator whenever the
+    user changes a reading date or new statistics arrive.
+
+    No state_class is set intentionally — the value is an estimate, not a
+    metered quantity, and setting state_class would cause the recorder to
+    compile competing long-term statistics.
     """
 
     _attr_has_entity_name = True
@@ -375,20 +357,71 @@ class EneaCostSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
         self,
         coordinator: EneaUpdateCoordinator,
         meter_code: str,
-        direction: str,
-        zone_str: str,
-        zone_display: str,
+        bill_key: str,
     ) -> None:
-        """Initialize a cost sensor for the given meter, direction and zone."""
+        """Initialize a bill estimate sensor."""
         super().__init__(coordinator)
-        self._meter_code = meter_code
-        self._attr_unique_id = get_cost_unique_id(meter_code, direction, zone_str)
-        self._attr_name = f"Koszt energii {direction} \u2013 {zone_display}"
+        self._bill_key = bill_key
+        self._attr_unique_id = f"enea-{meter_code}-{bill_key}"
+        self._attr_translation_key = bill_key
         self._attr_device_info = _get_device_info(meter_code, coordinator.data)
 
-    @cached_property
-    def native_value(self) -> float | None:  # pyright: ignore[reportIncompatibleVariableOverride]
-        """Return the last known cumulative cost sum, or None before first injection."""
-        unique_id = self._attr_unique_id or ""
-        return self.coordinator.cost_sums.get(unique_id)
+    @property
+    def native_value(self) -> float | None:
+        """Return the estimated bill total in PLN, or None when unavailable."""
+        est = self.coordinator.bill_estimates.get(self._bill_key)
+        return est.total if est is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return cost breakdown mirroring the Enea invoice structure.
+
+        Top-level keys: start, end, months, total_netto, total (brutto = state).
+        Section 'Sprzedaż energii': energy_netto + per-zone kwh_<zone> and
+        energy_<zone>_netto.
+        Section 'Usługa dystrybucji': distribution_netto (sum) + fixed fees
+        (fixed_network_netto, fixed_capacity_netto, fixed_subscription_netto) +
+        per-zone components: variable_network_<zone>_netto, quality_<zone>_netto,
+        oze_<zone>_netto, cogeneration_<zone>_netto.
+        """
+        est = self.coordinator.bill_estimates.get(self._bill_key)
+        if est is None:
+            return None
+        _TRANSL = str.maketrans({
+            "ó": "o", "ę": "e", "ą": "a", "ź": "z", "ż": "z",
+            "ń": "n", "ł": "l", "ś": "s", "ć": "c",
+            "Ó": "O", "Ę": "E", "Ą": "A", "Ź": "Z", "Ż": "Z",
+            "Ń": "N", "Ł": "L", "Ś": "S", "Ć": "C",
+        })
+        attrs: dict[str, Any] = {
+            "start": est.start.isoformat(),
+            "end": est.end.isoformat(),
+            "months": est.months,
+        }
+        # Sprzedaż energii — per strefa (kWh + koszt), potem suma
+        for zone_display, kwh in est.kwh_by_zone.items():
+            safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
+            attrs[f"kwh_{safe}"] = kwh
+            attrs[f"energy_{safe}_netto"] = est.energy_by_zone_netto.get(zone_display, 0.0)
+        attrs["energy_netto"] = est.energy_netto
+        # Usługa dystrybucji — kolejność jak na fakturze Enea
+        attrs["fixed_network_netto"] = est.fixed_network_netto
+        attrs["fixed_capacity_netto"] = est.fixed_capacity_netto
+        for zone_display in est.kwh_by_zone:
+            safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
+            attrs[f"variable_network_{safe}_netto"] = est.variable_network_by_zone_netto.get(zone_display, 0.0)
+        for zone_display in est.kwh_by_zone:
+            safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
+            attrs[f"quality_{safe}_netto"] = est.quality_by_zone_netto.get(zone_display, 0.0)
+        for zone_display in est.kwh_by_zone:
+            safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
+            attrs[f"oze_{safe}_netto"] = est.oze_by_zone_netto.get(zone_display, 0.0)
+        for zone_display in est.kwh_by_zone:
+            safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
+            attrs[f"cogeneration_{safe}_netto"] = est.cogeneration_by_zone_netto.get(zone_display, 0.0)
+        attrs["fixed_subscription_netto"] = est.fixed_subscription_netto
+        attrs["distribution_netto"] = est.distribution_netto
+        # Podsumowanie
+        attrs["total_netto"] = est.total_netto
+        return attrs
 

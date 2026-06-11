@@ -122,6 +122,14 @@
     }
   },
   "entity": {
+    "date": {
+      "bill_prev_reading": {
+        "name": "Data poprzedniego odczytu"
+      },
+      "bill_last_reading": {
+        "name": "Data ostatniego odczytu"
+      }
+    },
     "sensor": {
       "tariff": {
         "name": "Grupa taryfowa"
@@ -146,6 +154,82 @@
       },
       "generation_total": {
         "name": "Energia oddana"
+      },
+      "bill_previous": {
+        "name": "Szacowany rachunek – poprzedni okres",
+        "state_attributes": {
+          "start": { "name": "Początek okresu" },
+          "end": { "name": "Koniec okresu" },
+          "months": { "name": "Miesiące" },
+          "kwh_dzien": { "name": "Zużycie Dzień (kWh)" },
+          "energy_dzien_netto": { "name": "Energia elektryczna czynna Dzień (netto)" },
+          "kwh_noc": { "name": "Zużycie Noc (kWh)" },
+          "energy_noc_netto": { "name": "Energia elektryczna czynna Noc (netto)" },
+          "kwh_szczyt": { "name": "Zużycie Szczyt (kWh)" },
+          "energy_szczyt_netto": { "name": "Energia elektryczna czynna Szczyt (netto)" },
+          "kwh_poza_szczytem": { "name": "Zużycie Poza szczytem (kWh)" },
+          "energy_poza_szczytem_netto": { "name": "Energia elektryczna czynna Poza szczytem (netto)" },
+          "energy_netto": { "name": "Ogółem wartość – sprzedaż energii (netto)" },
+          "fixed_network_netto": { "name": "Opłata stała sieciowa (netto)" },
+          "fixed_capacity_netto": { "name": "Opłata mocowa (netto)" },
+          "variable_network_dzien_netto": { "name": "Opłata zmienna sieciowa Dzień (netto)" },
+          "variable_network_noc_netto": { "name": "Opłata zmienna sieciowa Noc (netto)" },
+          "variable_network_szczyt_netto": { "name": "Opłata zmienna sieciowa Szczyt (netto)" },
+          "variable_network_poza_szczytem_netto": { "name": "Opłata zmienna sieciowa Poza szczytem (netto)" },
+          "quality_dzien_netto": { "name": "Opłata jakościowa Dzień (netto)" },
+          "quality_noc_netto": { "name": "Opłata jakościowa Noc (netto)" },
+          "quality_szczyt_netto": { "name": "Opłata jakościowa Szczyt (netto)" },
+          "quality_poza_szczytem_netto": { "name": "Opłata jakościowa Poza szczytem (netto)" },
+          "oze_dzien_netto": { "name": "Opłata OZE Dzień (netto)" },
+          "oze_noc_netto": { "name": "Opłata OZE Noc (netto)" },
+          "oze_szczyt_netto": { "name": "Opłata OZE Szczyt (netto)" },
+          "oze_poza_szczytem_netto": { "name": "Opłata OZE Poza szczytem (netto)" },
+          "cogeneration_dzien_netto": { "name": "Opłata kogeneracyjna Dzień (netto)" },
+          "cogeneration_noc_netto": { "name": "Opłata kogeneracyjna Noc (netto)" },
+          "cogeneration_szczyt_netto": { "name": "Opłata kogeneracyjna Szczyt (netto)" },
+          "cogeneration_poza_szczytem_netto": { "name": "Opłata kogeneracyjna Poza szczytem (netto)" },
+          "fixed_subscription_netto": { "name": "Opłata abonamentowa (netto)" },
+          "distribution_netto": { "name": "Ogółem wartość – usługa dystrybucji (netto)" },
+          "total_netto": { "name": "Ogółem wartość (netto)" }
+        }
+      },
+      "bill_current": {
+        "name": "Szacowany rachunek – bieżący okres",
+        "state_attributes": {
+          "start": { "name": "Początek okresu" },
+          "end": { "name": "Koniec okresu" },
+          "months": { "name": "Miesiące" },
+          "kwh_dzien": { "name": "Zużycie Dzień (kWh)" },
+          "energy_dzien_netto": { "name": "Energia elektryczna czynna Dzień (netto)" },
+          "kwh_noc": { "name": "Zużycie Noc (kWh)" },
+          "energy_noc_netto": { "name": "Energia elektryczna czynna Noc (netto)" },
+          "kwh_szczyt": { "name": "Zużycie Szczyt (kWh)" },
+          "energy_szczyt_netto": { "name": "Energia elektryczna czynna Szczyt (netto)" },
+          "kwh_poza_szczytem": { "name": "Zużycie Poza szczytem (kWh)" },
+          "energy_poza_szczytem_netto": { "name": "Energia elektryczna czynna Poza szczytem (netto)" },
+          "energy_netto": { "name": "Ogółem wartość – sprzedaż energii (netto)" },
+          "fixed_network_netto": { "name": "Opłata stała sieciowa (netto)" },
+          "fixed_capacity_netto": { "name": "Opłata mocowa (netto)" },
+          "variable_network_dzien_netto": { "name": "Opłata zmienna sieciowa Dzień (netto)" },
+          "variable_network_noc_netto": { "name": "Opłata zmienna sieciowa Noc (netto)" },
+          "variable_network_szczyt_netto": { "name": "Opłata zmienna sieciowa Szczyt (netto)" },
+          "variable_network_poza_szczytem_netto": { "name": "Opłata zmienna sieciowa Poza szczytem (netto)" },
+          "quality_dzien_netto": { "name": "Opłata jakościowa Dzień (netto)" },
+          "quality_noc_netto": { "name": "Opłata jakościowa Noc (netto)" },
+          "quality_szczyt_netto": { "name": "Opłata jakościowa Szczyt (netto)" },
+          "quality_poza_szczytem_netto": { "name": "Opłata jakościowa Poza szczytem (netto)" },
+          "oze_dzien_netto": { "name": "Opłata OZE Dzień (netto)" },
+          "oze_noc_netto": { "name": "Opłata OZE Noc (netto)" },
+          "oze_szczyt_netto": { "name": "Opłata OZE Szczyt (netto)" },
+          "oze_poza_szczytem_netto": { "name": "Opłata OZE Poza szczytem (netto)" },
+          "cogeneration_dzien_netto": { "name": "Opłata kogeneracyjna Dzień (netto)" },
+          "cogeneration_noc_netto": { "name": "Opłata kogeneracyjna Noc (netto)" },
+          "cogeneration_szczyt_netto": { "name": "Opłata kogeneracyjna Szczyt (netto)" },
+          "cogeneration_poza_szczytem_netto": { "name": "Opłata kogeneracyjna Poza szczytem (netto)" },
+          "fixed_subscription_netto": { "name": "Opłata abonamentowa (netto)" },
+          "distribution_netto": { "name": "Ogółem wartość – usługa dystrybucji (netto)" },
+          "total_netto": { "name": "Ogółem wartość (netto)" }
+        }
       }
     }
   }

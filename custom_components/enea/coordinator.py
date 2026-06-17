@@ -122,7 +122,12 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.warning("Failed to update historical statistics: %s", err, exc_info=True)
 
         # Recompute bill estimates if reading dates are configured (new stats may have arrived).
+        # async_add_external_statistics is non-blocking — it only queues writes in the
+        # recorder thread.  Waiting here ensures those writes are committed to the DB
+        # before _query_zone_kwh reads them, so the bill updates in the same refresh
+        # cycle that brought in new data (not only in the next one ~3.5 h later).
         if self.bill_prev_reading is not None or self.bill_last_reading is not None:
+            await get_instance(self.hass).async_block_till_done()
             await self.async_recompute_bills()
 
         return data

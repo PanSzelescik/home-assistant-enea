@@ -19,6 +19,7 @@ from .const import (
     BILL_KEY_CURRENT,
     BILL_KEY_PREVIOUS,
     DOMAIN,
+    MISSING_DAY_GRACE_DAYS,
     RANGE_FETCH_CHUNK_DAYS,
     STAT_KEY_ENERGY_CONSUMED,
     STAT_KEY_ENERGY_RETURNED,
@@ -180,7 +181,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if latest_date is not None:
             # Incremental update: small range — run inline (fast).
             all_days = await self._fetch_days_forward(
-                latest_date + timedelta(days=1), yesterday
+                latest_date + timedelta(days=1),
+                yesterday,
+                zero_fill_stale=True,
+                grace_days=MISSING_DAY_GRACE_DAYS,
             )
             if all_days:
                 await self._async_inject_days(all_days)
@@ -304,7 +308,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # querying the earliest energy statistic from the DB.
             start = yesterday - timedelta(days=364)
 
-        days = await self._fetch_days_forward(start, yesterday)
+        days = await self._fetch_days_forward(
+            start, yesterday, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
+        )
         if days:
             await async_insert_cost_statistics(
                 self.hass,
@@ -376,20 +382,64 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             result.setdefault(day, {"values": [], "zones": zones})["values"].append(entry)
         return result
 
+    @staticmethod
+    def _zero_fill_missing_day(day_data: dict[str, Any]) -> dict[str, Any]:
+        """Replace null slot values with 0.0 for a day confirmed permanently missing.
+
+        The Enea API still returns hourly slot entries for a missing day, just
+        with ``value: null`` for every item — this only rewrites those values,
+        it does not fabricate slots. Called once a day has been missing for
+        longer than MISSING_DAY_GRACE_DAYS, so it is injected as a legitimate
+        zero-consumption day instead of leaving a hole that resets the
+        cumulative sum of later statistics to 0 (see _inject_energy_series /
+        _inject_cost_series).
+        """
+        result: dict[str, Any] = {}
+        for key, api_response in day_data.items():
+            zeroed_values = [
+                {
+                    **entry,
+                    "items": [
+                        {**item, "value": item.get("value") or 0.0}
+                        for item in entry.get("items", [])
+                    ],
+                }
+                for entry in api_response.get("values", [])
+            ]
+            result[key] = {**api_response, "values": zeroed_values}
+        return result
+
     async def _fetch_range(
         self,
         start_date: date,
         end_date: date,
+        zero_fill_stale: bool = False,
+        grace_days: int = 0,
     ) -> list[tuple[date, dict[str, Any]]]:
         """Fetch all measurement types for a date range in parallel.
 
         Issues one request per active measurement type simultaneously, splits
-        each flat response into per-day dicts, merges them, filters days with no
-        data, and applies assembly-date slot stripping.
+        each flat response into per-day dicts, merges them, and applies
+        assembly-date slot stripping.
+
+        Days with no data (the Enea API returned only null values) are handled
+        depending on ``zero_fill_stale``:
+        - ``False`` (default): the day is dropped, as before. Used by the
+          backward historical-boundary scan in ``_fetch_days_backward``, which
+          relies on "no data" to detect where real history starts/ends.
+        - ``True``: a day still within ``grace_days`` of today is dropped (it
+          may simply not be published yet — Enea usually publishes a day's
+          data by ~11:00 the next day); an older day is treated as
+          permanently missing and injected with zeroed values instead of
+          being silently dropped, so it does not leave a hole that corrupts
+          the cumulative sum of later days (see MISSING_DAY_GRACE_DAYS).
 
         Args:
             start_date: First date to fetch (inclusive); clamped to assembly date.
             end_date: Last date to fetch (inclusive).
+            zero_fill_stale: Whether to zero-fill days confirmed missing.
+            grace_days: How many days a day may stay missing before it is
+                considered permanently absent (only used when zero_fill_stale).
 
         Returns:
             Chronologically sorted list of (date, day_data) tuples where day_data
@@ -443,6 +493,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for days_map in per_key_days.values():
             all_dates.update(days_map.keys())
 
+        today = dt_util.now().date()
         all_days: list[tuple[date, dict[str, Any]]] = []
         for day in sorted(all_dates):
             day_data: dict[str, Any] = {
@@ -451,14 +502,23 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if day in days_map
             }
             if not any(has_data(v) for v in day_data.values()):
-                continue
+                if not zero_fill_stale or (today - day).days < grace_days:
+                    continue
+                _LOGGER.debug(
+                    "No data for %s after %d day(s) — zero-filling", day, grace_days
+                )
+                day_data = self._zero_fill_missing_day(day_data)
             day_data = self._strip_pre_assembly_slots(day, day_data)
             all_days.append((day, day_data))
 
         return all_days
 
     async def _fetch_days_forward(
-        self, start_date: date, end_date: date
+        self,
+        start_date: date,
+        end_date: date,
+        zero_fill_stale: bool = False,
+        grace_days: int = 0,
     ) -> list[tuple[date, dict[str, Any]]]:
         """Fetch days chronologically from start_date to end_date (inclusive).
 
@@ -469,6 +529,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Skips days before the assembly date of the current meter.  On the assembly
         day itself, early-hour slots (before the assembly hour) are stripped by
         _strip_pre_assembly_slots so only new-meter data is imported.
+
+        zero_fill_stale/grace_days are forwarded to _fetch_range — see there.
         """
         # Assembly-date clamp is also applied inside _fetch_range; repeating it
         # here avoids allocating empty chunks before the assembly date.
@@ -482,7 +544,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 chunk_start + timedelta(days=RANGE_FETCH_CHUNK_DAYS - 1),
                 end_date,
             )
-            chunk_days = await self._fetch_range(chunk_start, chunk_end)
+            chunk_days = await self._fetch_range(
+                chunk_start, chunk_end, zero_fill_stale, grace_days
+            )
             all_days.extend(chunk_days)
             chunk_start = chunk_end + timedelta(days=1)
 
@@ -506,7 +570,12 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "Assembly date known (%s) — fetching forward from assembly date",
                 self._assembly_datetime.date(),
             )
-            return await self._fetch_days_forward(self._assembly_datetime.date(), end_date)
+            return await self._fetch_days_forward(
+                self._assembly_datetime.date(),
+                end_date,
+                zero_fill_stale=True,
+                grace_days=MISSING_DAY_GRACE_DAYS,
+            )
 
         # Collect chunks newest-first, flatten in reverse at the end — avoids
         # O(n²) copies that would result from prepending to all_days each iteration.
@@ -553,9 +622,16 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_backfill(self, start_date: date, end_date: date) -> int:
         """Fetch and inject statistics for a custom date range.
 
+        Days missing for longer than MISSING_DAY_GRACE_DAYS are zero-filled
+        rather than skipped (see _fetch_range) — running this again for the
+        same range later always re-fetches from the API and overwrites any
+        zero-filled day if real data has since appeared.
+
         Returns the number of days for which data was found and injected.
         """
-        all_days = await self._fetch_days_forward(start_date, end_date)
+        all_days = await self._fetch_days_forward(
+            start_date, end_date, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
+        )
         if all_days:
             await self._async_inject_days(all_days)
             self.async_update_listeners()

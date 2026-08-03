@@ -9,7 +9,7 @@ from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMeanType, StatisticMetaData
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
-    statistics_during_period,
+    get_last_statistics,
 )
 from homeassistant.const import UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
@@ -127,26 +127,19 @@ async def _inject_energy_series(
         return
 
     statistic_id = get_statistic_id(meter_code, name)
-    first_dt = series[0][0]
 
-    # Look up the most recent sum before series[0].  Zone-specific series have
-    # gaps (e.g. last "Dzień" slot is at 21:00, next is at 6:00 — 9h gap), so
-    # looking back only 1 h misses the previous record and resets running_sum
-    # to 0, producing a large negative delta in the Energy Dashboard.  25 h
-    # safely covers any zone configuration including DST days.
+    # Look up the most recent sum before series[0] regardless of how large the
+    # gap is — a fixed time window is not safe here because a fully missing
+    # day (e.g. the Enea API had no data at all for a day) can push the gap
+    # for a zone-specific series (which already skips hours outside its zone)
+    # well past any reasonable fixed threshold, silently resetting
+    # running_sum to 0 and producing a large bogus negative delta downstream.
     base_stats = await get_instance(hass).async_add_executor_job(
-        statistics_during_period,
-        hass,
-        first_dt - timedelta(hours=25),
-        first_dt,
-        {statistic_id},
-        "hour",
-        None,
-        {"sum"},
+        get_last_statistics, hass, 1, statistic_id, True, {"sum"}
     )
     running_sum: float = 0.0
     if base_stats.get(statistic_id):
-        running_sum = base_stats[statistic_id][-1].get("sum") or 0.0
+        running_sum = base_stats[statistic_id][0].get("sum") or 0.0
 
     stats_data = []
     for dt, value in series:

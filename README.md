@@ -41,7 +41,7 @@ Integracja jest dostępna w domyślnym katalogu HACS — nie trzeba dodawać wł
 
 Po dodaniu integracji automatycznie pobierane są historyczne dane energii i mocy z granularnością **godzinową**. Dane są wstrzykiwane jako **statystyki zewnętrzne** Home Assistant, co pozwala wyświetlić pełną historię w panelu Energia z prawidłowymi timestampami.
 
-> **Kiedy dostępne:** Dane za poprzedni dzień pojawiają się zwykle po godzinie 11:00. Integracja automatycznie sprawdza dostępność przy każdym odświeżeniu i pobiera brakujące dni.
+> **Kiedy dostępne:** Dane za poprzedni dzień pojawiają się zwykle po godzinie 11:00. Integracja automatycznie sprawdza dostępność przy każdym odświeżeniu i pobiera brakujące dni. Jeśli Portal Odbiorcy Enea w ogóle nie opublikuje danych za dany dzień (zdarza się sporadycznie), integracja czeka 3 dni, a potem wpisuje dla niego zerowe zużycie — dzięki temu luka nie zaburza statystyk kolejnych dni. Gdy dane później się pojawią, wystarczy ponownie uruchomić **`enea.backfill`** dla tego dnia, żeby je poprawnie zaimportować.
 
 ### Dostępne statystyki
 
@@ -208,6 +208,7 @@ W przypadku problemów pobierz raport diagnostyczny (hasło i adres są automaty
 - API Enea jest nieoficjalne i może ulec zmianie bez ostrzeżenia
 - Odczyty energii są wartościami skumulowanymi — przy wymianie licznika nowe urządzenie zaczyna od 0; integracja automatycznie wykrywa datę i godzinę montażu aktualnego licznika i importuje tylko dane z godzin po montażu, więc historia zaczyna się od momentu wymiany
 - Dni z zerowym zużyciem są uwzględniane w statystykach — nie wpływa to na poprawność sum, ponieważ zero nie zmienia wartości skumulowanej
+- Dni, dla których Portal Odbiorcy Enea nigdy nie opublikował danych, są po 3 dniach oczekiwania wypełniane zerowym zużyciem zamiast pozostawiać lukę
 - Integracja była testowana wyłącznie na taryfie **G12**; działanie na G11, G12w i G13 jest możliwe, ale niezweryfikowane
 - Portal Odbiorcy Enea korzysta ze wspólnej platformy obsługującej również innych operatorów — PGE, EDF (E.ON), Lumen, DSR, PGE PWI, Mondi — integracja **może** działać z ich portalami po zmianie adresu bazowego API, ale nie zostało to zweryfikowane
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
@@ -131,8 +131,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
             days_back: int | None = call.data.get("days_back")
 
             if start_date_str:
-                start_date = date.fromisoformat(start_date_str)
-                end_date = date.fromisoformat(end_date_str) if end_date_str else yesterday
+                start_date = dt_util.parse_date(start_date_str)
+                end_date = dt_util.parse_date(end_date_str) if end_date_str else yesterday
             elif days_back:
                 end_date = yesterday
                 start_date = yesterday - timedelta(days=int(days_back) - 1)

@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from functools import partial
 from typing import Any
 
@@ -259,8 +259,12 @@ async def async_get_cost_latest_date(
     """Return the most recent date for which cost statistics exist for this meter.
 
     Enumerates statistic IDs from the current tariff period and enabled
-    directions, queries the recorder over a 30-day window, and returns the
+    directions, asks the recorder for the newest entry of each, and returns the
     latest date found — or None when no cost statistics exist yet.
+
+    The lookup must not be limited to a recent window: reporting None while rows
+    actually exist makes the caller restart injection from the meter assembly
+    date, over a range that is already covered.
     """
     period = tariff.get_current_period()
     if period is None:
@@ -278,17 +282,9 @@ async def async_get_cost_latest_date(
     if not stat_ids:
         return None
 
-    now = dt_util.utcnow()
     all_stats_list = await asyncio.gather(*(
         get_instance(hass).async_add_executor_job(
-            statistics_during_period,
-            hass,
-            now - timedelta(days=30),
-            now,
-            {sid},
-            "hour",
-            None,
-            {"sum"},
+            get_last_statistics, hass, 1, sid, True, {"sum"}
         )
         for sid in stat_ids
     ))
@@ -298,7 +294,7 @@ async def async_get_cost_latest_date(
         records = stats.get(sid)
         if not records:
             continue
-        ts = records[-1].get("start")
+        ts = records[0].get("start")
         if ts is not None:
             d = (
                 dt_util.utc_from_timestamp(ts)

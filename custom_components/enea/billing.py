@@ -262,13 +262,26 @@ async def _query_zone_kwh(
     """Return kWh consumed per zone in period (d1, d2].
 
     Computes the difference of cumulative external statistics sums:
-      kWh = sum_at_last_slot_of_d2 – sum_at_last_slot_of_d1
+      kWh = sum_at_last_row_up_to_d2 – sum_at_last_row_up_to_d1
 
     Queries all zone statistics in parallel.  Records are iterated in ascending
-    time order; the last record on d1 (resp. d2) gives the cumulative sum at
+    time order; the last record up to d1 (resp. d2) gives the cumulative sum at
     the end of that day, regardless of which hour zone slots fall on.
+
+    The lookup is unbounded at the start, because the opening balance is the
+    newest row *at or before* d1 and a zone need not have one on d1 itself:
+    G12w has no peak hours at a weekend or on a public holiday, and the portal
+    sometimes never publishes a day at all.  Starting the window at d1 left
+    such a zone with a baseline of 0.0 and reported the meter's whole history
+    as one period's consumption.
+
+    Asking for the window by day rather than by hour only shrinks what the
+    recorder hands back: statistics_during_period reads the same hourly rows
+    either way and folds them in Python afterwards.  Reading that far back is
+    therefore the price of a correct opening balance, paid once per zone in the
+    recorder's executor each time a bill is recomputed.
     """
-    start_dt = dt_util.start_of_local_day(d1)
+    start_dt = dt_util.utc_from_timestamp(0)
     end_dt = dt_util.start_of_local_day(d2 + timedelta(days=1))
     tz = dt_util.DEFAULT_TIME_ZONE
 
@@ -279,7 +292,7 @@ async def _query_zone_kwh(
             start_dt,
             end_dt,
             {sid},
-            "hour",
+            "day",
             None,
             {"sum"},
         )

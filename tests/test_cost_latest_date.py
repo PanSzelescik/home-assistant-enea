@@ -8,7 +8,7 @@ import pytest
 from conftest import TEST_TIME_ZONE
 from homeassistant.util import dt as dt_util
 
-from custom_components.enea import costs
+from custom_components.enea import costs, statistics
 
 TZ = dt_util.get_time_zone(TEST_TIME_ZONE)
 """Build inputs in the same zone the integration reports dates in."""
@@ -78,8 +78,10 @@ def recorder(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(costs, "get_instance", lambda hass: Rec())
         monkeypatch.setattr(costs, "get_last_statistics", last)
         # Kept wired so the pre-fix code path runs too and the regression test
-        # fails for the defect itself, not for a missing stub.
-        monkeypatch.setattr(costs, "statistics_during_period", during)
+        # fails for the defect itself, not for a missing stub.  The windowed
+        # lookup itself now lives in statistics.sum_before.
+        monkeypatch.setattr(statistics, "get_instance", lambda hass: Rec())
+        monkeypatch.setattr(statistics, "statistics_during_period", during)
 
     return _wire
 

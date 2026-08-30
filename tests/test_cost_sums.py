@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import datetime
 
-from custom_components.enea import costs
+from custom_components.enea import costs, statistics
 
 TZ = datetime.timezone(datetime.timedelta(hours=2))
 
@@ -22,7 +22,7 @@ def _series(day: int, count: int, cost: float) -> list[tuple[datetime.datetime, 
 
 async def test_new_days_carry_on_from_the_stored_total(wire_recorder) -> None:
     """Days written after everything stored continue from the last stored total."""
-    store = wire_recorder(costs, [(MARCH_1_LAST_HOUR, 100.0)])
+    store = wire_recorder(statistics, [(MARCH_1_LAST_HOUR, 100.0)], writes_to=costs)
 
     await costs._inject_cost_series(object(), "PPE", "Koszt", _series(2, 3, 2.0))
 
@@ -44,7 +44,7 @@ async def test_writing_a_stored_range_again_does_not_double_it(wire_recorder) ->
         (datetime.datetime(2026, 3, 2, 1, 0, tzinfo=TZ), 104.0),
         (datetime.datetime(2026, 3, 2, 2, 0, tzinfo=TZ), 106.0),
     ]
-    store = wire_recorder(costs, already_stored)
+    store = wire_recorder(statistics, already_stored, writes_to=costs)
 
     await costs._inject_cost_series(object(), "PPE", "Koszt", _series(2, 3, 2.0))
 
@@ -53,7 +53,7 @@ async def test_writing_a_stored_range_again_does_not_double_it(wire_recorder) ->
 
 async def test_the_first_write_starts_from_zero(wire_recorder) -> None:
     """With nothing stored at all the total starts at the first hour's cost."""
-    store = wire_recorder(costs, [])
+    store = wire_recorder(statistics, [], writes_to=costs)
 
     await costs._inject_cost_series(object(), "PPE", "Koszt", _series(2, 2, 1.5))
 
@@ -62,7 +62,7 @@ async def test_the_first_write_starts_from_zero(wire_recorder) -> None:
 
 async def test_a_range_older_than_everything_starts_from_zero(wire_recorder) -> None:
     """Hours before all stored history have nothing to carry on from."""
-    store = wire_recorder(costs, [(datetime.datetime(2026, 3, 5, 0, 0, tzinfo=TZ), 500.0)])
+    store = wire_recorder(statistics, [(datetime.datetime(2026, 3, 5, 0, 0, tzinfo=TZ), 500.0)], writes_to=costs)
 
     await costs._inject_cost_series(object(), "PPE", "Koszt", _series(2, 2, 1.0))
 
@@ -71,7 +71,7 @@ async def test_a_range_older_than_everything_starts_from_zero(wire_recorder) -> 
 
 async def test_an_empty_range_writes_nothing(wire_recorder) -> None:
     """Nothing to write means nothing is sent to the recorder."""
-    store = wire_recorder(costs, [])
+    store = wire_recorder(statistics, [], writes_to=costs)
 
     await costs._inject_cost_series(object(), "PPE", "Koszt", [])
 

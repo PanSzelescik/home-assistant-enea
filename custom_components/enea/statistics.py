@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta
+from functools import partial
 from typing import Any
 
 from homeassistant.helpers.recorder import get_instance
@@ -10,6 +11,7 @@ from homeassistant.components.recorder.models import StatisticData, StatisticMea
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
+    statistics_during_period,
 )
 from homeassistant.const import UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
@@ -50,6 +52,53 @@ def slot_start_dt(entry: dict[str, Any]) -> datetime:
     """
     end = dt_util.utc_from_timestamp(entry["integrationEnd"] / 1000)
     return (end - timedelta(hours=1)).astimezone(dt_util.DEFAULT_TIME_ZONE)
+
+
+async def sum_before(
+    hass: HomeAssistant, statistic_id: str, moment: datetime
+) -> float:
+    """Return the cumulative sum of the newest statistic that starts before moment.
+
+    Appending days after the newest stored entry is the common case and is
+    answered by get_last_statistics alone.  Re-injecting a range that is already
+    covered — what the backfill action does — is not: there the newest entry
+    lies inside or after the range, so chaining from it would add the range's
+    values on top of themselves and double the cumulative series.  The baseline
+    is then looked up in the window preceding the range instead.
+
+    That preceding lookup is deliberately unbounded at the start.  A fixed
+    window is not safe: a fully missing day (the Enea API had no data at all)
+    can push the gap for a zone-specific series — which already skips hours
+    outside its zone — past any reasonable threshold, silently resetting the
+    sum to 0 and producing a large bogus delta downstream.
+    """
+    last = await get_instance(hass).async_add_executor_job(
+        get_last_statistics, hass, 1, statistic_id, True, {"sum"}
+    )
+    rows = last.get(statistic_id)
+    if not rows:
+        return 0.0
+
+    newest_start = rows[0].get("start")
+    if newest_start is not None and newest_start < moment.timestamp():
+        return rows[0].get("sum") or 0.0
+
+    preceding = await get_instance(hass).async_add_executor_job(
+        partial(
+            statistics_during_period,
+            hass,
+            dt_util.utc_from_timestamp(0),
+            moment,
+            {statistic_id},
+            "hour",
+            None,
+            {"sum"},
+        )
+    )
+    before = preceding.get(statistic_id)
+    if not before:
+        return 0.0
+    return before[-1].get("sum") or 0.0
 
 
 async def async_insert_historical_statistics(
@@ -119,27 +168,16 @@ async def _inject_energy_series(
 ) -> None:
     """Inject an energy time series, always overwriting the given range.
 
-    The cumulative running_sum is chained from the stat immediately preceding
-    series[0] so that both fresh injection and re-injection (backfill overwrite)
-    produce correct values without creating spikes.
+    The cumulative running_sum is chained from the statistic immediately
+    preceding series[0] (see sum_before), so that both fresh injection and
+    re-injection (backfill overwrite) produce correct values without creating
+    spikes.
     """
     if not series:
         return
 
     statistic_id = get_statistic_id(meter_code, name)
-
-    # Look up the most recent sum before series[0] regardless of how large the
-    # gap is — a fixed time window is not safe here because a fully missing
-    # day (e.g. the Enea API had no data at all for a day) can push the gap
-    # for a zone-specific series (which already skips hours outside its zone)
-    # well past any reasonable fixed threshold, silently resetting
-    # running_sum to 0 and producing a large bogus negative delta downstream.
-    base_stats = await get_instance(hass).async_add_executor_job(
-        get_last_statistics, hass, 1, statistic_id, True, {"sum"}
-    )
-    running_sum: float = 0.0
-    if base_stats.get(statistic_id):
-        running_sum = base_stats[statistic_id][0].get("sum") or 0.0
+    running_sum = await sum_before(hass, statistic_id, series[0][0])
 
     stats_data = []
     for dt, value in series:

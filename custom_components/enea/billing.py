@@ -118,8 +118,10 @@ def find_prices_config(hass: HomeAssistant, tariff_name: str | None) -> PricesCo
     """
     if not tariff_name:
         return None
+    wanted = tariff_name.casefold()
     for entry in hass.config_entries.async_entries(ENEA_PRICES_DOMAIN):
-        if entry.data.get("tariff") != tariff_name:
+        configured = entry.data.get("tariff") or ""
+        if configured.casefold() != wanted:
             continue
         runtime = getattr(entry, "runtime_data", None)
         if runtime is None:

@@ -258,23 +258,23 @@ async def async_get_cost_latest_date(
 ) -> date | None:
     """Return the most recent date for which cost statistics exist for this meter.
 
-    Enumerates statistic IDs from the current tariff period and enabled
-    directions, asks the recorder for the newest entry of each, and returns the
-    latest date found — or None when no cost statistics exist yet.
+    Enumerates statistic IDs from every zone the tariff has ever had and the
+    enabled directions, asks the recorder for the newest entry of each, and
+    returns the latest date found — or None when no cost statistics exist yet.
 
-    The lookup must not be limited to a recent window: reporting None while rows
-    actually exist makes the caller restart injection from the meter assembly
-    date, over a range that is already covered.
+    The lookup must not be limited to a recent window, nor to the period valid
+    today: reporting None while rows actually exist makes the caller restart
+    injection from the meter assembly date, over a range that is already
+    covered.  Zones come from all periods because the bundled tariff table ends
+    on a fixed date, and past that date there is no current period at all.
     """
-    period = tariff.get_current_period()
-    if period is None:
-        return None
+    zones = {zone for period in tariff.periods for zone in period.zones}
 
     stat_ids: list[str] = []
     for direction, enabled in (("pobrana", fetch_consumption), ("oddana", fetch_generation)):
         if not enabled:
             continue
-        for zone in period.zones:
+        for zone in zones:
             stat_ids.append(
                 get_statistic_id(meter_code, get_cost_statistic_name(direction, str(zone)))
             )

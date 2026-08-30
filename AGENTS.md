@@ -127,7 +127,7 @@ W Energy Dashboard koszt wybierasz przez **„Użyj encji śledzącej całkowite
 
 Statystyki zewnętrzne **nie wymagają** istnienia encji w rejestrze, więc wstrzykiwanie kosztów może iść tą samą ścieżką co energia (`_async_inject_days`) podczas pierwszego odświeżenia lub backfillu w tle — niezależnie od kolejności setupu. Nie ma już mechanizmu `_pending_cost_days`/`set_pending`.
 
-`_async_inject_missing_costs` (wołane z `_async_fetch_and_inject_stats`) uzupełnia brakujące koszty, gdy statystyki energii są już aktualne. `async_get_cost_latest_date` odpytuje recorder po stat IDs wyliczonych z bieżących stref taryfy — nie wymaga rejestrów encji.
+`_async_inject_missing_costs` (wołane z `_async_fetch_and_inject_stats`) uzupełnia brakujące koszty, gdy statystyki energii są już aktualne. `async_get_cost_latest_date` odpytuje recorder po stat IDs wyliczonych ze stref **wszystkich** okresów taryfy — nie wymaga rejestrów encji ani okresu obowiązującego dziś (tabela taryf kończy się na sztywnej dacie, a po niej nie ma żadnego bieżącego okresu).
 
 ### Obsługa świąt (G12w)
 

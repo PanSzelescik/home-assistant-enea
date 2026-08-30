@@ -14,21 +14,45 @@ TZ = dt_util.get_time_zone(TEST_TIME_ZONE)
 """Build inputs in the same zone the integration reports dates in."""
 
 
+def _today() -> datetime.date:
+    """Today in the fixture timezone, mirroring TariffGroup.get_current_period."""
+    return datetime.datetime.now(tz=TZ).date()
+
+
 class _Zone(str):
     """Zone key that stringifies to the value used in statistic names."""
 
 
 class _Period:
-    def __init__(self, zones: list[str]) -> None:
+    """Stand-in for a date-bounded enea_prices TariffPeriod."""
+
+    def __init__(
+        self, zones: list[str], valid_from: datetime.date, valid_until: datetime.date
+    ) -> None:
         self.zones = {_Zone(z): object() for z in zones}
+        self.valid_from = valid_from
+        self.valid_until = valid_until
 
 
 class _Tariff:
-    def __init__(self, zones: list[str]) -> None:
-        self._period = _Period(zones)
+    """Stand-in for a TariffGroup: zones live inside date-bounded periods."""
 
-    def get_current_period(self) -> _Period:
-        return self._period
+    def __init__(
+        self,
+        zones: list[str],
+        valid_from: datetime.date = datetime.date(2000, 1, 1),
+        valid_until: datetime.date = datetime.date(2099, 12, 31),
+    ) -> None:
+        self.periods = [_Period(zones, valid_from, valid_until)]
+
+    def get_period_for_date(self, d: datetime.date) -> _Period | None:
+        for period in self.periods:
+            if period.valid_from <= d <= period.valid_until:
+                return period
+        return None
+
+    def get_current_period(self) -> _Period | None:
+        return self.get_period_for_date(_today())
 
 
 @pytest.fixture
@@ -117,3 +141,24 @@ async def test_disabled_directions_are_not_queried(recorder) -> None:
         object(), "PPE", _Tariff(["peak"]), False, False
     )
     assert got is None
+
+
+async def test_lookup_survives_a_tariff_table_that_ran_out(recorder) -> None:
+    """Stored statistics must still be found once the table stops covering today.
+
+    The zone names came from the period covering today.  The tariff table
+    ends on a fixed date, so from the day after it there is no such period,
+    the lookup reported nothing, and the caller read that as no cost history
+    at all.  It then downloaded the meter's whole history on every refresh and
+    threw all of it away, because those days had no price either.
+    """
+    old = datetime.datetime.now(tz=TZ) - datetime.timedelta(days=3)
+    recorder({_sid("peak"): old})
+    expired = _Tariff(
+        ["peak"], valid_until=_today() - datetime.timedelta(days=1)
+    )
+    assert expired.get_current_period() is None
+
+    got = await costs.async_get_cost_latest_date(object(), "PPE", expired, True, False)
+
+    assert got == old.date()

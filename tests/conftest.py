@@ -101,3 +101,67 @@ class StatsStore:
     def add_external(self, hass: Any, metadata: Any, rows: list[Any]) -> None:
         """Record an async_add_external_statistics call."""
         self.injected.append((metadata, rows))
+
+
+class FakeRecorder:
+    """Answers recorder queries from an in-memory list of (hour, total) pairs."""
+
+    def __init__(self, stored: list[tuple[Any, float]]) -> None:
+        self.stored = sorted(stored, key=lambda row: row[0])
+
+    async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
+        """Run the query straight away instead of handing it to a thread."""
+        return target(*args)
+
+    def newest(self, hass: Any, count: int, sid: str, convert: bool, types: set) -> dict:
+        """Stand in for get_last_statistics: the last hour of the whole series."""
+        if not self.stored:
+            return {}
+        hour, total = self.stored[-1]
+        return {sid: [{"start": hour.timestamp(), "sum": total}]}
+
+    def in_window(self, hass: Any, start: Any, end: Any, ids: set, *rest: Any) -> dict:
+        """Stand in for statistics_during_period: the hours inside [start, end)."""
+        sid = next(iter(ids))
+        found = [
+            {"start": hour.timestamp(), "sum": total}
+            for hour, total in self.stored
+            if start <= hour < end
+        ]
+        return {sid: found} if found else {}
+
+
+@pytest.fixture
+def wire_recorder(monkeypatch: pytest.MonkeyPatch):
+    """Point one module's recorder calls at an in-memory series and capture writes.
+
+    Call it as wire_recorder(module, stored) and it returns the StatsStore that
+    collects what the code writes back.  Pass writes_to when the write goes
+    through a different module than the lookups.
+
+    Every name is replaced with raising=False, including the ones the code
+    under test does not reach for.  That is what lets a regression test be
+    checked against the revision before its fix, where the code looks up a
+    different set of names, and still fail on the behaviour it is about rather
+    than on a missing stand-in.  A replacement that genuinely fails to apply
+    still shows up at once, because the real recorder call raises without a
+    running Home Assistant behind it.
+    """
+
+    def _wire(module: Any, stored: list[tuple[Any, float]], writes_to: Any = None) -> StatsStore:
+        recorder = FakeRecorder(stored)
+        store = StatsStore()
+        monkeypatch.setattr(module, "get_instance", lambda hass: recorder, raising=False)
+        monkeypatch.setattr(module, "get_last_statistics", recorder.newest, raising=False)
+        monkeypatch.setattr(
+            module, "statistics_during_period", recorder.in_window, raising=False
+        )
+        monkeypatch.setattr(
+            writes_to or module,
+            "async_add_external_statistics",
+            store.add_external,
+            raising=False,
+        )
+        return store
+
+    return _wire

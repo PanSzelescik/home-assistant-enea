@@ -114,6 +114,10 @@ async def async_insert_cost_statistics(
     _enea_prices_const = sys.modules.get("custom_components.enea_prices.const")
     akcyza: float = getattr(_enea_prices_const, "AKCYZA", 0.0)
 
+    # Days the tariff table does not reach; reported once at the end, because a
+    # multi-year backfill would otherwise log a line per day.
+    days_without_period: set[date] = set()
+
     for key, direction in (
         (STAT_KEY_ENERGY_CONSUMED, "pobrana"),
         (STAT_KEY_ENERGY_RETURNED, "oddana"),
@@ -133,6 +137,7 @@ async def async_insert_cost_statistics(
 
             period = tariff.get_period_for_date(day)
             if period is None:
+                days_without_period.add(day)
                 continue
 
             for entry in api.get("values", []):
@@ -154,6 +159,16 @@ async def async_insert_cost_statistics(
         for zone_str, series in series_by_zone.items():
             name = get_cost_statistic_name(direction, zone_str)
             await _inject_cost_series(hass, meter_code, name, series)
+
+    if days_without_period:
+        _LOGGER.warning(
+            "No %s tariff period covers %d day(s) between %s and %s; their energy "
+            "statistics were stored but no cost was computed for them",
+            getattr(tariff, "name", "?"),
+            len(days_without_period),
+            min(days_without_period),
+            max(days_without_period),
+        )
 
 
 async def _sum_before(

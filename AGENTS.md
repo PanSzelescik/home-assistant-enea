@@ -32,8 +32,8 @@ custom_components/enea/
 ├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date
 ├── date.py          — EneaBillDateEntity (Platform.DATE): edytowalne daty odczytu z RestoreEntity
 ├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill; szacowanie rachunku z long-term statistics
-├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series
-├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, _inject_cost_series, get_cost_statistic_name, find_tariff_group
+├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + _shift_later_totals (wspólny zapis serii skumulowanej dla energii i kosztów)
+├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, async_cost_days_missing, _inject_cost_series, get_cost_statistic_name, find_tariff_group
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem)
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
 ├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk, stałe kosztów (ENEA_PRICES_DOMAIN, UNIT_COST, COST_ZONE_DISPLAY, VAT_RATE, BILL_KEY_*)
@@ -59,7 +59,7 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 - Odpowiedź range endpoint to płaska lista slotów godzinowych. **Liczba slotów na dobę NIE jest stała** — w dniu zmiany czasu doba ma 23 lub 25 godzin (API nie dopełnia do 24). `_split_range_response` grupuje sloty po **rzeczywistej dacie** wyliczonej z `integrationEnd` (a nie po sztywnych blokach 24) → odporne na DST. Wynik to per-day dicty `{"values": [...], "zones": [...]}` identyczne ze strukturą single-day, więc `has_data`, `_collect_series` i koszty nie wymagają zmian. Dla dużych zakresów dane bywają w `valuesToTable` (a `values` może zawierać krótki, częściowy wycinek) — kod bierze **dłuższe** z pól `values`/`valuesToTable`. Dokładny czas slotu liczy `slot_start_dt(entry)` z `integrationEnd` (nie z `timeId`) — patrz niżej.
 - Manualny backfill dowolnego zakresu dat: akcja `enea.backfill` (patrz Akcje).
 - `has_data` zwraca `False` gdy odpowiedź API zawiera wyłącznie wartości `null` (`if item.get("value") is not None`). Zera są traktowane jako dane (zerowe zużycie) — dni z zerowym zużyciem są importowane. Filtrowanie danych starego licznika odbywa się przez `_strip_pre_assembly_slots` na poziomie godzin, nie przez `has_data`.
-- **Dni bez danych (`has_data() == False`)** — Portal Odbiorcy Enea czasem w ogóle nie publikuje danych za dany dzień (potwierdzone przypadki trwałych dziur, nie tylko opóźnień). `_fetch_range` w `coordinator.py` obsługuje to przez parametry `zero_fill_stale`/`grace_days`: dzień bez danych młodszy niż `MISSING_DAY_GRACE_DAYS` (`const.py`, domyślnie 3 dni) jest pomijany jak dotychczas (dane zwykle pojawiają się po ok. 11:00 następnego dnia — patrz niżej); dzień starszy jest traktowany jako trwale brakujący i wstrzykiwany z wyzerowanymi wartościami (`_zero_fill_missing_day` — nadpisuje `null` na `0.0` w istniejących slotach, nie tworzy sztucznych slotów) zamiast być pomijany. Dzięki temu luka nie zeruje skumulowanej sumy (`running_sum`) kolejnych dni w `_inject_energy_series`/`_inject_cost_series` (zob. sekcja Architektura kosztów). Ponowne uruchomienie `enea.backfill` dla tego samego zakresu zawsze odpytuje API na nowo i nadpisuje wyzerowany dzień prawdziwymi danymi, jeśli się później pojawią. Skanowanie wsteczne w `_fetch_days_backward` (gdy `assemblyDate` jest nieznane) celowo używa `zero_fill_stale=False` — polega na prawdziwym braku danych, żeby wykryć granicę początku historii licznika.
+- **Dni bez danych (`has_data() == False`)** — Portal Odbiorcy Enea czasem w ogóle nie publikuje danych za dany dzień (potwierdzone przypadki trwałych dziur, nie tylko opóźnień). `_fetch_range` w `coordinator.py` obsługuje to przez parametry `zero_fill_stale`/`grace_days`: dzień bez danych młodszy niż `MISSING_DAY_GRACE_DAYS` (`const.py`, domyślnie 3 dni) jest pomijany jak dotychczas (dane zwykle pojawiają się po ok. 11:00 następnego dnia — patrz niżej); dzień starszy jest traktowany jako trwale brakujący i wstrzykiwany z wyzerowanymi wartościami (`_zero_fill_missing_day` — nadpisuje `null` na `0.0` w istniejących slotach, nie tworzy sztucznych slotów) zamiast być pomijany. Dzięki temu luka nie zeruje skumulowanej sumy kolejnych dni w `write_cumulative_series` (zob. sekcja Architektura kosztów). Ponowne uruchomienie `enea.backfill` dla tego samego zakresu zawsze odpytuje API na nowo i nadpisuje wyzerowany dzień prawdziwymi danymi, jeśli się później pojawią. Skanowanie wsteczne w `_fetch_days_backward` (gdy `assemblyDate` jest nieznane) celowo używa `zero_fill_stale=False` — polega na prawdziwym braku danych, żeby wykryć granicę początku historii licznika.
 
 ### Dolna granica fetchowania — assemblyDate
 
@@ -106,7 +106,7 @@ Koszty energii są funkcją opcjonalną — integracja współpracuje z zewnętr
 
 ```python
 for entry in hass.config_entries.async_entries(ENEA_PRICES_DOMAIN):
-    if entry.data.get("tariff") != tariff_name:
+    if (entry.data.get("tariff") or "").casefold() != tariff_name.casefold():
         continue
     tariff = getattr(getattr(entry, "runtime_data", None), "tariff", None)
     if tariff is not None:
@@ -116,6 +116,8 @@ for entry in hass.config_entries.async_entries(ENEA_PRICES_DOMAIN):
 Dzięki temu `enea_prices` nie jest twardą zależnością i integracja nie wymaga wpisu w `manifest.json`.
 
 ### Statystyki kosztów = statystyki zewnętrzne (jak energia)
+
+Kierunek, dla którego cały przetwarzany zakres ma zerowe zużycie, jest pomijany — licznik bez fotowoltaiki raportuje dla energii oddanej zera, a nie `null`, więc `has_data()` je akceptuje i powstałby szereg kosztowy złożony z samych `0.00 PLN`. Strażnik (`_has_stored_costs`) decyduje wyłącznie o **założeniu** serii, nie o jej kontynuacji: gdy dla kierunku istnieją już statystyki kosztów, zera przechodzą normalnie — utrzymują ciągłość serii, pozwalają skorygować dzień do zera i przesuwają najnowszą datę kosztów (bez tego kilkudniowa awaria portalu, importowana jako dni wyzerowane, byłaby pobierana ponownie przy każdym odświeżeniu).
 
 Statystyki kosztów używają **`async_add_external_statistics`** z `source=DOMAIN` i `statistic_id` w formacie `enea:{meter_code}_{slugify(name)}` (np. `enea:..._koszt_energii_pobrana_dzien`) — **dokładnie jak statystyki energii**. Nazwa budowana jest przez `get_cost_statistic_name(direction, zone_str)` = `f"Koszt energii {direction} – {zone_display}"`, więc `statistic_id` powstaje przez wspólne `get_statistic_id(meter_code, name)` ze `statistics.py`.
 
@@ -127,7 +129,9 @@ W Energy Dashboard koszt wybierasz przez **„Użyj encji śledzącej całkowite
 
 Statystyki zewnętrzne **nie wymagają** istnienia encji w rejestrze, więc wstrzykiwanie kosztów może iść tą samą ścieżką co energia (`_async_inject_days`) podczas pierwszego odświeżenia lub backfillu w tle — niezależnie od kolejności setupu. Nie ma już mechanizmu `_pending_cost_days`/`set_pending`.
 
-`_async_inject_missing_costs` (wołane z `_async_fetch_and_inject_stats`) uzupełnia brakujące koszty, gdy statystyki energii są już aktualne. `async_get_cost_latest_date` odpytuje recorder po stat IDs wyliczonych z bieżących stref taryfy — nie wymaga rejestrów encji.
+`_async_inject_missing_costs` (wołane z `_async_fetch_and_inject_stats` przy **każdym** odświeżeniu) uzupełnia brakujące koszty. Musi być wołane **przed** wstrzyknięciem nowych dni: wstrzyknięcie doby zapisuje też jej koszty, a to samo w sobie sprawia, że najnowsza statystyka kosztowa sięga wczoraj — historia bez żadnych kosztów wyglądałaby wtedy na kompletną. Górną granicą jest ostatni dzień pokryty przez statystyki energii, a nie „wczoraj". `async_get_cost_latest_date` odpytuje recorder po stat IDs wyliczonych ze stref **wszystkich** okresów taryfy — nie wymaga rejestrów encji ani okresu obowiązującego dziś (tabela taryf kończy się na sztywnej dacie, a po niej nie ma żadnego bieżącego okresu).
+
+Zakres dni do pobrania wyznacza `async_cost_days_missing` w `costs.py` (coordinator tylko pobiera i wstrzykuje). Górną granicą jest **ostatni dzień pokryty przez tabelę taryf**, a nie „wczoraj": dni po końcu tabeli nie dostaną ceny, więc ich pobranie nie przesunęłoby najnowszej statystyki kosztów i ten sam — rosnący z dnia na dzień — zakres wracałby przy każdym odświeżeniu. Dolną granicę domyka `_cost_checked_until` — trzymany wyłącznie w pamięci ostatni dzień, na który Portal Odbiorcy Enea odpowiedział i którego koszty zostały zapisane (jedyny nośnik postępu dla licznika z samymi zerami, który nie buduje żadnej serii kosztów); restart HA zapomina znacznik, więc historia jest wtedy jednorazowo sprawdzana ponownie.
 
 ### Obsługa świąt (G12w)
 
@@ -135,7 +139,11 @@ Koszty są obliczane przez `period.get_zone_at_hour(hour, day=day)` — `enea_pr
 
 ### Deduplikacja przy backfill
 
-`_inject_cost_series` w `costs.py` łączy bieżącą sumę (`running_sum`) ze statystyką tuż przed `series[0]` (jak `_inject_energy_series`), a `async_add_external_statistics` używa `INSERT OR REPLACE` — dzięki czemu ponowny backfill tego samego zakresu jest idempotentny (nadpisuje, nie dolicza).
+`_inject_cost_series` w `costs.py` i `_inject_energy_series` w `statistics.py` budują tylko `StatisticMetaData`, a sam zapis serii skumulowanej wykonuje wspólne `write_cumulative_series` w `statistics.py`. Obie serie różnią się wyłącznie tym, co godzina raportuje jako własny `state`: energia — odczyt kWh za tę godzinę, koszt — sumę narastającą (parametr `state_is_running_total`).
+
+`write_cumulative_series` zaczepia sumę o statystykę tuż przed `series[0]`, a nie o najnowszy wpis serii — inaczej ponowne wstrzyknięcie pokrytego zakresu doliczyłoby go do samego siebie. Zapytanie o ten punkt zaczepienia jest celowo nieograniczone od dołu: seria strefowa zawiera tylko godziny swojej strefy, a dzień nieopublikowany w Portalu Odbiorcy Enea powiększa lukę jeszcze bardziej, więc każde stałe okno prędzej czy później trafiłoby w pustkę i po cichu wyzerowało sumę.
+
+`async_add_external_statistics` aktualizuje wpis o tym samym czasie rozpoczęcia, ale **wyłącznie dla przekazanych wpisów**. Gdy ponowny import zwróci inne wartości niż zapisane (dzień wstrzyknięty zerami, opublikowany w Portalu Odbiorcy Enea później; korekta danych po stronie Enei; zakres starszy niż cała zapisana historia), wpisy po zakresie nadal niosłyby sumę naliczoną od starych wartości — seria spadałaby na styku, a HA czyta spadek sumy jako wymianę licznika. Dlatego `_shift_later_totals` dodaje różnicę między nową a poprzednią sumą końcową zakresu do wszystkich późniejszych wpisów. Godzinowe wartości własne pozostają nietknięte, więc cały ogon przesuwa się o tę samą wartość. Przy niezmienionych danych różnica wynosi 0 i nic nie jest doczytywane ani zapisywane.
 
 ### Szacowanie rachunku (billing.py)
 

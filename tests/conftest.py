@@ -108,6 +108,9 @@ class FakeRecorder:
         """Run the query straight away instead of handing it to a thread."""
         return target(*args)
 
+    async def async_block_till_done(self) -> None:
+        """Waiting for queued writes is instant here: writes apply at once."""
+
     def newest(self, hass: Any, count: int, sid: str, convert: bool, types: set) -> dict:
         """Stand in for get_last_statistics: the last hour of the whole series."""
         if not self.stored:

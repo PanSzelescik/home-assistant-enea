@@ -179,6 +179,22 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         latest_date = d
 
         if latest_date is not None:
+            # Costs for the days energy already covers are settled first, and
+            # before anything new is written.  Injecting a new day writes its
+            # costs too, which alone makes the newest cost statistic reach
+            # yesterday — and a meter whose whole history has no costs would
+            # look complete from then on.
+            try:
+                await self._async_inject_missing_costs(latest_date)
+            except EneaApiError as err:
+                # The catch-up can reach ranges the portal no longer serves,
+                # and a refused range is refused on every refresh — so it is
+                # best effort and must never veto the energy update below.
+                _LOGGER.warning(
+                    "Cost catch-up failed, continuing with the energy update: %s",
+                    err,
+                )
+
             # Incremental update: small range — run inline (fast).
             all_days = await self._fetch_days_forward(
                 latest_date + timedelta(days=1),
@@ -187,6 +203,14 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 grace_days=MISSING_DAY_GRACE_DAYS,
             )
             if all_days:
+                # The catch-up above only queued its writes, and the new day
+                # chains its totals from what a database read returns.  Both
+                # touch the same cost statistics, so the queue has to be
+                # committed first or the new day starts from a stale total and
+                # the series steps down where the two writes meet.  Waiting
+                # here, after the fetch, lets the recorder drain while the
+                # portal round-trip is in flight.
+                await get_instance(self.hass).async_block_till_done()
                 await self._async_inject_days(all_days)
                 _LOGGER.debug("Injected statistics for %d day(s)", len(all_days))
             else:
@@ -195,7 +219,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     latest_date,
                     yesterday,
                 )
-                await self._async_inject_missing_costs(yesterday)
         else:
             # Initial backfill — potentially years of data (slow).
             # Schedule as a background task so the first coordinator refresh
@@ -271,14 +294,17 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._backfill_task.cancel()
             _LOGGER.debug("Cancelled initial backfill for meter %s", self._meter_code)
 
-    async def _async_inject_missing_costs(self, yesterday: date) -> None:
+    async def _async_inject_missing_costs(self, up_to: date) -> None:
         """Inject cost statistics for days not yet covered, independently of energy.
 
-        Called from _async_fetch_and_inject_stats when energy statistics are
-        already up to date.  async_cost_days_missing works out which days are
-        left to compute; this fetches and injects them.  Cost statistics are
-        external, so this needs no entities and there is no separate post-setup
-        pass.
+        up_to is the last day worth looking at, which is the last day the energy
+        statistics reach rather than yesterday: a day with no energy has nothing
+        to price anyway, and asking the portal for it again would repeat a fetch
+        that has just come back empty.
+
+        async_cost_days_missing works out which days are left to compute; this
+        fetches and injects them.  Cost statistics are external, so this needs no
+        entities and there is no separate post-setup pass.
         """
         if not (self._fetch_consumption or self._fetch_generation):
             # Costs are derived from energy data; nothing to do in power-only mode.
@@ -292,7 +318,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         missing = await async_cost_days_missing(
             self.hass, self._meter_code, tariff,
-            self._fetch_consumption, self._fetch_generation, yesterday,
+            self._fetch_consumption, self._fetch_generation, up_to,
             self._assembly_datetime.date() if self._assembly_datetime else None,
         )
         if missing is None:

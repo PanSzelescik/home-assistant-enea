@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.recorder.models import (
@@ -264,3 +264,48 @@ async def async_get_cost_latest_date(
             if latest is None or d > latest:
                 latest = d
     return latest
+
+
+async def async_cost_days_missing(
+    hass: HomeAssistant,
+    meter_code: str,
+    tariff: Any,
+    fetch_consumption: bool,
+    fetch_generation: bool,
+    yesterday: date,
+    assembly_date: date | None,
+) -> tuple[date, date] | None:
+    """Return the first and last day whose costs still have to be computed.
+
+    Returns None when there is nothing to do — either every day the tariff
+    table reaches already has its costs, or the table does not reach these days
+    at all.
+
+    The range ends at the last day the table can price rather than at
+    yesterday.  The bundled table ends on a fixed date, and asking for the days
+    after it downloads energy data that no price can be applied to, so the
+    newest cost statistic never moves and the very same range comes back on
+    every refresh, one day longer each day.
+    """
+    covered_until = max(
+        (period.valid_until for period in tariff.periods if period.valid_from <= yesterday),
+        default=None,
+    )
+    if covered_until is None:
+        return None
+    end = min(yesterday, covered_until)
+
+    latest = await async_get_cost_latest_date(
+        hass, meter_code, tariff, fetch_consumption, fetch_generation
+    )
+    if latest is not None:
+        start = latest + timedelta(days=1)
+    elif assembly_date is not None:
+        # The lower bound the energy statistics use as well.
+        start = assembly_date
+    else:
+        # No assembly date known.  Bounded to a year because the alternative is
+        # asking the portal for the whole of time.
+        start = end - timedelta(days=364)
+
+    return (start, end) if start <= end else None

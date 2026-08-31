@@ -33,7 +33,7 @@ custom_components/enea/
 ├── date.py          — EneaBillDateEntity (Platform.DATE): edytowalne daty odczytu z RestoreEntity
 ├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill; szacowanie rachunku z long-term statistics
 ├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + _shift_later_totals (wspólny zapis serii skumulowanej dla energii i kosztów)
-├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, _inject_cost_series, get_cost_statistic_name, find_tariff_group
+├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, async_cost_days_missing, _inject_cost_series, get_cost_statistic_name, find_tariff_group
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem)
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
 ├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk, stałe kosztów (ENEA_PRICES_DOMAIN, UNIT_COST, COST_ZONE_DISPLAY, VAT_RATE, BILL_KEY_*)
@@ -128,6 +128,8 @@ W Energy Dashboard koszt wybierasz przez **„Użyj encji śledzącej całkowite
 Statystyki zewnętrzne **nie wymagają** istnienia encji w rejestrze, więc wstrzykiwanie kosztów może iść tą samą ścieżką co energia (`_async_inject_days`) podczas pierwszego odświeżenia lub backfillu w tle — niezależnie od kolejności setupu. Nie ma już mechanizmu `_pending_cost_days`/`set_pending`.
 
 `_async_inject_missing_costs` (wołane z `_async_fetch_and_inject_stats`) uzupełnia brakujące koszty, gdy statystyki energii są już aktualne. `async_get_cost_latest_date` odpytuje recorder po stat IDs wyliczonych ze stref **wszystkich** okresów taryfy — nie wymaga rejestrów encji ani okresu obowiązującego dziś (tabela taryf kończy się na sztywnej dacie, a po niej nie ma żadnego bieżącego okresu).
+
+Zakres dni do pobrania wyznacza `async_cost_days_missing` w `costs.py` (coordinator tylko pobiera i wstrzykuje). Górną granicą jest **ostatni dzień pokryty przez tabelę taryf**, a nie „wczoraj": dni po końcu tabeli nie dostaną ceny, więc ich pobranie nie przesunęłoby najnowszej statystyki kosztów i ten sam — rosnący z dnia na dzień — zakres wracałby przy każdym odświeżeniu.
 
 ### Obsługa świąt (G12w)
 

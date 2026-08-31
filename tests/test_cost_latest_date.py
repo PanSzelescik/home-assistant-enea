@@ -1,4 +1,4 @@
-"""Finding the newest day for which cost statistics exist."""
+"""Which days still need their costs computing, and up to when."""
 from __future__ import annotations
 
 import datetime
@@ -164,3 +164,69 @@ async def test_lookup_survives_a_tariff_table_that_ran_out(recorder) -> None:
     got = await costs.async_get_cost_latest_date(object(), "PPE", expired, True, False)
 
     assert got == old.date()
+
+
+YESTERDAY = _today() - datetime.timedelta(days=1)
+
+
+async def _window(recorder_tariff, assembly=None):
+    """The range async_cost_days_missing asks the coordinator to fetch."""
+    return await costs.async_cost_days_missing(
+        object(), "PPE", recorder_tariff, True, False, YESTERDAY, assembly
+    )
+
+
+async def test_missing_days_run_from_the_last_cost_to_yesterday(recorder) -> None:
+    """While the table still covers today, the range ends at yesterday."""
+    last = datetime.datetime.now(tz=TZ) - datetime.timedelta(days=3)
+    recorder({_sid("peak"): last})
+
+    got = await _window(_Tariff(["peak"]))
+
+    assert got == (last.date() + datetime.timedelta(days=1), YESTERDAY)
+
+
+async def test_nothing_is_asked_for_past_the_end_of_the_tariff_table(recorder) -> None:
+    """Once costs reach the table's last day there is nothing left to fetch.
+
+    The range used to end at yesterday whatever the table covered.  The days
+    after it were fetched from the portal, priced by nothing and dropped, so
+    the newest cost statistic never moved and the very same range was fetched
+    again on the next refresh, one day longer each day.
+    """
+    table_end = YESTERDAY - datetime.timedelta(days=10)
+    recorder({_sid("peak"): datetime.datetime.combine(table_end, datetime.time(12), tzinfo=TZ)})
+
+    got = await _window(_Tariff(["peak"], valid_until=table_end))
+
+    assert got is None
+
+
+async def test_the_days_before_the_end_of_the_table_are_still_asked_for(recorder) -> None:
+    """Stopping at the table's end must not stop the days before it being filled."""
+    table_end = YESTERDAY - datetime.timedelta(days=10)
+    last = table_end - datetime.timedelta(days=5)
+    recorder({_sid("peak"): datetime.datetime.combine(last, datetime.time(12), tzinfo=TZ)})
+
+    got = await _window(_Tariff(["peak"], valid_until=table_end))
+
+    assert got == (last + datetime.timedelta(days=1), table_end)
+
+
+async def test_a_table_that_has_not_started_yet_asks_for_nothing(recorder) -> None:
+    """A tariff whose first period is still in the future can price no day yet."""
+    recorder({})
+
+    got = await _window(_Tariff(["peak"], valid_from=_today() + datetime.timedelta(days=30)))
+
+    assert got is None
+
+
+async def test_a_meter_without_any_costs_starts_at_the_assembly_date(recorder) -> None:
+    """With no cost statistics at all, the range starts where the meter did."""
+    recorder({})
+    assembly = YESTERDAY - datetime.timedelta(days=100)
+
+    got = await _window(_Tariff(["peak"]), assembly=assembly)
+
+    assert got == (assembly, YESTERDAY)

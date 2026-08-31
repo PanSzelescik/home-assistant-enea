@@ -31,7 +31,7 @@ from .const import (
 )
 from .billing import BillEstimate, async_estimate_bill, find_prices_config
 from .costs import (
-    async_get_cost_latest_date,
+    async_cost_days_missing,
     async_insert_cost_statistics,
     find_tariff_group,
 )
@@ -275,9 +275,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Inject cost statistics for days not yet covered, independently of energy.
 
         Called from _async_fetch_and_inject_stats when energy statistics are
-        already up to date.  Checks the last cost stat date and fetches/injects
-        any missing days.  Cost statistics are external, so this needs no
-        entities and there is no separate post-setup pass.
+        already up to date.  async_cost_days_missing works out which days are
+        left to compute; this fetches and injects them.  Cost statistics are
+        external, so this needs no entities and there is no separate post-setup
+        pass.
         """
         if not (self._fetch_consumption or self._fetch_generation):
             # Costs are derived from energy data; nothing to do in power-only mode.
@@ -289,27 +290,18 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if tariff is None:
             return
 
-        cost_latest = await async_get_cost_latest_date(
+        missing = await async_cost_days_missing(
             self.hass, self._meter_code, tariff,
-            self._fetch_consumption, self._fetch_generation,
+            self._fetch_consumption, self._fetch_generation, yesterday,
+            self._assembly_datetime.date() if self._assembly_datetime else None,
         )
-        if cost_latest is not None and cost_latest >= yesterday:
-            _LOGGER.debug("Cost statistics already up to date (last: %s)", cost_latest)
+        if missing is None:
+            _LOGGER.debug("No days left to compute costs for")
             return
 
-        if cost_latest is not None:
-            start = cost_latest + timedelta(days=1)
-        elif self._assembly_datetime is not None:
-            # Start from assembly date — matches the lower bound used for energy stats.
-            start = self._assembly_datetime.date()
-        else:
-            # No assembly date known (meter never replaced). Fall back to 365 days
-            # to avoid unbounded API calls; a more precise start would require
-            # querying the earliest energy statistic from the DB.
-            start = yesterday - timedelta(days=364)
-
+        start, end = missing
         days = await self._fetch_days_forward(
-            start, yesterday, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
+            start, end, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
         )
         if days:
             await async_insert_cost_statistics(

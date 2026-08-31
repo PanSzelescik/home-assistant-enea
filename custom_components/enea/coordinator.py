@@ -76,6 +76,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._tariff_name: str | None = None
         self._assembly_datetime: datetime | None = None
         self._backfill_task: asyncio.Task[None] | None = None
+        # Last day the cost catch-up got an answer from the portal for; see
+        # _async_inject_missing_costs.
+        self._cost_checked_until: date | None = None
         self.bill_prev_reading: date | None = None
         self.bill_last_reading: date | None = None
         self.bill_estimates: dict[str, BillEstimate | None] = {
@@ -320,6 +323,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.hass, self._meter_code, tariff,
             self._fetch_consumption, self._fetch_generation, up_to,
             self._assembly_datetime.date() if self._assembly_datetime else None,
+            checked_until=getattr(self, "_cost_checked_until", None),
         )
         if missing is None:
             _LOGGER.debug("No days left to compute costs for")
@@ -339,6 +343,17 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._fetch_generation,
             )
             _LOGGER.debug("Injected cost statistics for %d day(s)", len(days))
+        # Remember the last day the portal answered.  A meter whose every
+        # direction reads zero never grows a cost series to record progress
+        # in, and without this it would be fetched from the assembly date
+        # again on every refresh.  Days the fetch skipped as too fresh stay
+        # unanswered and are asked for again; a restart forgets this and
+        # re-checks once.  Moved only now, once the write above has landed —
+        # a marker past a failed write would hide the unwritten range until
+        # the next restart.
+        answered = max((day for day, _ in days), default=None)
+        if answered is not None:
+            self._cost_checked_until = answered
 
     def _strip_pre_assembly_slots(
         self, day: date, day_data: dict[str, Any]

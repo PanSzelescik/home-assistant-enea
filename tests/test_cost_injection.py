@@ -8,7 +8,10 @@ from typing import Any
 import pytest
 
 from custom_components.enea import costs
-from custom_components.enea.const import STAT_KEY_ENERGY_CONSUMED
+from custom_components.enea.const import (
+    STAT_KEY_ENERGY_CONSUMED,
+    STAT_KEY_ENERGY_RETURNED,
+)
 
 TZ = datetime.UTC
 
@@ -45,17 +48,19 @@ class _Tariff:
         return self._period if d in self._priced else None
 
 
-def _day(day: datetime.date) -> tuple[datetime.date, dict[str, Any]]:
+def _day(
+    day: datetime.date, kwh: float = 2.0, key: str = STAT_KEY_ENERGY_CONSUMED
+) -> tuple[datetime.date, dict[str, Any]]:
     """One fetched day holding a single hourly slot with a reading."""
     end = datetime.datetime(day.year, day.month, day.day, 1, tzinfo=TZ)
     return (
         day,
         {
-            STAT_KEY_ENERGY_CONSUMED: {
+            key: {
                 "values": [
                     {
                         "integrationEnd": end.timestamp() * 1000,
-                        "items": [{"value": 2.0}],
+                        "items": [{"value": kwh}],
                     }
                 ]
             }
@@ -135,3 +140,81 @@ async def test_no_warning_when_every_day_is_priced(
     )
 
     assert caplog.records == []
+
+
+async def test_a_direction_that_only_ever_reads_zero_is_skipped(
+    injected, wire_recorder
+) -> None:
+    """A meter with nothing to return must not get a cost series of zeroes.
+
+    fetch_generation is on by default, and a meter with no solar panels reports
+    zeroes for energy returned rather than nulls, which has_data takes for real
+    data — a deliberate choice, so that a day of no consumption is imported
+    rather than skipped.  Every such hour used to produce a cost of 0.00 PLN,
+    one row per hour and growing daily, and put two statistics that are always
+    zero next to the real ones in the Energy Dashboard's cost picker.
+    """
+    wire_recorder(costs, [])
+    day = datetime.date(2026, 3, 2)
+
+    await costs.async_insert_cost_statistics(
+        object(),
+        "PPE",
+        [_day(day, kwh=0.0, key=STAT_KEY_ENERGY_RETURNED)],
+        _Tariff({day}),
+        False,
+        True,
+    )
+
+    assert injected == []
+
+
+async def test_a_zero_day_is_still_written_into_a_series_that_exists(
+    injected, wire_recorder
+) -> None:
+    """The guard decides whether a series starts, never whether it continues.
+
+    Two things depend on zeroes being written into a series that already has
+    real data.  A meter that does export gets a continuous series across a day
+    it exported nothing.  And a multi-day portal outage, imported as zero-filled
+    days, still moves the newest-cost date forward — skipping it would leave
+    the same range being fetched from the portal again on every refresh until
+    real data appeared.
+    """
+    wire_recorder(costs, [(datetime.datetime(2026, 3, 1, 23, 0, tzinfo=TZ), 50.0)])
+    day = datetime.date(2026, 3, 2)
+
+    await costs.async_insert_cost_statistics(
+        object(),
+        "PPE",
+        [_day(day, kwh=0.0, key=STAT_KEY_ENERGY_RETURNED)],
+        _Tariff({day}),
+        False,
+        True,
+    )
+
+    assert len(injected) == 1
+    assert [cost for _dt, cost in injected[0][1]] == [0.0]
+
+
+async def test_a_direction_that_reads_zero_on_one_day_only_is_kept(injected) -> None:
+    """A day of no export among days with export still belongs to the series.
+
+    Only a direction with nothing but zeroes across the whole run is dropped.
+    """
+    days = [datetime.date(2026, 3, 2), datetime.date(2026, 3, 3)]
+
+    await costs.async_insert_cost_statistics(
+        object(),
+        "PPE",
+        [
+            _day(days[0], kwh=0.0, key=STAT_KEY_ENERGY_RETURNED),
+            _day(days[1], kwh=1.5, key=STAT_KEY_ENERGY_RETURNED),
+        ],
+        _Tariff(set(days)),
+        False,
+        True,
+    )
+
+    assert len(injected) == 1
+    assert [cost for _dt, cost in injected[0][1]] == pytest.approx([0.0, 1.476])

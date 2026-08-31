@@ -155,6 +155,27 @@ async def async_insert_cost_statistics(
                 )
                 series_by_zone.setdefault(zone_str, []).append((dt, cost))
 
+        # An all-zero batch must not start a series.  A meter with no solar
+        # panels reports zeroes for energy returned rather than nulls, and
+        # has_data takes zeroes for real data on purpose, so that a day of no
+        # consumption is imported rather than skipped.  Writing the cost of
+        # those zeroes would add a row per hour for ever and put a statistic
+        # that is always 0.00 PLN next to the real ones in the Energy
+        # Dashboard's cost picker.
+        #
+        # But the guard decides whether a series starts, never whether it
+        # continues: an incremental refresh hands in a single day, so "all
+        # zero" says nothing about the meter, only about the batch.  Once a
+        # series exists its zeroes have to go through: they keep it continuous,
+        # let a day be corrected down to zero, and move the newest-cost date
+        # forward — without which a multi-day portal outage, imported as
+        # zero-filled days, would be fetched again on every refresh until real
+        # data appeared.
+        if not any(
+            cost for series in series_by_zone.values() for _dt, cost in series
+        ) and not await _has_stored_costs(hass, meter_code, direction, series_by_zone):
+            continue
+
         for zone_str, series in series_by_zone.items():
             name = get_cost_statistic_name(direction, zone_str)
             await _inject_cost_series(hass, meter_code, name, series)
@@ -168,6 +189,23 @@ async def async_insert_cost_statistics(
             min(days_without_period),
             max(days_without_period),
         )
+
+
+async def _has_stored_costs(
+    hass: HomeAssistant,
+    meter_code: str,
+    direction: str,
+    series_by_zone: dict[str, Any],
+) -> bool:
+    """Return True when any cost series of this direction already has rows."""
+    for zone_str in series_by_zone:
+        sid = get_statistic_id(meter_code, get_cost_statistic_name(direction, zone_str))
+        stored = await get_instance(hass).async_add_executor_job(
+            get_last_statistics, hass, 1, sid, True, {"sum"}
+        )
+        if stored.get(sid):
+            return True
+    return False
 
 
 async def _inject_cost_series(
@@ -274,6 +312,7 @@ async def async_cost_days_missing(
     fetch_generation: bool,
     yesterday: date,
     assembly_date: date | None,
+    checked_until: date | None = None,
 ) -> tuple[date, date] | None:
     """Return the first and last day whose costs still have to be computed.
 
@@ -286,6 +325,13 @@ async def async_cost_days_missing(
     after it downloads energy data that no price can be applied to, so the
     newest cost statistic never moves and the very same range comes back on
     every refresh, one day longer each day.
+
+    checked_until is the last day the portal has already been asked about in
+    this run.  A meter whose every enabled direction reads zero never gets a
+    cost series, so the newest cost statistic alone cannot record progress for
+    it — without this the whole history would be fetched again on every
+    refresh.  Days the portal has not answered yet lie after checked_until and
+    are asked for again.
     """
     covered_until = max(
         (period.valid_until for period in tariff.periods if period.valid_from <= yesterday),
@@ -308,4 +354,6 @@ async def async_cost_days_missing(
         # asking the portal for the whole of time.
         start = end - timedelta(days=364)
 
+    if checked_until is not None:
+        start = max(start, checked_until + timedelta(days=1))
     return (start, end) if start <= end else None

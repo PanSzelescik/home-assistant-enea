@@ -230,3 +230,41 @@ async def test_a_meter_without_any_costs_starts_at_the_assembly_date(recorder) -
     got = await _window(_Tariff(["peak"]), assembly=assembly)
 
     assert got == (assembly, YESTERDAY)
+
+
+async def test_a_range_already_checked_is_not_asked_for_again(recorder) -> None:
+    """Days the portal has already been asked about are not asked about again.
+
+    A meter whose every enabled direction reads zero never gets a cost series,
+    so the newest-cost date stays empty for ever.  Without remembering how far
+    the portal has been asked, every refresh would fetch the whole history from
+    the assembly date again, indefinitely.
+    """
+    recorder({})
+    assembly = YESTERDAY - datetime.timedelta(days=100)
+
+    got = await costs.async_cost_days_missing(
+        object(), "PPE", _Tariff(["peak"]), True, False, YESTERDAY, assembly,
+        checked_until=YESTERDAY,
+    )
+
+    assert got is None
+
+
+async def test_checking_stops_at_the_last_day_actually_answered(recorder) -> None:
+    """Days the portal has not answered yet stay on the list.
+
+    The fetch skips a fresh day the portal simply has not published yet, so
+    "checked" only reaches the last day that was answered — the fresh days are
+    asked for again on the next refresh.
+    """
+    recorder({})
+    assembly = YESTERDAY - datetime.timedelta(days=100)
+    answered_until = YESTERDAY - datetime.timedelta(days=2)
+
+    got = await costs.async_cost_days_missing(
+        object(), "PPE", _Tariff(["peak"]), True, False, YESTERDAY, assembly,
+        checked_until=answered_until,
+    )
+
+    assert got == (answered_until + datetime.timedelta(days=1), YESTERDAY)

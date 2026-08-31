@@ -22,14 +22,10 @@ from datetime import date, datetime
 from typing import Any
 
 from homeassistant.components.recorder.models import (
-    StatisticData,
     StatisticMeanType,
     StatisticMetaData,
 )
-from homeassistant.components.recorder.statistics import (
-    async_add_external_statistics,
-    get_last_statistics,
-)
+from homeassistant.components.recorder.statistics import get_last_statistics
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
@@ -43,7 +39,12 @@ from .const import (
     UNIT_COST,
     VAT_RATE,
 )
-from .statistics import get_statistic_id, has_data, slot_start_dt, sum_before
+from .statistics import (
+    get_statistic_id,
+    has_data,
+    slot_start_dt,
+    write_cumulative_series,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -177,10 +178,8 @@ async def _inject_cost_series(
 ) -> float:
     """Inject cumulative PLN statistics for a single cost zone as an external statistic.
 
-    Chains the running sum from the statistic entry immediately preceding
-    series[0] (see sum_before) so that both fresh injection and re-injection
-    produce correct values.  async_add_external_statistics uses INSERT OR
-    REPLACE, so re-injecting an unchanged range is idempotent.
+    Each hour reports the running total as its own state, because the Energy
+    Dashboard costs a period by the difference between its endpoints.
 
     Returns the final running sum after injection (PLN).
     """
@@ -188,13 +187,6 @@ async def _inject_cost_series(
         return 0.0
 
     statistic_id = get_statistic_id(meter_code, name)
-    running_sum = await sum_before(hass, statistic_id, series[0][0])
-
-    stats_data = []
-    for dt, cost in series:
-        running_sum += cost
-        stats_data.append(StatisticData(start=dt, state=running_sum, sum=running_sum))
-
     metadata = StatisticMetaData(
         has_mean=False,
         mean_type=StatisticMeanType.NONE,
@@ -205,10 +197,12 @@ async def _inject_cost_series(
         unit_of_measurement=UNIT_COST,
         unit_class=None,
     )
-    async_add_external_statistics(hass, metadata, stats_data)
+    running_sum = await write_cumulative_series(
+        hass, metadata, series, state_is_running_total=True
+    )
     _LOGGER.debug(
         "Injected %d cost stats for %s (running sum: %.2f PLN)",
-        len(stats_data),
+        len(series),
         statistic_id,
         running_sum,
     )

@@ -101,6 +101,36 @@ async def sum_before(
     return before[-1].get("sum") or 0.0
 
 
+async def write_cumulative_series(
+    hass: HomeAssistant,
+    metadata: StatisticMetaData,
+    series: list[tuple[datetime, float]],
+    state_is_running_total: bool = False,
+) -> float:
+    """Write hourly values as a cumulative statistic and return the closing total.
+
+    The energy and the cost statistics are both running totals over hourly
+    values and differ only in what each hour reports as its own state: energy
+    reports the kWh read for that hour, cost reports the total so far.  Keeping
+    them in one place keeps the rule that holds the running total together
+    across a re-import in one place too.
+    """
+    total = await sum_before(hass, metadata["statistic_id"], series[0][0])
+
+    rows = []
+    for moment, value in series:
+        total += value
+        rows.append(
+            StatisticData(
+                start=moment,
+                state=total if state_is_running_total else value,
+                sum=total,
+            )
+        )
+    async_add_external_statistics(hass, metadata, rows)
+    return total
+
+
 async def async_insert_historical_statistics(
     hass: HomeAssistant,
     meter_code: str,
@@ -168,22 +198,13 @@ async def _inject_energy_series(
 ) -> None:
     """Inject an energy time series, always overwriting the given range.
 
-    The cumulative running_sum is chained from the statistic immediately
-    preceding series[0] (see sum_before), so that both fresh injection and
-    re-injection (backfill overwrite) produce correct values without creating
-    spikes.
+    Each hour reports the kWh read for it; the cumulative sum is handled by
+    write_cumulative_series.
     """
     if not series:
         return
 
     statistic_id = get_statistic_id(meter_code, name)
-    running_sum = await sum_before(hass, statistic_id, series[0][0])
-
-    stats_data = []
-    for dt, value in series:
-        running_sum += value
-        stats_data.append(StatisticData(start=dt, state=value, sum=running_sum))
-
     metadata = StatisticMetaData(
         has_mean=False,
         mean_type=StatisticMeanType.NONE,
@@ -194,8 +215,8 @@ async def _inject_energy_series(
         unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         unit_class="energy",
     )
-    async_add_external_statistics(hass, metadata, stats_data)
-    _LOGGER.debug("Injected %d energy stats for %s", len(stats_data), statistic_id)
+    await write_cumulative_series(hass, metadata, series)
+    _LOGGER.debug("Injected %d energy stats for %s", len(series), statistic_id)
 
 
 async def _inject_power_series(

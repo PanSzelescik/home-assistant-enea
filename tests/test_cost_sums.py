@@ -22,7 +22,7 @@ def _series(day: int, count: int, cost: float) -> list[tuple[datetime.datetime, 
 
 async def test_new_days_carry_on_from_the_stored_total(wire_recorder) -> None:
     """Days written after everything stored continue from the last stored total."""
-    store = wire_recorder(statistics, [(MARCH_1_LAST_HOUR, 100.0)], writes_to=costs)
+    store = wire_recorder(statistics, [(MARCH_1_LAST_HOUR, 100.0)])
 
     await costs._inject_cost_series(object(), "PPE", "Koszt", _series(2, 3, 2.0))
 
@@ -44,34 +44,29 @@ async def test_writing_a_stored_range_again_does_not_double_it(wire_recorder) ->
         (datetime.datetime(2026, 3, 2, 1, 0, tzinfo=TZ), 104.0),
         (datetime.datetime(2026, 3, 2, 2, 0, tzinfo=TZ), 106.0),
     ]
-    store = wire_recorder(statistics, already_stored, writes_to=costs)
+    store = wire_recorder(statistics, already_stored)
 
     await costs._inject_cost_series(object(), "PPE", "Koszt", _series(2, 3, 2.0))
 
     assert [row["sum"] for row in store.injected[0][1]] == [102.0, 104.0, 106.0]
 
 
-async def test_the_first_write_starts_from_zero(wire_recorder) -> None:
-    """With nothing stored at all the total starts at the first hour's cost."""
-    store = wire_recorder(statistics, [], writes_to=costs)
+async def test_each_hour_reports_the_total_so_far_as_its_state(wire_recorder) -> None:
+    """Unlike energy, a cost hour's state is the running total, not the hour's own cost.
+
+    The Energy Dashboard costs a period by the difference between the value at
+    its two ends, so both columns have to carry the total.
+    """
+    store = wire_recorder(statistics, [])
 
     await costs._inject_cost_series(object(), "PPE", "Koszt", _series(2, 2, 1.5))
 
-    assert [row["sum"] for row in store.injected[0][1]] == [1.5, 3.0]
-
-
-async def test_a_range_older_than_everything_starts_from_zero(wire_recorder) -> None:
-    """Hours before all stored history have nothing to carry on from."""
-    store = wire_recorder(statistics, [(datetime.datetime(2026, 3, 5, 0, 0, tzinfo=TZ), 500.0)], writes_to=costs)
-
-    await costs._inject_cost_series(object(), "PPE", "Koszt", _series(2, 2, 1.0))
-
-    assert [row["sum"] for row in store.injected[0][1]] == [1.0, 2.0]
+    assert [row["state"] for row in store.injected[0][1]] == [1.5, 3.0]
 
 
 async def test_an_empty_range_writes_nothing(wire_recorder) -> None:
     """Nothing to write means nothing is sent to the recorder."""
-    store = wire_recorder(statistics, [], writes_to=costs)
+    store = wire_recorder(statistics, [])
 
     await costs._inject_cost_series(object(), "PPE", "Koszt", [])
 

@@ -32,7 +32,7 @@ custom_components/enea/
 ├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date
 ├── date.py          — EneaBillDateEntity (Platform.DATE): edytowalne daty odczytu z RestoreEntity
 ├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill; szacowanie rachunku z long-term statistics
-├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, sum_before (wspólny bilans otwarcia dla energii i kosztów)
+├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + sum_before (wspólny zapis serii skumulowanej dla energii i kosztów)
 ├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, _inject_cost_series, get_cost_statistic_name, find_tariff_group
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem)
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
@@ -135,7 +135,9 @@ Koszty są obliczane przez `period.get_zone_at_hour(hour, day=day)` — `enea_pr
 
 ### Deduplikacja przy backfill
 
-`_inject_cost_series` w `costs.py` oraz `_inject_energy_series` w `statistics.py` łączą bieżącą sumę (`running_sum`) ze statystyką tuż przed `series[0]` — obie przez wspólne `sum_before` w `statistics.py`. W parze z `INSERT OR REPLACE` w `async_add_external_statistics` daje to idempotentny backfill tego samego zakresu (nadpisuje, nie dolicza). **Punkt zaczepienia musi być sprzed `series[0]`, a nie najnowszym wpisem serii** — inaczej ponowne wstrzyknięcie pokrytego zakresu dolicza go do samego siebie.
+`_inject_cost_series` w `costs.py` i `_inject_energy_series` w `statistics.py` budują tylko `StatisticMetaData`, a sam zapis serii skumulowanej wykonuje wspólne `write_cumulative_series` w `statistics.py`. Obie serie różnią się wyłącznie tym, co godzina raportuje jako własny `state`: energia — odczyt kWh za tę godzinę, koszt — sumę narastającą (parametr `state_is_running_total`).
+
+`write_cumulative_series` zaczepia sumę o statystykę tuż przed `series[0]` (przez `sum_before`). `async_add_external_statistics` aktualizuje wpis o tym samym czasie rozpoczęcia, więc ponowny backfill tego samego zakresu jest idempotentny (nadpisuje, nie dolicza). **Punkt zaczepienia musi być sprzed `series[0]`, a nie najnowszym wpisem serii** — inaczej ponowne wstrzyknięcie pokrytego zakresu dolicza go do samego siebie.
 
 ### Szacowanie rachunku (billing.py)
 

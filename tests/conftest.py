@@ -136,8 +136,7 @@ def wire_recorder(monkeypatch: pytest.MonkeyPatch):
     """Point one module's recorder calls at an in-memory series and capture writes.
 
     Call it as wire_recorder(module, stored) and it returns the StatsStore that
-    collects what the code writes back.  Pass writes_to when the write goes
-    through a different module than the lookups.
+    collects what the code writes back.
 
     Every name is replaced with raising=False, including the ones the code
     under test does not reach for.  That is what lets a regression test be
@@ -148,7 +147,7 @@ def wire_recorder(monkeypatch: pytest.MonkeyPatch):
     running Home Assistant behind it.
     """
 
-    def _wire(module: Any, stored: list[tuple[Any, float]], writes_to: Any = None) -> StatsStore:
+    def _wire(module: Any, stored: list[tuple[Any, float]]) -> StatsStore:
         recorder = FakeRecorder(stored)
         store = StatsStore()
         monkeypatch.setattr(module, "get_instance", lambda hass: recorder, raising=False)
@@ -157,10 +156,7 @@ def wire_recorder(monkeypatch: pytest.MonkeyPatch):
             module, "statistics_during_period", recorder.in_window, raising=False
         )
         monkeypatch.setattr(
-            writes_to or module,
-            "async_add_external_statistics",
-            store.add_external,
-            raising=False,
+            module, "async_add_external_statistics", store.add_external, raising=False
         )
         return store
 

@@ -28,6 +28,9 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+EPOCH = dt_util.utc_from_timestamp(0)
+"""Lower bound for a lookup that must not miss anything, however old."""
+
 
 def get_statistic_id(meter_code: str, name: str) -> str:
     """Return the external statistic_id for an energy/power statistic."""
@@ -54,51 +57,42 @@ def slot_start_dt(entry: dict[str, Any]) -> datetime:
     return (end - timedelta(hours=1)).astimezone(dt_util.DEFAULT_TIME_ZONE)
 
 
-async def sum_before(
-    hass: HomeAssistant, statistic_id: str, moment: datetime
-) -> float:
-    """Return the cumulative sum of the newest statistic that starts before moment.
+async def _newest_entry(
+    hass: HomeAssistant, statistic_id: str
+) -> tuple[datetime | None, float]:
+    """Return the start and running total of the newest stored entry.
 
-    Appending days after the newest stored entry is the common case and is
-    answered by get_last_statistics alone.  Re-injecting a range that is already
-    covered — what the backfill action does — is not: there the newest entry
-    lies inside or after the range, so chaining from it would add the range's
-    values on top of themselves and double the cumulative series.  The baseline
-    is then looked up in the window preceding the range instead.
-
-    That preceding lookup is deliberately unbounded at the start.  A fixed
-    window is not safe: a fully missing day (the Enea API had no data at all)
-    can push the gap for a zone-specific series — which already skips hours
-    outside its zone — past any reasonable threshold, silently resetting the
-    sum to 0 and producing a large bogus delta downstream.
+    Returns (None, 0.0) when the statistic has nothing stored at all.
     """
     last = await get_instance(hass).async_add_executor_job(
         get_last_statistics, hass, 1, statistic_id, True, {"sum"}
     )
     rows = last.get(statistic_id)
-    if not rows:
-        return 0.0
+    if not rows or rows[0].get("start") is None:
+        return None, 0.0
+    return dt_util.utc_from_timestamp(rows[0]["start"]), rows[0].get("sum") or 0.0
 
-    newest_start = rows[0].get("start")
-    if newest_start is not None and newest_start < moment.timestamp():
-        return rows[0].get("sum") or 0.0
 
-    preceding = await get_instance(hass).async_add_executor_job(
+async def _stored_between(
+    hass: HomeAssistant, statistic_id: str, start: datetime, end: datetime | None
+) -> list[dict[str, Any]]:
+    """Return the stored entries in [start, end), oldest first.
+
+    An end of None asks for everything from start onwards.
+    """
+    found = await get_instance(hass).async_add_executor_job(
         partial(
             statistics_during_period,
             hass,
-            dt_util.utc_from_timestamp(0),
-            moment,
+            start,
+            end,
             {statistic_id},
             "hour",
             None,
-            {"sum"},
+            {"sum", "state"},
         )
     )
-    before = preceding.get(statistic_id)
-    if not before:
-        return 0.0
-    return before[-1].get("sum") or 0.0
+    return found.get(statistic_id) or []
 
 
 async def write_cumulative_series(
@@ -114,9 +108,38 @@ async def write_cumulative_series(
     reports the kWh read for that hour, cost reports the total so far.  Keeping
     them in one place keeps the rule that holds the running total together
     across a re-import in one place too.
-    """
-    total = await sum_before(hass, metadata["statistic_id"], series[0][0])
 
+    The opening total is taken from the entry immediately before the range, not
+    from the newest entry of the whole series.  Re-writing a range that is
+    already stored is what the backfill action normally does, and there the
+    newest entry lies inside or after the range, so counting on from it would
+    add the range to itself.  That preceding lookup is deliberately unbounded:
+    a zone series only holds the hours in its own zone, and a day the portal
+    never published widens the gap further, so any fixed window would sooner or
+    later find nothing, silently restart the total at zero and report the
+    meter's whole history as one hour's consumption.
+    """
+    statistic_id = metadata["statistic_id"]
+    first, last = series[0][0], series[-1][0]
+    newest_start, newest_total = await _newest_entry(hass, statistic_id)
+
+    if newest_start is None:
+        opening = closing_before = 0.0
+    elif newest_start < first:
+        # Appending past everything stored: the newest entry is the one to count
+        # on from, and nothing follows the range that could fall out of step.
+        opening, closing_before = newest_total, 0.0
+    else:
+        # The range is already covered.  One window answers both questions: what
+        # the total was going into the range, and what it was coming out of it.
+        stored = await _stored_between(
+            hass, statistic_id, EPOCH, last + timedelta(hours=1)
+        )
+        before = [row for row in stored if row["start"] < first.timestamp()]
+        opening = (before[-1].get("sum") or 0.0) if before else 0.0
+        closing_before = (stored[-1].get("sum") or 0.0) if stored else 0.0
+
+    total = opening
     rows = []
     for moment, value in series:
         total += value
@@ -128,7 +151,61 @@ async def write_cumulative_series(
             )
         )
     async_add_external_statistics(hass, metadata, rows)
+
+    if newest_start is not None and newest_start > last:
+        await _shift_later_totals(
+            hass, metadata, last, total - closing_before, state_is_running_total
+        )
     return total
+
+
+async def _shift_later_totals(
+    hass: HomeAssistant,
+    metadata: StatisticMetaData,
+    boundary: datetime,
+    difference: float,
+    state_is_running_total: bool,
+) -> None:
+    """Add difference to the running total of every entry stored after boundary.
+
+    async_add_external_statistics only rewrites the entries it is handed.  When
+    a range is written again with different values — a day the portal had not
+    published yet, stored as zeroes, that has since appeared — the entries after
+    it keep a total counted on from the old values, so the series steps down
+    where the two meet and Home Assistant reads that as a meter reset.
+
+    Every later hour's own value is unaffected by what happened before it, so
+    the whole tail moves by one and the same amount, which is what the range's
+    closing total gained.  Adding it back is exactly what recomputing the tail
+    from scratch would produce, without fetching any of it again.
+    """
+    if not difference:
+        return
+
+    later = await _stored_between(
+        hass, metadata["statistic_id"], boundary + timedelta(hours=1), None
+    )
+    if not later:
+        return
+
+    rows = []
+    for row in later:
+        total = (row.get("sum") or 0.0) + difference
+        rows.append(
+            StatisticData(
+                start=dt_util.utc_from_timestamp(row["start"]),
+                state=total if state_is_running_total else row.get("state"),
+                sum=total,
+            )
+        )
+    async_add_external_statistics(hass, metadata, rows)
+    _LOGGER.info(
+        "Re-import changed %s: %d later entries moved by %.3f to keep the "
+        "running total continuous",
+        metadata["statistic_id"],
+        len(rows),
+        difference,
+    )
 
 
 async def async_insert_historical_statistics(

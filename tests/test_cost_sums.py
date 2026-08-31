@@ -64,6 +64,29 @@ async def test_each_hour_reports_the_total_so_far_as_its_state(wire_recorder) ->
     assert [row["state"] for row in store.injected[0][1]] == [1.5, 3.0]
 
 
+async def test_reimporting_changed_costs_moves_the_hours_after_them(wire_recorder) -> None:
+    """Rewriting a range with different costs has to move what follows it.
+
+    Same defect as on the energy side, with one addition: a cost hour keeps the
+    running total in its state as well as its sum, so both columns move.
+    """
+    stored = [
+        (MARCH_1_LAST_HOUR, 100.0, 100.0),
+        (datetime.datetime(2026, 3, 2, 0, 0, tzinfo=TZ), 100.0, 100.0),
+        (datetime.datetime(2026, 3, 3, 0, 0, tzinfo=TZ), 106.0, 106.0),
+    ]
+    store = wire_recorder(statistics, stored)
+
+    await costs._inject_cost_series(
+        object(), "PPE", "Koszt", [(datetime.datetime(2026, 3, 2, 0, 0, tzinfo=TZ), 4.0)]
+    )
+
+    assert [row["sum"] for row in store.injected[0][1]] == [104.0]
+    later = store.injected[1][1]
+    assert [row["sum"] for row in later] == [110.0]
+    assert [row["state"] for row in later] == [110.0]
+
+
 async def test_an_empty_range_writes_nothing(wire_recorder) -> None:
     """Nothing to write means nothing is sent to the recorder."""
     store = wire_recorder(statistics, [])

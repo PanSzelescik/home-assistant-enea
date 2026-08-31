@@ -92,22 +92,17 @@ def recorder_instance() -> _FakeRecorderInstance:
     return _FakeRecorderInstance()
 
 
-@dataclass
-class StatsStore:
-    """Captures what the integration writes back to the recorder."""
-
-    injected: list[tuple[Any, list[Any]]] = field(default_factory=list)
-
-    def add_external(self, hass: Any, metadata: Any, rows: list[Any]) -> None:
-        """Record an async_add_external_statistics call."""
-        self.injected.append((metadata, rows))
-
-
 class FakeRecorder:
-    """Answers recorder queries from an in-memory list of (hour, total) pairs."""
+    """Answers recorder queries from an in-memory series.
 
-    def __init__(self, stored: list[tuple[Any, float]]) -> None:
-        self.stored = sorted(stored, key=lambda row: row[0])
+    Rows are (hour, running total) or (hour, running total, that hour's state).
+    """
+
+    def __init__(self, stored: list[tuple[Any, ...]]) -> None:
+        self.stored = sorted(
+            ((row[0], row[1], row[2] if len(row) > 2 else None) for row in stored),
+            key=lambda row: row[0],
+        )
 
     async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
         """Run the query straight away instead of handing it to a thread."""
@@ -117,18 +112,54 @@ class FakeRecorder:
         """Stand in for get_last_statistics: the last hour of the whole series."""
         if not self.stored:
             return {}
-        hour, total = self.stored[-1]
+        hour, total, _state = self.stored[-1]
         return {sid: [{"start": hour.timestamp(), "sum": total}]}
 
+    def merge(self, rows: list[Any]) -> None:
+        """Apply a write the way the recorder does: replace entries by start time."""
+        merged = {row[0].timestamp(): row for row in self.stored}
+        for row in rows:
+            merged[row["start"].timestamp()] = (
+                row["start"], row.get("sum"), row.get("state")
+            )
+        self.stored = sorted(merged.values(), key=lambda row: row[0])
+
     def in_window(self, hass: Any, start: Any, end: Any, ids: set, *rest: Any) -> dict:
-        """Stand in for statistics_during_period: the hours inside [start, end)."""
+        """Stand in for statistics_during_period: the hours inside [start, end).
+
+        An end of None means no upper bound, as the recorder reads it.
+        """
         sid = next(iter(ids))
         found = [
-            {"start": hour.timestamp(), "sum": total}
-            for hour, total in self.stored
-            if start <= hour < end
+            {"start": hour.timestamp(), "sum": total, "state": state}
+            for hour, total, state in self.stored
+            if start <= hour and (end is None or hour < end)
         ]
         return {sid: found} if found else {}
+
+
+@dataclass
+class StatsStore:
+    """Captures what the integration writes, and feeds it back into the series.
+
+    async_add_external_statistics replaces stored entries by start time, so a
+    write is merged into the series the same way.  Without that a test can only
+    ask what one call wrote, never what the call left the rest of the series
+    looking like.
+    """
+
+    recorder: FakeRecorder
+    injected: list[tuple[Any, list[Any]]] = field(default_factory=list)
+
+    def add_external(self, hass: Any, metadata: Any, rows: list[Any]) -> None:
+        """Record an async_add_external_statistics call and apply it."""
+        self.injected.append((metadata, rows))
+        self.recorder.merge(rows)
+
+    @property
+    def totals(self) -> list[float]:
+        """The running total of every entry now stored, oldest first."""
+        return [total for _hour, total, _state in self.recorder.stored]
 
 
 @pytest.fixture
@@ -149,7 +180,7 @@ def wire_recorder(monkeypatch: pytest.MonkeyPatch):
 
     def _wire(module: Any, stored: list[tuple[Any, float]]) -> StatsStore:
         recorder = FakeRecorder(stored)
-        store = StatsStore()
+        store = StatsStore(recorder)
         monkeypatch.setattr(module, "get_instance", lambda hass: recorder, raising=False)
         monkeypatch.setattr(module, "get_last_statistics", recorder.newest, raising=False)
         monkeypatch.setattr(

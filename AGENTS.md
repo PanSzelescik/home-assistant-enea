@@ -32,7 +32,7 @@ custom_components/enea/
 ├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date
 ├── date.py          — EneaBillDateEntity (Platform.DATE): edytowalne daty odczytu z RestoreEntity
 ├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill; szacowanie rachunku z long-term statistics
-├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + sum_before (wspólny zapis serii skumulowanej dla energii i kosztów)
+├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + _shift_later_totals (wspólny zapis serii skumulowanej dla energii i kosztów)
 ├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, _inject_cost_series, get_cost_statistic_name, find_tariff_group
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem)
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
@@ -137,7 +137,11 @@ Koszty są obliczane przez `period.get_zone_at_hour(hour, day=day)` — `enea_pr
 
 `_inject_cost_series` w `costs.py` i `_inject_energy_series` w `statistics.py` budują tylko `StatisticMetaData`, a sam zapis serii skumulowanej wykonuje wspólne `write_cumulative_series` w `statistics.py`. Obie serie różnią się wyłącznie tym, co godzina raportuje jako własny `state`: energia — odczyt kWh za tę godzinę, koszt — sumę narastającą (parametr `state_is_running_total`).
 
-`write_cumulative_series` zaczepia sumę o statystykę tuż przed `series[0]` (przez `sum_before`). `async_add_external_statistics` aktualizuje wpis o tym samym czasie rozpoczęcia, więc ponowny backfill tego samego zakresu jest idempotentny (nadpisuje, nie dolicza). **Punkt zaczepienia musi być sprzed `series[0]`, a nie najnowszym wpisem serii** — inaczej ponowne wstrzyknięcie pokrytego zakresu dolicza go do samego siebie.
+`write_cumulative_series` zaczepia sumę o statystykę tuż przed `series[0]`, a nie o najnowszy wpis serii — inaczej ponowne wstrzyknięcie pokrytego zakresu doliczyłoby go do samego siebie. Zapytanie o ten punkt zaczepienia jest celowo nieograniczone od dołu: seria strefowa zawiera tylko godziny swojej strefy, a dzień nieopublikowany przez portal powiększa lukę jeszcze bardziej, więc każde stałe okno prędzej czy później trafiłoby w pustkę i po cichu wyzerowało sumę.
+
+`write_cumulative_series` zaczepia sumę o statystykę tuż przed `series[0]`, a nie o najnowszy wpis serii — inaczej ponowne wstrzyknięcie pokrytego zakresu doliczyłoby go do samego siebie. Zapytanie o ten punkt zaczepienia jest celowo nieograniczone od dołu: seria strefowa zawiera tylko godziny swojej strefy, a dzień nieopublikowany przez portal powiększa lukę jeszcze bardziej, więc każde stałe okno prędzej czy później trafiłoby w pustkę i po cichu wyzerowało sumę.
+
+`async_add_external_statistics` aktualizuje wpis o tym samym czasie rozpoczęcia, ale **wyłącznie dla przekazanych wpisów**. Gdy ponowny import zwróci inne wartości niż zapisane (dzień wstrzyknięty zerami, który portal opublikował później; korekta danych po stronie Enei; zakres starszy niż cała zapisana historia), wpisy po zakresie nadal niosłyby sumę naliczoną od starych wartości — seria spadałaby na styku, a HA czyta spadek sumy jako wymianę licznika. Dlatego `_shift_later_totals` dodaje różnicę między nową a poprzednią sumą końcową zakresu do wszystkich późniejszych wpisów. Godzinowe wartości własne pozostają nietknięte, więc cały ogon przesuwa się o tę samą wartość. Przy niezmienionych danych różnica wynosi 0 i nic nie jest doczytywane ani zapisywane.
 
 ### Szacowanie rachunku (billing.py)
 

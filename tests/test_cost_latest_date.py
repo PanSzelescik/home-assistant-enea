@@ -79,7 +79,7 @@ def recorder(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(costs, "get_last_statistics", last)
         # Kept wired so the pre-fix code path runs too and the regression test
         # fails for the defect itself, not for a missing stub.  The windowed
-        # lookup itself now lives in statistics.sum_before.
+        # lookup itself lives in statistics.write_cumulative_series.
         monkeypatch.setattr(statistics, "get_instance", lambda hass: Rec())
         monkeypatch.setattr(statistics, "statistics_during_period", during)
 

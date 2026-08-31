@@ -16,4 +16,4 @@ jobs:
           enable-cache: true
 
       - name: Run pytest
-        run: uv run --group dev pytest -q
+        run: uv run --locked --group dev pytest -q

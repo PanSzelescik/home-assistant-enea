@@ -66,30 +66,10 @@ class _FakeConfigEntries:
 
 
 class FakeHass:
-    """Minimal hass object: config entries plus a synchronous task runner."""
+    """Minimal hass object exposing the config entry registry."""
 
     def __init__(self, entries: list[FakeConfigEntry] | None = None) -> None:
         self.config_entries = _FakeConfigEntries(entries or [])
-
-    def async_create_task(self, coro: Any, name: str | None = None) -> None:
-        """Run the coroutine immediately so tests stay deterministic."""
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(coro)
-
-
-class _FakeRecorderInstance:
-    """Runs executor jobs inline."""
-
-    async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
-        """Call the target directly rather than in a thread."""
-        return target(*args)
-
-
-@pytest.fixture
-def recorder_instance() -> _FakeRecorderInstance:
-    """Return a recorder instance whose executor jobs run inline."""
-    return _FakeRecorderInstance()
 
 
 class FakeRecorder:

@@ -20,6 +20,7 @@ from homeassistant.util import slugify
 
 from .const import (
     DOMAIN,
+    EPOCH,
     STAT_KEY_ENERGY_CONSUMED,
     STAT_KEY_ENERGY_RETURNED,
     STAT_KEY_POWER_CONSUMED,
@@ -27,9 +28,6 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-EPOCH = dt_util.utc_from_timestamp(0)
-"""Lower bound for a lookup that must not miss anything, however old."""
 
 
 def get_statistic_id(meter_code: str, name: str) -> str:

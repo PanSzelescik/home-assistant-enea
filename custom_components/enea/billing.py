@@ -31,6 +31,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     COST_ZONE_DISPLAY,
     ENEA_PRICES_DOMAIN,
+    EPOCH,
     VAT_RATE,
 )
 from .statistics import get_statistic_id
@@ -281,7 +282,7 @@ async def _query_zone_kwh(
     therefore the price of a correct opening balance, paid once per zone in the
     recorder's executor each time a bill is recomputed.
     """
-    start_dt = dt_util.utc_from_timestamp(0)
+    start_dt = EPOCH
     end_dt = dt_util.start_of_local_day(d2 + timedelta(days=1))
     tz = dt_util.DEFAULT_TIME_ZONE
 

@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Akcje przypięte do tagów wersji (actions/checkout, astral-sh/setup-uv).
+  # hacs/action@main i home-assistant/actions/hassfest@master wskazują na
+  # ruchome gałęzie, więc Dependabot ich nie rusza.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

@@ -4,7 +4,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from functools import cached_property
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -14,7 +13,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -388,22 +387,34 @@ class EneaSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  # pyr
         self._meter_code = meter_code
         self._attr_unique_id = f"enea-{meter_code}-{description.key}"
         self._attr_device_info = _get_device_info(meter_code, coordinator.data)
+        self._update_attrs()
 
-    @cached_property
-    def native_value(self) -> Any:
-        """Return the sensor state value."""
-        if self.coordinator.data is None or self.entity_description.value_fn is None:
-            return None
-        return self.entity_description.value_fn(self.coordinator.data)
+    def _update_attrs(self) -> None:
+        """Compute the state and attributes from the coordinator data."""
+        data = self.coordinator.data
+        description = self.entity_description
+        self._attr_native_value = (
+            description.value_fn(data)
+            if data is not None and description.value_fn is not None
+            else None
+        )
+        self._attr_extra_state_attributes = (
+            description.attr_fn(data)
+            if data is not None and description.attr_fn is not None
+            else None
+        ) or {}
 
-    @cached_property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return additional state attributes."""
-        if self.entity_description.attr_fn is None:
-            return None
-        if self.coordinator.data is None:
-            return None
-        return self.entity_description.attr_fn(self.coordinator.data)
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Recompute the state from the fresh coordinator data, then write it.
+
+        Home Assistant only invalidates its cached entity properties when an
+        _attr_ field is assigned, so the state must be assigned here rather
+        than computed in a (cached) property — that would keep the first value
+        until a restart.
+        """
+        self._update_attrs()
+        super()._handle_coordinator_update()
 
 
 class EneaStatisticsDateSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -424,11 +435,23 @@ class EneaStatisticsDateSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorE
         super().__init__(coordinator)
         self._attr_unique_id = f"enea-{meter_code}-{SENSOR_KEY_STATISTICS_UNTIL}"
         self._attr_device_info = _get_device_info(meter_code, coordinator.data)
+        self._update_attrs()
 
-    @cached_property
-    def native_value(self) -> date | None:
-        """Return the newest day covered by the statistics, or None before the first import."""
-        return self.coordinator.statistics_until
+    def _update_attrs(self) -> None:
+        """Take the newest statistics day, None before the first import."""
+        self._attr_native_value = self.coordinator.statistics_until
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Recompute the state from the fresh coordinator data, then write it.
+
+        Home Assistant only invalidates its cached entity properties when an
+        _attr_ field is assigned, so the state must be assigned here rather
+        than computed in a (cached) property — that would keep the first value
+        until a restart.
+        """
+        self._update_attrs()
+        super()._handle_coordinator_update()
 
 
 class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -461,20 +484,33 @@ class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity): 
             self._attr_translation_key = translation_key
         else:
             self._attr_name = sensor_name
+        self._update_attrs()
 
-    @cached_property
-    def native_value(self) -> float | None:
-        """Return the energy value in kWh."""
-        data = self.coordinator.data
-        if not data:
-            return None
-        for cv in data.get("currentValues", []):
-            if cv.get("measurementId") == self._measurement_id:
-                zone_data = cv.get(self._zone_key)
-                if zone_data is None:
-                    return None
-                return zone_data.get("value")
-        return None
+    def _update_attrs(self) -> None:
+        """Take the energy value in kWh for this measurement and zone."""
+        data = self.coordinator.data or {}
+        cv = next(
+            (
+                cv
+                for cv in data.get("currentValues", [])
+                if cv.get("measurementId") == self._measurement_id
+            ),
+            None,
+        )
+        zone_data = cv.get(self._zone_key) if cv is not None else None
+        self._attr_native_value = zone_data.get("value") if zone_data is not None else None
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Recompute the state from the fresh coordinator data, then write it.
+
+        Home Assistant only invalidates its cached entity properties when an
+        _attr_ field is assigned, so the state must be assigned here rather
+        than computed in a (cached) property — that would keep the first value
+        until a restart.
+        """
+        self._update_attrs()
+        super()._handle_coordinator_update()
 
 
 

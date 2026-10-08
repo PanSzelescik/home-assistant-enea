@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import cached_property
 from typing import Any
 
 from homeassistant.components.binary_sensor import (
@@ -17,7 +16,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
 )
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -92,10 +91,21 @@ class EneaBinarySensor(CoordinatorEntity[EneaUpdateCoordinator], BinarySensorEnt
         self.entity_description = description  # pyright: ignore[reportIncompatibleVariableOverride]
         self._attr_unique_id = f"enea-{meter_code}-{description.key}"
         self._attr_device_info = _get_device_info(meter_code, coordinator.data)
+        self._update_attrs()
 
-    @cached_property
-    def is_on(self) -> bool | None:
-        """Return the state, or None when the Portal Odbiorcy Enea omits the field."""
-        if self.coordinator.data is None:
-            return None
-        return self.entity_description.value_fn(self.coordinator.data)
+    def _update_attrs(self) -> None:
+        """Compute the state, None when the Portal Odbiorcy Enea omits the field."""
+        data = self.coordinator.data
+        self._attr_is_on = self.entity_description.value_fn(data) if data is not None else None
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Recompute the state from the fresh coordinator data, then write it.
+
+        Home Assistant only invalidates its cached entity properties when an
+        _attr_ field is assigned, so the state must be assigned here rather
+        than computed in a (cached) property — that would keep the first value
+        until a restart.
+        """
+        self._update_attrs()
+        super()._handle_coordinator_update()

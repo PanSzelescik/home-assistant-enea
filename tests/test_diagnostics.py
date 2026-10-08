@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -10,7 +10,7 @@ import pytest
 
 from custom_components.enea import diagnostics as diagnostics_module
 
-from conftest import FakeHass
+from conftest import FakeConfigEntry, FakeHass
 
 PPE = "590310600000000001"
 METER_ID = 73689
@@ -35,7 +35,10 @@ def _entry() -> Any:
             {"id": 73688, "serialNumber": SERIAL, "typeName": "OTUS3", "disassemblyDate": None}
         ],
         "agreements": [{"id": 65520, "agreementNumber": AGREEMENT, "tariffGroupName": "G12"}],
-        "billingWeekData": [{"zones": [{"id": 3466, "name": "Dzień"}]}],
+        "billingWeekData": [
+            {"measurementId": 1, "zones": [{"id": 3466, "name": "Dzień"}]},
+            {"measurementId": 3, "measurementName": "Energia bierna kwadrant I", "zones": []},
+        ],
     }
     coordinator = SimpleNamespace(
         async_refresh=async_refresh,
@@ -43,9 +46,10 @@ def _entry() -> Any:
         update_interval=timedelta(hours=3),
         last_exception=None,
         data=dashboard,
-        diagnostics_state=lambda: {"initial_backfill": "done"},
+        diagnostics_state=lambda: {"initial_backfill": "done", "statistics_until": "2026-10-07"},
     )
     return SimpleNamespace(
+        entry_id="entry1",
         data={
             "username": "user@example.com",
             "password": "secret",
@@ -57,18 +61,73 @@ def _entry() -> Any:
     )
 
 
+def _hass() -> Any:
+    """Return a hass with an enea_prices entry and the entities' current states."""
+    prices = FakeConfigEntry(
+        domain="enea_prices",
+        data={"tariff": "G12"},
+        runtime_data=SimpleNamespace(
+            tariff=SimpleNamespace(
+                name="G12",
+                periods=[
+                    SimpleNamespace(valid_from=date(2026, 1, 1), valid_until=date(2026, 6, 30)),
+                    SimpleNamespace(valid_from=date(2026, 7, 1), valid_until=date(2026, 12, 31)),
+                ],
+            ),
+            phases=1,
+            annual_kwh=5000,
+            billing_months=2,
+        ),
+    )
+    hass = FakeHass([prices])
+    changed = datetime(2026, 10, 9, 13, 0)
+    states = {
+        f"sensor.enea_{PPE}_grupa_taryfowa": SimpleNamespace(
+            state="G12", last_changed=changed,
+            attributes={"friendly_name": f"Enea {PPE} Grupa taryfowa", "zones": ["Dzień 1.8.1"]},
+        ),
+        f"sensor.enea_{PPE}_adres": SimpleNamespace(
+            state="ul. Testowa 1, Poznań", last_changed=changed,
+            attributes={"friendly_name": f"Enea {PPE} Adres", "street": "ul. Testowa"},
+        ),
+        f"sensor.enea_{PPE}_statystyki_aktualne_do": SimpleNamespace(
+            state="unknown", last_changed=changed, attributes={},
+        ),
+    }
+    hass.states = SimpleNamespace(get=states.get)  # pyright: ignore[reportAttributeAccessIssue]
+    return hass
+
+
+def _registry_entries() -> list[Any]:
+    """Return the entity registry entries of the config entry."""
+    return [
+        SimpleNamespace(
+            unique_id=f"enea-{PPE}-{key}", entity_id=entity_id, domain="sensor", disabled_by=None
+        )
+        for key, entity_id in (
+            ("tariff", f"sensor.enea_{PPE}_grupa_taryfowa"),
+            ("address", f"sensor.enea_{PPE}_adres"),
+            ("statistics_until", f"sensor.enea_{PPE}_statystyki_aktualne_do"),
+        )
+    ]
+
+
 @pytest.fixture
 async def report(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """Return the diagnostics report, with the statistics overview stubbed out."""
+    """Return the diagnostics report, with the recorder and the registry stubbed out."""
 
     async def overview(hass: Any, meter_code: str) -> dict[str, Any]:
         """Stand in for the recorder query; ids arrive already masked."""
         return {"enea:…0001_energia_pobrana": {"last_hour": "2026-10-07T23:00:00+02:00"}}
 
     monkeypatch.setattr(diagnostics_module, "async_statistics_overview", overview)
-    return await diagnostics_module.async_get_config_entry_diagnostics(
-        FakeHass(), _entry()  # type: ignore[arg-type]
+    monkeypatch.setattr(diagnostics_module.er, "async_get", lambda hass: None)
+    monkeypatch.setattr(
+        diagnostics_module.er,
+        "async_entries_for_config_entry",
+        lambda registry, entry_id: _registry_entries() if entry_id == "entry1" else [],
     )
+    return await diagnostics_module.async_get_config_entry_diagnostics(_hass(), _entry())
 
 
 async def test_report_hides_identifying_data(report: dict[str, Any]) -> None:
@@ -90,17 +149,39 @@ async def test_report_keeps_what_diagnosis_needs(report: dict[str, Any]) -> None
     assert meter_data["meters"][0]["typeName"] == "OTUS3"
     assert meter_data["agreements"][0]["tariffGroupName"] == "G12"
     assert report["coordinator"]["initial_backfill"] == "done"
-    assert report["phases"] == {
-        "inferred": "three_phase", "source": "meter_model", "enea_prices": None
-    }
-    assert report["enea_prices"] is None
+    assert report["phases"] == {"inferred": "three_phase", "source": "meter_model", "enea_prices": 1}
     assert "enea:…0001_energia_pobrana" in report["statistics"]
+
+
+async def test_report_drops_reactive_energy(report: dict[str, Any]) -> None:
+    """Only active energy is kept from billingWeekData."""
+    ids = [m["measurementId"] for m in report["meter_data"]["billingWeekData"]]
+
+    assert ids == [1]
+
+
+async def test_report_shows_entity_states(report: dict[str, Any]) -> None:
+    """Each entity's state is listed by key, so it can be held against the coordinator."""
+    entities = report["entities"]
+
+    assert set(entities) == {"tariff", "address", "statistics_until"}
+    assert entities["tariff"]["state"] == "G12"
+    assert entities["tariff"]["attributes"] == {"zones": ["Dzień 1.8.1"]}
+    assert entities["statistics_until"]["state"] == "unknown"
+    assert entities["address"]["state"] == "**REDACTED**"
+    assert entities["address"]["attributes"] == "**REDACTED**"
+
+
+async def test_report_shows_prices_coverage(report: dict[str, Any]) -> None:
+    """The last day the enea_prices table can price is visible."""
+    prices = report["enea_prices"]
+
+    assert prices["covered_until"] == "2026-12-31"
+    assert prices["periods"] == [["2026-01-01", "2026-06-30"], ["2026-07-01", "2026-12-31"]]
 
 
 async def test_statistics_overview(monkeypatch: pytest.MonkeyPatch, wire_recorder) -> None:
     """Every series of the meter is listed with its newest hour, ids masked."""
-    from datetime import datetime
-
     from homeassistant.util import dt as dt_util
 
     from custom_components.enea import statistics as statistics_module
@@ -130,8 +211,8 @@ async def test_statistics_overview(monkeypatch: pytest.MonkeyPatch, wire_recorde
     }
 
 
-async def test_coordinator_state_reports_a_failed_backfill() -> None:
-    """A backfill that failed in the background shows up with its masked error."""
+async def test_coordinator_state_reports_failures() -> None:
+    """Background failures and zero-filled days show up in the report."""
     import asyncio
 
     from custom_components.enea.coordinator import EneaUpdateCoordinator
@@ -152,8 +233,14 @@ async def test_coordinator_state_reports_a_failed_backfill() -> None:
     done.set_result(None)
     coord._backfill_task = done  # type: ignore[assignment]
     coord._backfill_error = "failed for enea:…0001_energia_pobrana"
+    coord._statistics_last_run = datetime(2026, 10, 9, 13, 0)
+    coord._statistics_error = "EneaApiError: Unexpected response from range endpoint: 500"
+    coord._zero_filled_days = {date(2026, 10, 3), date(2026, 10, 1)}
 
     state = coord.diagnostics_state()
 
     assert state["initial_backfill"] == "failed: failed for enea:…0001_energia_pobrana"
     assert state["fetch_types"] == ["energy_consumed"]
+    assert state["statistics_last_run"] == "2026-10-09T13:00:00"
+    assert state["statistics_error"] == "EneaApiError: Unexpected response from range endpoint: 500"
+    assert state["zero_filled_days"] == ["2026-10-01", "2026-10-03"]

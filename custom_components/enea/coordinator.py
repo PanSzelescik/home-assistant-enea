@@ -101,6 +101,12 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # The statistics step of a refresh made during startup waits for Home
         # Assistant to start; this keeps it from being scheduled more than once.
         self._statistics_deferred = False
+        # For the diagnostics report: when the statistics step last ran, the error
+        # it swallowed (it only logs it) and the days stored as zero consumption
+        # because the portal never published them — all since the last restart.
+        self._statistics_last_run: datetime | None = None
+        self._statistics_error: str | None = None
+        self._zero_filled_days: set[date] = set()
         self.bill_prev_reading: date | None = None
         self.bill_last_reading: date | None = None
         self.bill_estimates: dict[str, BillEstimate | None] = {
@@ -165,10 +171,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         Must only run once Home Assistant has started — see _async_update_data.
         """
+        self._statistics_last_run = dt_util.now()
+        self._statistics_error = None
         # Inject historical statistics — errors are non-fatal (dashboard data stays valid).
         try:
             await self._async_fetch_and_inject_stats()
         except Exception as err:
+            self._statistics_error = mask_ppe(f"{type(err).__name__}: {err}")
             _LOGGER.warning("Failed to update historical statistics: %s", err, exc_info=True)
 
         # async_add_external_statistics is non-blocking — it only queues writes in the
@@ -180,6 +189,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             self.statistics_until = await self._async_latest_statistics_date()
         except Exception as err:
+            self._statistics_error = mask_ppe(f"{type(err).__name__}: {err}")
             _LOGGER.warning("Failed to read the latest statistics date: %s", err, exc_info=True)
 
         # Recompute bill estimates if reading dates are configured (new stats may have arrived).
@@ -376,6 +386,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "tariff": self._tariff_name,
             "assembly_datetime": iso(self._assembly_datetime),
             "statistics_until": iso(self.statistics_until),
+            "statistics_last_run": iso(self._statistics_last_run),
+            "statistics_error": self._statistics_error,
+            "zero_filled_days": [iso(day) for day in sorted(self._zero_filled_days)],
             "initial_backfill": backfill,
             "cost_checked_until": iso(self._cost_checked_until),
             "bill_prev_reading": iso(self.bill_prev_reading),
@@ -651,6 +664,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     grace_days,
                 )
                 day_data = self._zero_fill_missing_day(day_data)
+                self._zero_filled_days.add(day)
             day_data = self._strip_pre_assembly_slots(day, day_data)
             all_days.append((day, day_data))
 

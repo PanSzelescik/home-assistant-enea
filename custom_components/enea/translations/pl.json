@@ -297,5 +297,15 @@
         }
       }
     }
+  },
+  "issues": {
+    "phases_mismatch": {
+      "title": "Niezgodna liczba faz dla licznika {meter_code}",
+      "description": "Na podstawie danych z Portalu Odbiorcy Enea (model licznika: {model}, moc umowna: {capacity} kW) instalacja wygląda na {detected}-fazową, a w integracji Enea Ceny ustawiono liczbę faz: {configured}.\n\nLiczba faz decyduje o wysokości opłaty stałej sieciowej, więc szacowany rachunek może być błędny. Popraw ustawienie w integracji Enea Ceny — zgłoszenie zniknie samo.\n\nJeśli to integracja Enea pomyliła się co do liczby faz, zgłoś to na GitHubie."
+    },
+    "unknown_meter_model": {
+      "title": "Nieznany model licznika: {model}",
+      "description": "Integracja nie zna jeszcze liczby faz dla licznika **{model}** (PPE {meter_code}), więc sensor „Typ instalacji” może być nieznany albo wywnioskowany tylko z mocy umownej.\n\nJeśli wiesz, czy Twoja instalacja jest jednofazowa czy trójfazowa, [zgłoś ten model na GitHubie]({report_url}) — zostanie dopisany w kolejnej wersji. Do zgłoszenia nie dołączaj numeru PPE ani adresu.\n\nTo powiadomienie możesz zignorować."
+    }
   }
 }

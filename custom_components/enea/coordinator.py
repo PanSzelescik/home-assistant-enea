@@ -8,6 +8,7 @@ from typing import Any
 
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder.statistics import get_last_statistics
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -30,6 +31,7 @@ from .const import (
     STAT_NAME_BY_KEY,
 )
 from .billing import BillEstimate, async_estimate_bill, find_prices_config
+from .issues import async_update_issues
 from .costs import (
     async_cost_days_missing,
     async_insert_cost_statistics,
@@ -51,6 +53,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         client: EneaApiClient,
         meter_id: int,
         meter_code: str,
@@ -63,9 +66,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=update_interval,
         )
+        # Identifies the meter in repair issue ids — unlike the PPE number or the
+        # portal's meter id it says nothing about the customer.
+        self._entry_id = config_entry.entry_id
         self.client = client
         self.meter_id = meter_id
         self._meter_code = meter_code
@@ -141,6 +148,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Recompute bill estimates if reading dates are configured (new stats may have arrived).
         if self.bill_prev_reading is not None or self.bill_last_reading is not None:
             await self.async_recompute_bills()
+
+        async_update_issues(
+            self.hass, self._entry_id, self._meter_code, self._tariff_name, data
+        )
 
         return data
 

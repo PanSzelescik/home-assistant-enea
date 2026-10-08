@@ -17,6 +17,7 @@ DEFAULT_NAME = "Enea"
 # API URLs
 # ---------------------------------------------------------------------------
 
+ISSUE_TRACKER_URL = "https://github.com/PanSzelescik/home-assistant-enea/issues"
 PORTAL_URL = "https://portalodbiorcy.operator.enea.pl"
 BASE_URL = f"{PORTAL_URL}/portalOdbiorcy/api"
 URL_LOGIN = f"{BASE_URL}/auth/login"
@@ -103,6 +104,13 @@ PHASES_BY_METER_MODEL: dict[str, str] = {
 PHASES_THREE_MIN_CAPACITY_KW = 12
 PHASES_SOURCE_METER_MODEL = "meter_model"
 PHASES_SOURCE_CAPACITY = "contractual_capacity"
+PHASES_COUNT: dict[str, int] = {PHASES_SINGLE: 1, PHASES_THREE: 3}
+
+# Repairs — klucze zgłoszeń (muszą pasować do sekcji "issues" w tłumaczeniach)
+ISSUE_PHASES_MISMATCH = "phases_mismatch"
+ISSUE_UNKNOWN_METER_MODEL = "unknown_meter_model"
+# Formularz GitHub (.github/ISSUE_TEMPLATE) do zgłoszenia nowego modelu; {lang} = pl / en
+ISSUE_TEMPLATE_NEW_METER_MODEL = "new_meter_model_{lang}.yml"
 
 # ---------------------------------------------------------------------------
 # Config flow — error and abort reason keys (must match translation files)

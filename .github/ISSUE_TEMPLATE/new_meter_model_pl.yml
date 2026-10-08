@@ -1,0 +1,42 @@
+name: Nowy model licznika (PL)
+description: Zgłoś model licznika, którego integracja Enea Licznik jeszcze nie zna
+title: "Nowy model licznika: "
+labels: ["enhancement", "lang: pl"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Dziękujemy! Na podstawie modelu licznika integracja ustala, czy instalacja jest jednofazowa czy trójfazowa (sensor „Typ instalacji”).
+        **Nie podawaj numeru PPE, numeru seryjnego licznika ani adresu.**
+
+  - type: input
+    id: model
+    attributes:
+      label: Model licznika
+      description: Wartość sensora „Model licznika” w Home Assistant.
+      placeholder: "np. OTUS3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phases
+    attributes:
+      label: Typ instalacji
+      options:
+        - Jednofazowa
+        - Trójfazowa
+    validations:
+      required: true
+
+  - type: input
+    id: capacity
+    attributes:
+      label: Moc umowna (kW)
+      description: Wartość sensora „Moc umowna”.
+      placeholder: "np. 14"
+
+  - type: textarea
+    id: source
+    attributes:
+      label: Skąd wiesz, ile faz ma instalacja?
+      description: Np. tabliczka znamionowa licznika, umowa, liczba zabezpieczeń przedlicznikowych, karta katalogowa licznika.

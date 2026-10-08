@@ -211,6 +211,13 @@ W przypadku problemów pobierz raport diagnostyczny (hasło i adres są automaty
 
 **Ustawienia → Urządzenia i usługi → Enea → menu (⋮) → Pobierz diagnostyki**
 
+### Naprawy
+
+Integracja zgłasza w **Ustawienia → System → Naprawy**:
+
+- **Niezgodna liczba faz** — gdy typ instalacji wykryty na podstawie licznika nie zgadza się z liczbą faz ustawioną w integracji Enea Ceny (wpływa na opłatę stałą sieciową w szacowanym rachunku). Zgłoszenie znika samo po poprawieniu ustawienia.
+- **Nieznany model licznika** — gdy integracja nie zna liczby faz Twojego licznika. Zgłoszenie zawiera link do gotowego zgłoszenia na GitHubie; po dopisaniu modelu w kolejnej wersji zniknie samo. Można je zignorować.
+
 ## Znane ograniczenia
 
 - API Enea jest nieoficjalne i może ulec zmianie bez ostrzeżenia

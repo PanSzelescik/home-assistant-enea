@@ -31,6 +31,7 @@ custom_components/enea/
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", "configure", reconfigure, reauth; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
 ├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date, _han_port_state, _switch_state_attrs, _billing_period_starts, EneaStatisticsDateSensor
 ├── binary_sensor.py — EneaBinarySensor, BINARY_SENSOR_DESCRIPTIONS: diagnostyczne transmisja z licznikiem i dostępność portu HAN
+├── issues.py        — async_update_issues, async_delete_issues: zgłoszenia w Naprawach (niezgodna liczba faz z enea_prices, nieznany model licznika)
 ├── date.py          — EneaBillDateEntity (Platform.DATE): edytowalne daty odczytu z RestoreEntity
 ├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill; szacowanie rachunku z long-term statistics
 ├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + _shift_later_totals (wspólny zapis serii skumulowanej dla energii i kosztów)
@@ -319,6 +320,17 @@ Tworzone gdy `find_tariff_group` zwraca pasującą taryfę z `enea_prices`.
 - Dwa sensory `EneaBillSensor` (Platform.SENSOR) — „Szacowany rachunek – poprzedni okres" i „Szacowany rachunek – bieżący okres". `device_class=MONETARY`, PLN, **bez `state_class`**. `native_value` z `coordinator.bill_estimates[key].total`.
 - `coordinator.bill_estimates` (dict `BILL_KEY_PREVIOUS/CURRENT → BillEstimate | None`) przeliczany przez `async_recompute_bills()` — wywołanie: po zmianie daty, po każdym odświeżeniu gdy daty są ustawione.
 - `BillEstimate` z `billing.py`: `kwh_by_zone` (float), `energy_by_zone_netto`, `variable_network_by_zone_netto`, `quality_by_zone_netto`, `oze_by_zone_netto`, `cogeneration_by_zone_netto`, `energy_netto`, `distribution_netto`, `fixed_network_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `total_netto`, `total` (jedyne brutto = stan sensora), `months`, `start`, `end`. Atrybuty sensora (w kolejności faktury): `start`, `end`, `months` → `kwh_{strefa}`, `energy_{strefa}_netto` per strefa → `energy_netto` → `fixed_network_netto`, `fixed_capacity_netto` → `variable_network_{strefa}_netto`, `quality_{strefa}_netto`, `oze_{strefa}_netto`, `cogeneration_{strefa}_netto` per strefa → `fixed_subscription_netto` → `distribution_netto` → `total_netto`.
+
+## Zgłoszenia w Naprawach (Repairs)
+
+`issues.py` — `async_update_issues(hass, entry_id, meter_code, tariff_name, data)` wołane na końcu każdego `_async_update_data`; każde zgłoszenie jest tworzone, dopóki warunek zachodzi, i usuwane, gdy przestaje (`ir.async_delete_issue`). ID zgłoszeń: `{klucz}_{entry_id}` (ID zgłoszeń trafiają do raportu diagnostycznego, więc nie mogą zawierać PPE ani `meter_id`; koordynator dostaje `config_entry` w konstruktorze), klucze `ISSUE_*` w `const.py`, teksty w sekcji `issues` tłumaczeń. `async_remove_entry` w `__init__.py` usuwa zgłoszenia licznika przy usunięciu wpisu.
+
+| Klucz | Warunek | Uwagi |
+|-------|---------|-------|
+| `phases_mismatch` | `infer_phases` zna liczbę faz, `find_prices_config` zwraca konfigurację i `PHASES_COUNT[...] != cfg.phases` | Poprawka ustawienia w enea_prices przeładowuje wpisy Enea → zgłoszenie znika przy najbliższym odświeżeniu |
+| `unknown_meter_model` | model aktywnego licznika nie występuje w `PHASES_BY_METER_MODEL` | `learn_more_url` i placeholder `report_url` otwierają formularz `.github/ISSUE_TEMPLATE/new_meter_model_{pl,en}.yml` (`ISSUE_TEMPLATE_NEW_METER_MODEL`; wersja wg `hass.config.language`) z wypełnionymi przez query string polami `model` i `capacity` (id pól formularza) — nigdy PPE/adres. Po zgłoszeniu dopisz model do `PHASES_BY_METER_MODEL`. Zmiana `id` pól w formularzach wymaga zmiany w `_new_meter_model_url` |
+
+Oba zgłoszenia mają `is_fixable=False` i `IssueSeverity.WARNING` — użytkownik może je zignorować w UI.
 
 ## Statystyki aktualne do
 

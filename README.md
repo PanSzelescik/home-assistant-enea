@@ -207,7 +207,7 @@ Aby zmienić adres e-mail lub hasło bez usuwania integracji:
 
 ### Diagnostyki
 
-W przypadku problemów pobierz raport diagnostyczny (hasło i adres są automatycznie ukrywane):
+W przypadku problemów pobierz raport diagnostyczny (dane logowania, adres, numer PPE, identyfikatory z Portalu Odbiorcy Enea oraz numery liczników i umów są automatycznie ukrywane; w logach numer PPE jest skracany do ostatnich 4 cyfr):
 
 **Ustawienia → Urządzenia i usługi → Enea → menu (⋮) → Pobierz diagnostyki**
 

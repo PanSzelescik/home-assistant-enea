@@ -14,7 +14,13 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .connector import EneaApiClient, EneaAuthError, EneaApiError, get_active_meter
+from .connector import (
+    EneaApiClient,
+    EneaApiError,
+    EneaAuthError,
+    get_active_meter,
+    mask_ppe,
+)
 from .const import (
     BACKFILL_MAX_CONSECUTIVE_EMPTY,
     BILL_KEY_CURRENT,
@@ -83,6 +89,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._tariff_name: str | None = None
         self._assembly_datetime: datetime | None = None
         self._backfill_task: asyncio.Task[None] | None = None
+        # The task swallows its own failure (it only logs it), so the error is kept
+        # here for the diagnostics report.
+        self._backfill_error: str | None = None
         # Last day the cost catch-up got an answer from the portal for; see
         # _async_inject_missing_costs.
         self._cost_checked_until: date | None = None
@@ -297,19 +306,63 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.async_update_listeners()
                 _LOGGER.debug(
                     "Initial backfill complete for meter %s: injected %d day(s)",
-                    self._meter_code,
+                    mask_ppe(self._meter_code),
                     len(all_days),
                 )
         except asyncio.CancelledError:
-            _LOGGER.debug("Initial backfill cancelled for meter %s", self._meter_code)
+            _LOGGER.debug("Initial backfill cancelled for meter %s", mask_ppe(self._meter_code))
             raise
         except Exception as err:
+            self._backfill_error = mask_ppe(str(err))
             _LOGGER.warning(
                 "Initial backfill failed for meter %s: %s",
-                self._meter_code,
+                mask_ppe(self._meter_code),
                 err,
                 exc_info=True,
             )
+
+    def diagnostics_state(self) -> dict[str, Any]:
+        """Return the internal state worth seeing in a diagnostics report.
+
+        The initial backfill only runs when a meter has no statistics at all,
+        so "not_started" after a restart is the normal state.
+        """
+        task = self._backfill_task
+        if task is None:
+            backfill = "not_started"
+        elif not task.done():
+            backfill = "running"
+        elif task.cancelled():
+            backfill = "cancelled"
+        elif self._backfill_error is not None:
+            backfill = f"failed: {self._backfill_error}"
+        else:
+            backfill = "done"
+
+        def iso(value: date | None) -> str | None:
+            """Return the value as an ISO string, keeping None."""
+            return value.isoformat() if value is not None else None
+
+        return {
+            "fetch_types": [key for key, _ in self._get_measurement_types()],
+            "tariff": self._tariff_name,
+            "assembly_datetime": iso(self._assembly_datetime),
+            "statistics_until": iso(self.statistics_until),
+            "initial_backfill": backfill,
+            "cost_checked_until": iso(self._cost_checked_until),
+            "bill_prev_reading": iso(self.bill_prev_reading),
+            "bill_last_reading": iso(self.bill_last_reading),
+            "bill_estimates": {
+                key: None if est is None else {
+                    "start": iso(est.start),
+                    "end": iso(est.end),
+                    "months": est.months,
+                    "total_netto": est.total_netto,
+                    "total": est.total,
+                }
+                for key, est in self.bill_estimates.items()
+            },
+        }
 
     def cancel_backfill(self) -> None:
         """Cancel the background initial-backfill task if it is still running.
@@ -319,7 +372,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         if self._backfill_task is not None and not self._backfill_task.done():
             self._backfill_task.cancel()
-            _LOGGER.debug("Cancelled initial backfill for meter %s", self._meter_code)
+            _LOGGER.debug("Cancelled initial backfill for meter %s", mask_ppe(self._meter_code))
 
     async def _async_inject_missing_costs(self, up_to: date) -> None:
         """Inject cost statistics for days not yet covered, independently of energy.
@@ -561,8 +614,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not any(has_data(v) for v in day_data.values()):
                 if not zero_fill_stale or (today - day).days < grace_days:
                     continue
-                _LOGGER.debug(
-                    "No data for %s after %d day(s) — zero-filling", day, grace_days
+                _LOGGER.info(
+                    "Portal Odbiorcy Enea published no data for %s (meter %s) within "
+                    "%d day(s); storing the day as zero consumption. The enea.backfill "
+                    "action re-fetches it if the data appears later",
+                    day,
+                    mask_ppe(self._meter_code),
+                    grace_days,
                 )
                 day_data = self._zero_fill_missing_day(day_data)
             day_data = self._strip_pre_assembly_slots(day, day_data)
@@ -695,7 +753,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.info(
                 "Backfill injected %d day(s) for meter %s (%s – %s)",
                 len(all_days),
-                self._meter_code,
+                mask_ppe(self._meter_code),
                 start_date,
                 end_date,
             )

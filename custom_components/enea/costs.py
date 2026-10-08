@@ -30,6 +30,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
+from .connector import mask_ppe
 from .const import (
     COST_ZONE_DISPLAY,
     DOMAIN,
@@ -241,7 +242,7 @@ async def _inject_cost_series(
     _LOGGER.debug(
         "Injected %d cost stats for %s (running sum: %.2f PLN)",
         len(series),
-        statistic_id,
+        mask_ppe(statistic_id),
         running_sum,
     )
     return running_sum

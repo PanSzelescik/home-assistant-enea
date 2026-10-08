@@ -28,6 +28,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
+from .connector import mask_ppe
 from .const import (
     COST_ZONE_DISPLAY,
     ENEA_PRICES_DOMAIN,
@@ -306,7 +307,7 @@ async def _query_zone_kwh(
     ):
         records = stats_result.get(sid, [])
         if not records:
-            _LOGGER.debug("No statistics found for %s in period (%s, %s]", sid, d1, d2)
+            _LOGGER.debug("No statistics found for %s in period (%s, %s]", mask_ppe(sid), d1, d2)
             result[zone_display] = 0.0
             continue
 

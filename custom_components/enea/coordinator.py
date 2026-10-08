@@ -9,8 +9,9 @@ from typing import Any
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder.statistics import get_last_statistics
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -97,6 +98,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._cost_checked_until: date | None = None
         # Newest day covered by the energy/power statistics, refreshed every update.
         self.statistics_until: date | None = None
+        # The statistics step of a refresh made during startup waits for Home
+        # Assistant to start; this keeps it from being scheduled more than once.
+        self._statistics_deferred = False
         self.bill_prev_reading: date | None = None
         self.bill_last_reading: date | None = None
         self.bill_estimates: dict[str, BillEstimate | None] = {
@@ -137,6 +141,30 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 .astimezone(dt_util.DEFAULT_TIME_ZONE)
             )
 
+        # The statistics step waits for the recorder to commit its own writes, but the
+        # recorder thread only starts committing once Home Assistant has started.  The
+        # first refresh runs inside this integration's setup, which startup waits for,
+        # so waiting there would deadlock — during startup the step is deferred until
+        # Home Assistant has started.
+        if self.hass.state is CoreState.running:
+            await self._async_update_statistics()
+        elif not self._statistics_deferred:
+            self._statistics_deferred = True
+            unsub = async_at_started(self.hass, self._async_update_statistics_after_start)
+            if self.config_entry is not None:
+                self.config_entry.async_on_unload(unsub)
+
+        async_update_issues(
+            self.hass, self._entry_id, self._meter_code, self._tariff_name, data
+        )
+
+        return data
+
+    async def _async_update_statistics(self) -> None:
+        """Inject missing statistics, then read back the statistics date and the bills.
+
+        Must only run once Home Assistant has started — see _async_update_data.
+        """
         # Inject historical statistics — errors are non-fatal (dashboard data stays valid).
         try:
             await self._async_fetch_and_inject_stats()
@@ -158,11 +186,11 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self.bill_prev_reading is not None or self.bill_last_reading is not None:
             await self.async_recompute_bills()
 
-        async_update_issues(
-            self.hass, self._entry_id, self._meter_code, self._tariff_name, data
-        )
-
-        return data
+    async def _async_update_statistics_after_start(self, _hass: HomeAssistant) -> None:
+        """Run the statistics step deferred during startup and refresh the entities."""
+        self._statistics_deferred = False
+        await self._async_update_statistics()
+        self.async_update_listeners()
 
     # ------------------------------------------------------------------
     # Statistics helpers

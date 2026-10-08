@@ -6,7 +6,7 @@ body:
     id: description
     attributes:
       label: Opis propozycji
-      description: Co chciałbyś dodać lub zmienić?
+      description: Co chcesz dodać lub zmienić?
     validations:
       required: true
 
@@ -22,4 +22,4 @@ body:
     id: alternatives
     attributes:
       label: Alternatywy
-      description: Czy rozważałeś inne rozwiązania?
+      description: Czy rozważano inne rozwiązania?

@@ -403,9 +403,10 @@ Przy zmianie struktury danych w `ConfigEntry` (klucze w `entry.data`):
 ## Wydawanie nowej wersji
 
 1. Podbij `version` w `custom_components/enea/manifest.json` oraz `version` w `pyproject.toml`
-2. Zacommituj: `git commit -m "Release vX.Y.Z"`
-3. Wypchnij: `git push`
-4. Utwórz release przez GitHub CLI:
+2. Podbij przykładową wersję w polu `integration_version` (`placeholder`) w `.github/ISSUE_TEMPLATE/bug_report_pl.yml` i `bug_report_en.yml`
+3. Zacommituj: `git commit -m "Release vX.Y.Z"`
+4. Wypchnij: `git push`
+5. Utwórz release przez GitHub CLI:
    ```
    gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes
    ```

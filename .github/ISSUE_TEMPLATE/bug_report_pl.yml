@@ -5,13 +5,22 @@ body:
   - type: markdown
     attributes:
       value: |
-        Dziękujemy za zgłoszenie! Przed wypełnieniem sprawdź czy podobny issue już istnieje.
+        Dziękujemy za zgłoszenie! Pytania o instalację i konfigurację zadawaj w [Dyskusjach](https://github.com/PanSzelescik/home-assistant-enea/discussions).
+
+  - type: checkboxes
+    id: existing
+    attributes:
+      label: Istniejące zgłoszenia
+      options:
+        - label: Na liście zgłoszeń nie ma jeszcze podobnego problemu
+          required: true
 
   - type: input
     id: ha_version
     attributes:
       label: Wersja Home Assistant
-      placeholder: "np. 2026.3.3"
+      description: Ustawienia → Informacje
+      placeholder: "np. 2026.10.0"
     validations:
       required: true
 
@@ -19,7 +28,23 @@ body:
     id: integration_version
     attributes:
       label: Wersja integracji Enea Licznik
-      placeholder: "np. 0.0.1"
+      description: HACS → Enea Licznik
+      placeholder: "np. 1.5.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Obszar problemu
+      options:
+        - Logowanie i konfiguracja
+        - Sensory
+        - Statystyki w Energy Dashboard
+        - Koszty energii (Enea Ceny)
+        - Szacowany rachunek
+        - Naprawy (zgłoszenia w Home Assistant)
+        - Inne
     validations:
       required: true
 
@@ -28,14 +53,12 @@ body:
     attributes:
       label: Grupa taryfowa
       placeholder: "np. G11, G12, G13"
-    validations:
-      required: true
 
   - type: textarea
     id: description
     attributes:
       label: Opis problemu
-      description: Co się dzieje? Czego się spodziewałeś?
+      description: Co się dzieje i jakie zachowanie było oczekiwane?
     validations:
       required: true
 
@@ -44,7 +67,7 @@ body:
     attributes:
       label: Logi Home Assistant
       description: |
-        Skopiuj logi z domeny `enea` (Ustawienia → System → Logi, filtruj po "enea").
+        Najwięcej pomagają logi debugowania: Ustawienia → Urządzenia i usługi → Enea → menu ⋮ → Włącz rejestrowanie debugowania, odtwórz problem, a następnie wyłącz rejestrowanie — plik z logami pobierze się automatycznie. Wklej fragmenty dotyczące domeny `enea`.
       render: text
 
   - type: textarea
@@ -52,5 +75,5 @@ body:
     attributes:
       label: Raport diagnostyczny
       description: |
-        Opcjonalnie załącz raport diagnostyczny (Ustawienia → Urządzenia i usługi → Enea → menu ⋮ → Pobierz diagnostyki).
+        Opcjonalnie załącz raport diagnostyczny (Ustawienia → Urządzenia i usługi → Enea → menu ⋮ → Pobierz diagnostykę). Dane logowania, adres, numer PPE, identyfikatory z Portalu Odbiorcy Enea oraz numery liczników i umów są w nim automatycznie ukrywane.
       render: json

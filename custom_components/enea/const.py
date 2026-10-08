@@ -127,11 +127,20 @@ UNIT_COST = "PLN"
 
 VAT_RATE = 0.23
 
+# Strefa z enea_prices → nazwa strefy.  Służy do nazw statystyk kosztów, a w billing.py
+# także do odnalezienia statystyki „Energia pobrana – {nazwa}”, której nazwę nadaje
+# portal Enei – dlatego musi się z nią zgadzać co do znaku.
 COST_ZONE_DISPLAY: dict[str, str] = {
     "day": "Dzień",
     "night": "Noc",
     "peak": "Szczyt",
     "off_peak": "Poza szczytem",
+    # G12sezON i G13active (od 2026).  Nazwy TYMCZASOWE – nie widzieliśmy jeszcze, jak
+    # portal nazywa te strefy; do potwierdzenia z danymi licznika w tej grupie (issue #6
+    # w enea_prices).  Niezgodność zgłasza ostrzeżenie w billing.py.
+    "recommended_use": "Zalecany pobór",
+    "remaining": "Pozostałe godziny",
+    "recommended_limit": "Zalecane ograniczanie",
 }
 
 # Bill estimate entity keys

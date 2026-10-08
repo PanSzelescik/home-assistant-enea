@@ -378,7 +378,7 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
 
         Top-level keys: start, end, months, total_netto, total (brutto = state).
         Section 'Sprzedaż energii': energy_netto + per-zone kwh_<zone> and
-        energy_<zone>_netto.
+        energy_<zone>_netto + trade_fee_netto (opłata handlowa, 0 on the tariff).
         Section 'Usługa dystrybucji': distribution_netto (sum) + fixed fees
         (fixed_network_netto, fixed_capacity_netto, fixed_subscription_netto) +
         per-zone components: variable_network_<zone>_netto, quality_<zone>_netto,
@@ -403,6 +403,7 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
             safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
             attrs[f"kwh_{safe}"] = kwh
             attrs[f"energy_{safe}_netto"] = est.energy_by_zone_netto.get(zone_display, 0.0)
+        attrs["trade_fee_netto"] = est.trade_fee_netto
         attrs["energy_netto"] = est.energy_netto
         # Usługa dystrybucji — kolejność jak na fakturze Enea
         attrs["fixed_network_netto"] = est.fixed_network_netto

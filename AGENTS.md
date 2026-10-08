@@ -151,7 +151,12 @@ Koszty są obliczane przez `period.get_zone_at_hour(hour, day=day)` — `enea_pr
 
 `async_estimate_bill(hass, meter_code, cfg, start, end)` → `BillEstimate` (metoda jak faktura Enea, ale kWh precyzyjne):
 - kWh per strefa = precyzyjna różnica sum skumulowanych statystyk zewnętrznych `enea:..._energia_pobrana_{strefa}` na granicach `(start, end]` (bez zaokrąglania do całości).
-- **Sprzedaż energii** netto per strefa = `round(kWh × (zone.energy + cfg.akcyza), 2)`.
+- **Sprzedaż energii** netto per strefa = `round(kWh × (zone.energy + cfg.akcyza), 2)`;
+  do sekcji dochodzi opłata handlowa `round(getattr(monthly, "trade", 0.0) × months, 2)` —
+  niezerowa tylko przy cenach z umowy w `enea_prices` (oferta rynkowa), `energy_netto` ją zawiera.
+- Nazwa strefy w `COST_ZONE_DISPLAY` musi być identyczna z nazwą z portalu, bo po niej szukana jest
+  statystyka `Energia pobrana – {nazwa}`; brak takiej statystyki → jednorazowe ostrzeżenie i 0 kWh.
+  Nazwy stref G12sezON/G13active są tymczasowe (niepotwierdzone danymi z portalu).
 - **Usługa dystrybucji** — cztery składniki zaokrąglane osobno per strefa: `round(kWh × zone.variable_network, 2)`, `round(kWh × zone.quality, 2)`, `round(kWh × zone.oze, 2)`, `round(kWh × zone.cogeneration, 2)`.
 - Opłaty stałe netto = `round(network_fixed × months, 2)` + `round(capacity × months, 2)` + `round(subscription × months, 2)`.
 - `total_netto = round(energy_netto + distribution_netto, 2)`, `total = round(total_netto × 1.23, 2)` — VAT doliczany raz na końcu.
@@ -287,7 +292,7 @@ Tworzone gdy `find_tariff_group` zwraca pasującą taryfę z `enea_prices`.
 - Dwie encje `DateEntity` (Platform.DATE, `RestoreEntity`) — „Data poprzedniego odczytu" i „Data ostatniego odczytu". Po zmianie daty wołają `coordinator.async_recompute_bills()`.
 - Dwa sensory `EneaBillSensor` (Platform.SENSOR) — „Szacowany rachunek – poprzedni okres" i „Szacowany rachunek – bieżący okres". `device_class=MONETARY`, PLN, **bez `state_class`**. `native_value` z `coordinator.bill_estimates[key].total`.
 - `coordinator.bill_estimates` (dict `BILL_KEY_PREVIOUS/CURRENT → BillEstimate | None`) przeliczany przez `async_recompute_bills()` — wywołanie: po zmianie daty, po każdym odświeżeniu gdy daty są ustawione.
-- `BillEstimate` z `billing.py`: `kwh_by_zone` (float), `energy_by_zone_netto`, `variable_network_by_zone_netto`, `quality_by_zone_netto`, `oze_by_zone_netto`, `cogeneration_by_zone_netto`, `energy_netto`, `distribution_netto`, `fixed_network_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `total_netto`, `total` (jedyne brutto = stan sensora), `months`, `start`, `end`. Atrybuty sensora (w kolejności faktury): `start`, `end`, `months` → `kwh_{strefa}`, `energy_{strefa}_netto` per strefa → `energy_netto` → `fixed_network_netto`, `fixed_capacity_netto` → `variable_network_{strefa}_netto`, `quality_{strefa}_netto`, `oze_{strefa}_netto`, `cogeneration_{strefa}_netto` per strefa → `fixed_subscription_netto` → `distribution_netto` → `total_netto`.
+- `BillEstimate` z `billing.py`: `kwh_by_zone` (float), `energy_by_zone_netto`, `variable_network_by_zone_netto`, `quality_by_zone_netto`, `oze_by_zone_netto`, `cogeneration_by_zone_netto`, `trade_fee_netto`, `energy_netto`, `distribution_netto`, `fixed_network_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `total_netto`, `total` (jedyne brutto = stan sensora), `months`, `start`, `end`. Atrybuty sensora (w kolejności faktury): `start`, `end`, `months` → `kwh_{strefa}`, `energy_{strefa}_netto` per strefa → `trade_fee_netto` → `energy_netto` → `fixed_network_netto`, `fixed_capacity_netto` → `variable_network_{strefa}_netto`, `quality_{strefa}_netto`, `oze_{strefa}_netto`, `cogeneration_{strefa}_netto` per strefa → `fixed_subscription_netto` → `distribution_netto` → `total_netto`.
 
 ## Obsługa sesji
 

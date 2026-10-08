@@ -154,3 +154,77 @@ async def test_period_starting_before_all_history(stored) -> None:
 
     assert estimate is not None
     assert estimate.kwh_by_zone["Szczyt"] == pytest.approx(40.0)
+
+
+class _OfferMonthly(_Monthly):
+    """Fixed fees of a market offer: the seller adds a monthly trade fee."""
+
+    trade = 9.82
+
+
+class _OfferPeriod(_Period):
+    """A period priced from the customer's contract."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.monthly = _OfferMonthly()
+
+
+class _OfferTariff(_Tariff):
+    """A tariff group with contract prices applied."""
+
+    def get_period_for_date(self, d: datetime.date) -> _OfferPeriod:
+        """Every date falls in the one contract period."""
+        return _OfferPeriod()
+
+
+async def test_a_trade_fee_joins_the_energy_section(stored) -> None:
+    """On a market offer the invoice's 'Sprzedaż energii' includes the trade fee.
+
+    Contract prices entered in enea_prices put it on the period's monthly fees;
+    a tariff period has none, which the plain fakes above stand for.
+    """
+    stored([(datetime.date(2026, 3, 6), 1000.0), (datetime.date(2026, 3, 20), 1100.0)])
+    cfg = PricesConfig(
+        tariff=_OfferTariff(), phases=3, annual_kwh=5000, billing_months=1, akcyza=0.005
+    )
+
+    estimate = await async_estimate_bill(
+        object(), "PPE", cfg, datetime.date(2026, 3, 6), datetime.date(2026, 3, 20)
+    )
+
+    assert estimate.months == 1
+    assert estimate.trade_fee_netto == 9.82
+    assert estimate.energy_netto == round(100 * (0.6518 + 0.005) + 9.82, 2)
+
+
+async def test_no_trade_fee_on_the_tariff(stored) -> None:
+    stored([(datetime.date(2026, 3, 6), 1000.0), (datetime.date(2026, 3, 20), 1100.0)])
+
+    estimate = await async_estimate_bill(
+        object(), "PPE", _cfg(), datetime.date(2026, 3, 6), datetime.date(2026, 3, 20)
+    )
+
+    assert estimate.trade_fee_netto == 0.0
+    assert estimate.energy_netto == round(100 * (0.6518 + 0.005), 2)
+
+
+async def test_a_zone_the_portal_names_differently_is_reported_once(
+    stored, caplog, monkeypatch
+) -> None:
+    """A zone statistic that does not exist at all means a naming mismatch.
+
+    The bill then counts 0 kWh in that zone, which looks plausible enough to go
+    unnoticed; the names of the newer groups' zones are not confirmed yet.
+    """
+    monkeypatch.setattr(billing, "_REPORTED_MISSING_ZONES", set())
+    stored([])
+
+    for _ in range(2):
+        await async_estimate_bill(
+            object(), "PPE", _cfg(), datetime.date(2026, 3, 6), datetime.date(2026, 3, 20)
+        )
+
+    warnings = [r for r in caplog.records if "No energy statistic" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "Szczyt" in warnings[0].getMessage()

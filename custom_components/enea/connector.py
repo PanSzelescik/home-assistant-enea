@@ -18,6 +18,11 @@ from .const import (
     URL_PPE_DASHBOARD,
     URL_PPES,
     METERS_CACHE_TTL,
+    PHASES_BY_METER_MODEL,
+    PHASES_SOURCE_CAPACITY,
+    PHASES_SOURCE_METER_MODEL,
+    PHASES_THREE,
+    PHASES_THREE_MIN_CAPACITY_KW,
     MeasurementType,
     Resolution,
 )
@@ -209,6 +214,23 @@ def get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:
         (m for m in data.get("meters", []) if m.get("disassemblyDate") is None),
         None,
     )
+
+
+def infer_phases(data: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Return the inferred installation phases and what they were inferred from.
+
+    The Portal Odbiorcy Enea does not report the number of phases.  The active
+    meter model decides when it is a known one; otherwise a contractual capacity
+    beyond what a single-phase connection carries implies three phases.  Any
+    other case stays unknown — (None, None).
+    """
+    model = ((get_active_meter(data) or {}).get("typeName") or "").strip().upper()
+    if (phases := PHASES_BY_METER_MODEL.get(model)) is not None:
+        return phases, PHASES_SOURCE_METER_MODEL
+    capacity = data.get("agreementPower")
+    if capacity is not None and capacity >= PHASES_THREE_MIN_CAPACITY_KW:
+        return PHASES_THREE, PHASES_SOURCE_CAPACITY
+    return None, None
 
 
 def format_address(addr: dict[str, Any] | None) -> str | None:

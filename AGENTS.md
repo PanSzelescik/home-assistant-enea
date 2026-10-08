@@ -29,7 +29,8 @@ custom_components/enea/
 ├── connector.py     — klient HTTP (EneaApiClient, _request helper), wyjątki, get_active_meter(), format_address()
 ├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill; klient API jako self.client
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", "configure", reconfigure, reauth; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
-├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date
+├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date, _han_port_state, _switch_state_attrs, _billing_period_starts, EneaStatisticsDateSensor
+├── binary_sensor.py — EneaBinarySensor, BINARY_SENSOR_DESCRIPTIONS: diagnostyczne transmisja z licznikiem i dostępność portu HAN
 ├── date.py          — EneaBillDateEntity (Platform.DATE): edytowalne daty odczytu z RestoreEntity
 ├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill; szacowanie rachunku z long-term statistics
 ├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + _shift_later_totals (wspólny zapis serii skumulowanej dla energii i kosztów)
@@ -276,6 +277,36 @@ Dane za poprzedni dzień są dostępne zwykle po godzinie 11:00 następnego dnia
 | `address` | `address` (przez `format_address()`) |
 | `reading_date` | `currentValues[0].readingDate` |
 | `meter_model` | `meters[].typeName` aktywnego licznika |
+| `phases` | wnioskowane przez `infer_phases` (sensor ENUM) + atrybut `source` |
+| `statistics_until` | `coordinator.statistics_until` (sensor DATE, osobna klasa `EneaStatisticsDateSensor`) |
+| `han_wmbus` | `wmbusStatus` + `hanAvailable` (sensor ENUM, `_han_port_state`) |
+| `han_p1` | `p1Status` + `hanAvailable` (sensor ENUM, `_han_port_state`) |
+| `transmission` | `transmissionStatus` (binary_sensor, `CONNECTIVITY`) |
+| `han_available` | `hanAvailable` (binary_sensor) |
+| `switch_state` | `switchState` (sensor ENUM) + atrybut `load_status` z `drvSwitchLoadStatus` |
+| `billing_period_start` | `billingWeekData` (sensor DATE, `_billing_period_starts`) + atrybut `period_starts` |
+
+Liczba faz instalacji (`phases`) nie występuje w żadnym endpoincie Portalu Odbiorcy Enea (sprawdzone: dashboard PPE, `/user/ppes` — tylko `connectionVoltage: "nN"` i `bestMeterCategory: "AMI"`, `/queryParams/measuredValues/ppe/{id}` — pusta lista). `infer_phases` (`connector.py`) wnioskuje ją najpierw z modelu aktywnego licznika (`PHASES_BY_METER_MODEL` w `const.py` — wpisuj tylko modele o pewnej liczbie faz), a gdy model jest nieznany — z mocy umownej `>= PHASES_THREE_MIN_CAPACITY_KW` (12 kW, z zapasem ponad ~9,2 kW przyłącza jednofazowego 40 A) → trójfazowa. Niska moc niczego nie przesądza; wtedy stan nieznany (`None`). Atrybut `source` (`meter_model` / `contractual_capacity`) jest pomijany, gdy stan nieznany. Wynik zasila też zgłoszenia w Naprawach — patrz sekcja „Zgłoszenia w Naprawach (Repairs)”.
+
+Stany portów HAN odwzorowują ikonki Portalu Odbiorcy Enea (`js/app/portHan/view/han-status-icons.html`): `hanAvailable = false` → `not_supported`; `wmbusStatus`/`p1Status` `null`/`0` → `inactive`, `1` → `active`, `2` → `in_progress` (wniosek w realizacji), `3` → `waiting_for_meter`; nieznany kod → stan nieznany. Pole `switchState` to stan członu wykonawczego (przekaźnika zdalnego odłączania zasilania), wyświetlany w Portalu Odbiorcy Enea jako kolorowa ikonka przy statusie PPE: `0` → `off` (czerwona), `1` → `removed` (czarna), `2` → `warning` (pomarańczowa), `3` → `on` (zielona) — kody i kolory pochodzą z klas CSS, znaczenie słowne jest wywnioskowane. `drvSwitchLoadStatus` to tekst z tooltipa tej ikonki (zwykle pusty) — trafia do atrybutu `load_status` tylko gdy niepusty.
+
+### Okresy rozliczeniowe z `billingWeekData` (obserwacja)
+
+`billingWeekData[]` z dashboardu PPE (jeden wpis na `measurementId`, segmenty wspólne dla wszystkich pomiarów) przeplata segmenty dzienne z segmentami obejmującymi cały okres rozliczeniowy. Na jednym przykładzie (faktura „Za okres od 07/06/2026 do 05/08/2026”) potwierdzono, że **początek każdego długiego segmentu (`timeFrom`) to pierwszy dzień okresu na fakturze**:
+
+```
+2026-04-07 → 06-02   długi — początek okna danych (dateTo − 6 mies.), NIE granica okresu
+2026-06-02 … 06-07   dzienne
+2026-06-07 → 08-02   długi — okres od 07.06
+2026-08-02 … 08-06   dzienne
+2026-08-06 → 10-01   długi — bieżący okres od 06.08 (kończy się na dateFrom, czyli początku bieżącego tygodnia)
+```
+
+Wpisy dzienne między długimi segmentami nie mają znaczenia dla granic. `_billing_period_starts` zwraca `timeFrom` segmentów trwających co najmniej `BILLING_PERIOD_MIN_SEGMENT` (2 dni — odporne na dobę 25 h przy zmianie czasu), z pominięciem segmentu o indeksie 0 (początek okna). Przy rozliczeniu rocznym półroczne okno może nie zawierać żadnej granicy.
+
+Na razie wynik jest **tylko wyświetlany** w sensorze `billing_period_start` — użytkownik obserwuje, czy granice zgadzają się z kolejnymi fakturami.
+
+**TODO (po potwierdzeniu na kolejnych fakturach):** automatyczne ustawianie encji `bill_prev_reading` / `bill_last_reading` (okres `(d1, d2]`, więc data = początek okresu − 1 dzień; dla przykładu wyżej: d1 = 2026-06-06, d2 = 2026-08-05). Proponowane zachowanie: aktualizować encje dat tylko gdy Portal Odbiorcy Enea pokaże **nową** granicę, żeby ręczna korekta użytkownika nie była nadpisywana przy każdym odświeżeniu.
 
 ### Energia (widoczne w dashboardach)
 Tworzone dynamicznie w `async_setup_entry` na podstawie `currentValues[]`. Sensory dla wyłączonego kierunku (`fetch_consumption=False` lub `fetch_generation=False` w options) nie są tworzone.
@@ -288,6 +319,10 @@ Tworzone gdy `find_tariff_group` zwraca pasującą taryfę z `enea_prices`.
 - Dwa sensory `EneaBillSensor` (Platform.SENSOR) — „Szacowany rachunek – poprzedni okres" i „Szacowany rachunek – bieżący okres". `device_class=MONETARY`, PLN, **bez `state_class`**. `native_value` z `coordinator.bill_estimates[key].total`.
 - `coordinator.bill_estimates` (dict `BILL_KEY_PREVIOUS/CURRENT → BillEstimate | None`) przeliczany przez `async_recompute_bills()` — wywołanie: po zmianie daty, po każdym odświeżeniu gdy daty są ustawione.
 - `BillEstimate` z `billing.py`: `kwh_by_zone` (float), `energy_by_zone_netto`, `variable_network_by_zone_netto`, `quality_by_zone_netto`, `oze_by_zone_netto`, `cogeneration_by_zone_netto`, `energy_netto`, `distribution_netto`, `fixed_network_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `total_netto`, `total` (jedyne brutto = stan sensora), `months`, `start`, `end`. Atrybuty sensora (w kolejności faktury): `start`, `end`, `months` → `kwh_{strefa}`, `energy_{strefa}_netto` per strefa → `energy_netto` → `fixed_network_netto`, `fixed_capacity_netto` → `variable_network_{strefa}_netto`, `quality_{strefa}_netto`, `oze_{strefa}_netto`, `cogeneration_{strefa}_netto` per strefa → `fixed_subscription_netto` → `distribution_netto` → `total_netto`.
+
+## Statystyki aktualne do
+
+`coordinator.statistics_until` — lokalna data najnowszej godziny we wszystkich aktywnych seriach energii/mocy (`_async_latest_statistics_date`, to samo zapytanie co na początku `_async_fetch_and_inject_stats`). Odświeżana w każdym `_async_update_data` po `async_block_till_done()` recordera, żeby uwzględnić dni wstrzyknięte w tym samym cyklu; dni z backfillu w tle pojawią się w kolejnym odświeżeniu.
 
 ## Obsługa sesji
 

@@ -130,6 +130,14 @@
         "name": "Last Reading Date"
       }
     },
+    "binary_sensor": {
+      "transmission": {
+        "name": "Meter Transmission"
+      },
+      "han_available": {
+        "name": "HAN Port Available"
+      }
+    },
     "sensor": {
       "tariff": {
         "name": "Tariff Group"
@@ -148,6 +156,63 @@
       },
       "meter_model": {
         "name": "Meter Model"
+      },
+      "phases": {
+        "name": "Installation Type",
+        "state": {
+          "single_phase": "Single-phase",
+          "three_phase": "Three-phase"
+        },
+        "state_attributes": {
+          "source": {
+            "name": "Source",
+            "state": {
+              "meter_model": "Meter model",
+              "contractual_capacity": "Contractual capacity"
+            }
+          }
+        }
+      },
+      "han_wmbus": {
+        "name": "HAN Port – Wireless M-Bus",
+        "state": {
+          "inactive": "Inactive",
+          "active": "Active",
+          "in_progress": "Request in progress",
+          "waiting_for_meter": "Waiting for meter",
+          "not_supported": "Not supported by meter"
+        }
+      },
+      "han_p1": {
+        "name": "HAN Port – P1",
+        "state": {
+          "inactive": "Inactive",
+          "active": "Active",
+          "in_progress": "Request in progress",
+          "waiting_for_meter": "Waiting for meter",
+          "not_supported": "Not supported by meter"
+        }
+      },
+      "switch_state": {
+        "name": "Meter Relay",
+        "state": {
+          "on": "On",
+          "off": "Off",
+          "warning": "Warning",
+          "removed": "No relay"
+        },
+        "state_attributes": {
+          "load_status": { "name": "Relay status" }
+        }
+      },
+      "billing_period_start": {
+        "name": "Billing Period Start",
+        "state_attributes": {
+          "period_starts": { "name": "Detected period starts" }
+        }
+      },
+      "statistics_until": {
+        "name": "Statistics Up To"
       },
       "consumption_total": {
         "name": "Energy Consumed"

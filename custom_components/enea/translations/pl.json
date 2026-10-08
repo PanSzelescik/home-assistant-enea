@@ -130,6 +130,14 @@
         "name": "Data ostatniego odczytu"
       }
     },
+    "binary_sensor": {
+      "transmission": {
+        "name": "Transmisja z licznikiem"
+      },
+      "han_available": {
+        "name": "Port HAN dostępny"
+      }
+    },
     "sensor": {
       "tariff": {
         "name": "Grupa taryfowa"
@@ -148,6 +156,63 @@
       },
       "meter_model": {
         "name": "Model licznika"
+      },
+      "phases": {
+        "name": "Typ instalacji",
+        "state": {
+          "single_phase": "Jednofazowa",
+          "three_phase": "Trójfazowa"
+        },
+        "state_attributes": {
+          "source": {
+            "name": "Źródło",
+            "state": {
+              "meter_model": "Model licznika",
+              "contractual_capacity": "Moc umowna"
+            }
+          }
+        }
+      },
+      "han_wmbus": {
+        "name": "Port HAN – Wireless M-Bus",
+        "state": {
+          "inactive": "Nieaktywny",
+          "active": "Aktywny",
+          "in_progress": "Wniosek w realizacji",
+          "waiting_for_meter": "Oczekiwanie na licznik",
+          "not_supported": "Niedostępny dla licznika"
+        }
+      },
+      "han_p1": {
+        "name": "Port HAN – P1",
+        "state": {
+          "inactive": "Nieaktywny",
+          "active": "Aktywny",
+          "in_progress": "Wniosek w realizacji",
+          "waiting_for_meter": "Oczekiwanie na licznik",
+          "not_supported": "Niedostępny dla licznika"
+        }
+      },
+      "switch_state": {
+        "name": "Przekaźnik licznika",
+        "state": {
+          "on": "Załączony",
+          "off": "Wyłączony",
+          "warning": "Ostrzeżenie",
+          "removed": "Brak przekaźnika"
+        },
+        "state_attributes": {
+          "load_status": { "name": "Stan członu wykonawczego" }
+        }
+      },
+      "billing_period_start": {
+        "name": "Początek okresu rozliczeniowego",
+        "state_attributes": {
+          "period_starts": { "name": "Wykryte początki okresów" }
+        }
+      },
+      "statistics_until": {
+        "name": "Statystyki aktualne do"
       },
       "consumption_total": {
         "name": "Energia pobrana"

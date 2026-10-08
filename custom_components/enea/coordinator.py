@@ -79,6 +79,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Last day the cost catch-up got an answer from the portal for; see
         # _async_inject_missing_costs.
         self._cost_checked_until: date | None = None
+        # Newest day covered by the energy/power statistics, refreshed every update.
+        self.statistics_until: date | None = None
         self.bill_prev_reading: date | None = None
         self.bill_last_reading: date | None = None
         self.bill_estimates: dict[str, BillEstimate | None] = {
@@ -125,13 +127,19 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:
             _LOGGER.warning("Failed to update historical statistics: %s", err, exc_info=True)
 
-        # Recompute bill estimates if reading dates are configured (new stats may have arrived).
         # async_add_external_statistics is non-blocking — it only queues writes in the
         # recorder thread.  Waiting here ensures those writes are committed to the DB
-        # before _query_zone_kwh reads them, so the bill updates in the same refresh
-        # cycle that brought in new data (not only in the next one ~3.5 h later).
+        # before they are read back below, so the statistics date and the bill update
+        # in the same refresh cycle that brought in new data (not only in the next
+        # one ~3.5 h later).
+        await get_instance(self.hass).async_block_till_done()
+        try:
+            self.statistics_until = await self._async_latest_statistics_date()
+        except Exception as err:
+            _LOGGER.warning("Failed to read the latest statistics date: %s", err, exc_info=True)
+
+        # Recompute bill estimates if reading dates are configured (new stats may have arrived).
         if self.bill_prev_reading is not None or self.bill_last_reading is not None:
-            await get_instance(self.hass).async_block_till_done()
             await self.async_recompute_bills()
 
         return data
@@ -140,20 +148,15 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # Statistics helpers
     # ------------------------------------------------------------------
 
-    async def _async_fetch_and_inject_stats(self) -> None:
-        """Determine which days are missing and inject historical statistics."""
-        keys_and_types = self._get_measurement_types()
-        if not keys_and_types:
-            return
+    async def _async_latest_statistics_date(self) -> date | None:
+        """Return the local date of the newest hour across the active statistic series.
 
-        today = dt_util.now().date()
-        yesterday = today - timedelta(days=1)
-
-        # Find the most-recent date across all active statistic series.
-        # All series are queried in parallel to avoid sequential executor round-trips.
+        All series are queried in parallel to avoid sequential executor
+        round-trips.  None when no series has any statistics yet.
+        """
         stat_ids = [
             get_statistic_id(self._meter_code, STAT_NAME_BY_KEY[key])
-            for key, _ in keys_and_types
+            for key, _ in self._get_measurement_types()
             if STAT_NAME_BY_KEY.get(key)
         ]
         last_stats_list = await asyncio.gather(*(
@@ -165,21 +168,31 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         latest_date: date | None = None
         for sid, last in zip(stat_ids, last_stats_list):
-            if last.get(sid):
-                ts = last[sid][0].get("start")
-                if ts is not None:
-                    d = (
-                        dt_util.utc_from_timestamp(ts)
-                        .astimezone(dt_util.DEFAULT_TIME_ZONE)
-                        .date()
-                    )
-                    if d >= yesterday:
-                        _LOGGER.debug("Statistics already up to date (last: %s)", d)
-                        # Energy is current — check costs independently.
-                        await self._async_inject_missing_costs(yesterday)
-                        return
-                    if latest_date is None or d > latest_date:
-                        latest_date = d
+            if last.get(sid) and (ts := last[sid][0].get("start")) is not None:
+                d = (
+                    dt_util.utc_from_timestamp(ts)
+                    .astimezone(dt_util.DEFAULT_TIME_ZONE)
+                    .date()
+                )
+                if latest_date is None or d > latest_date:
+                    latest_date = d
+        return latest_date
+
+    async def _async_fetch_and_inject_stats(self) -> None:
+        """Determine which days are missing and inject historical statistics."""
+        keys_and_types = self._get_measurement_types()
+        if not keys_and_types:
+            return
+
+        today = dt_util.now().date()
+        yesterday = today - timedelta(days=1)
+
+        latest_date = await self._async_latest_statistics_date()
+        if latest_date is not None and latest_date >= yesterday:
+            _LOGGER.debug("Statistics already up to date (last: %s)", latest_date)
+            # Energy is current — check costs independently.
+            await self._async_inject_missing_costs(yesterday)
+            return
 
         if latest_date is not None:
             # Costs for the days energy already covers are settled first, and

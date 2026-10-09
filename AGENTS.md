@@ -28,17 +28,18 @@ Niniejszy projekt to custom component dla Home Assistant integrujący liczniki z
 ```
 custom_components/enea/
 ├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, _matching_coordinators, serwisy refresh/backfill
-├── connector.py     — klient HTTP (EneaApiClient, _request helper; każde żądanie logowane na poziomie debug: ścieżka z ukrytym ID licznika, status, rozmiar, czas), wyjątki, get_active_meter(), infer_phases(), mask_ppe(), hide_meter_id() (ukrywa ID licznika w ścieżce i w tekście błędów), format_address()
+├── connector.py     — klient HTTP (EneaApiClient, _request helper; każde żądanie logowane na poziomie debug: ścieżka z ukrytym ID licznika, status, rozmiar, czas), wyjątki, get_active_meter(), infer_phases(), billing_period_starts(), mask_ppe(), hide_meter_id() (ukrywa ID licznika w ścieżce i w tekście błędów), format_address()
 ├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill; klient API jako self.client; diagnostics_state() dla raportu diagnostycznego
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", "configure", reconfigure, reauth; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
-├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date, _han_port_state, _switch_state_attrs, _billing_period_starts, EneaStatisticsDateSensor
+├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date, _han_port_state, _switch_state_attrs, EneaStatisticsDateSensor
 ├── binary_sensor.py — EneaBinarySensor, BINARY_SENSOR_DESCRIPTIONS: diagnostyczne transmisja z licznikiem i dostępność portu HAN
 ├── issues.py        — async_update_issues, async_delete_issues: zgłoszenia w Naprawach (niezgodna liczba faz z enea_prices, nieznany model licznika)
 ├── date.py          — EneaBillDateEntity (Platform.DATE): edytowalne daty odczytu z RestoreEntity
-├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill; szacowanie rachunku z long-term statistics
+├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill, async_query_zone_kwh; szacowanie rachunku z long-term statistics
+├── installation.py  — DetectedInstallation, async_detect_installation, detect_billing_months, latest_reading_day, capacity_bracket: ustawienia enea_prices (fazy, okres rozliczeniowy, roczne zużycie) wyliczone z danych licznika
 ├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + _shift_later_totals (wspólny zapis serii skumulowanej dla energii i kosztów), async_statistics_overview (przegląd serii licznika do raportu diagnostycznego)
 ├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, async_cost_days_missing, _inject_cost_series, get_cost_statistic_name, find_tariff_group
-├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem): stan koordynatora (`diagnostics_state()`: m.in. ostatnie uruchomienie i błąd kroku statystyk, dni wypełnione zerami od restartu), stany encji (`_entity_states`, kluczowane kluczem encji, nie `entity_id` — ten zawiera PPE; bez `friendly_name`; stan i atrybuty sensora adresu ukryte), fazy (wywnioskowane vs enea_prices), konfiguracja enea_prices z zasięgiem tabeli taryf (`_prices_coverage`: `covered_until`, okresy), przegląd statystyk (`async_statistics_overview`, ID zamaskowane) i dane z dashboardu (`billingWeekData` tylko z energią czynną, `measurementId` 1/2); TO_REDACT + _redact_meter_data ukrywają dane logowania, adres, numer PPE, `meter_id`, `id`/`name` na najwyższym poziomie oraz `id` w `meters[]`/`agreements[]`, `serialNumber`, `agreementNumber` (ID i nazwy stref zostają). HA sam dokłada wersje HA i integracji, strefę czasową i otwarte zgłoszenia z Napraw
+├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem): stan koordynatora (`diagnostics_state()`: m.in. ostatnie uruchomienie i błąd kroku statystyk, dni wypełnione zerami od restartu), stany encji (`_entity_states`, kluczowane kluczem encji, nie `entity_id` — ten zawiera PPE; bez `friendly_name`; stan i atrybuty sensora adresu ukryte), instalacja (`installation`: wartości wykryte przez `DetectedInstallation` ze źródłami vs ustawione w enea_prices), konfiguracja enea_prices z zasięgiem tabeli taryf (`_prices_coverage`: `covered_until`, okresy), przegląd statystyk (`async_statistics_overview`, ID zamaskowane) i dane z dashboardu (`billingWeekData` tylko z energią czynną, `measurementId` 1/2); TO_REDACT + _redact_meter_data ukrywają dane logowania, adres, numer PPE, `meter_id`, `id`/`name` na najwyższym poziomie oraz `id` w `meters[]`/`agreements[]`, `serialNumber`, `agreementNumber` (ID i nazwy stref zostają). HA sam dokłada wersje HA i integracji, strefę czasową i otwarte zgłoszenia z Napraw
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
 ├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk, stałe kosztów (ENEA_PRICES_DOMAIN, UNIT_COST, COST_ZONE_DISPLAY, VAT_RATE, BILL_KEY_*)
 ├── manifest.json    — metadane integracji (wymagane przez HA/HACS/hassfest)
@@ -168,6 +169,15 @@ Koszty są obliczane przez `period.get_zone_at_hour(hour, day=day)` — `enea_pr
 
 Wywoływana: po zmianie daty przez użytkownika (z `EneaBillDateEntity.async_set_value`) i po każdym odświeżeniu danych, gdy co najmniej jedna data jest ustawiona.
 
+### Instalacja wykryta z licznika (installation.py)
+
+`enea_prices` pyta użytkownika o trzy cechy instalacji, od których zależą opłaty miesięczne: liczbę faz (składnik stały stawki sieciowej), długość okresu rozliczeniowego (opłata abonamentowa) i roczne zużycie (przedział opłaty mocowej). `async_detect_installation` wylicza je z danych Portalu Odbiorcy Enea i statystyk, każdą ze źródłem; nic nie zmienia w ustawieniach. Wynik trzyma `coordinator.detected_installation` (`DetectedInstallation`), liczony w kroku statystyk po odczycie `statistics_until` (roczne zużycie czyta świeżo uzupełnione statystyki). Krok statystyk biegnie przed przypisaniem `coordinator.data` albo długo po nim (start HA), więc dane dashboardu bierze z `_dashboard_data`, ustawianego przy każdym pobraniu. Raport diagnostyczny pokazuje wynik w sekcji `installation` obok wartości z enea_prices.
+
+- **Fazy** — `infer_phases` (model licznika, w drugiej kolejności moc umowna).
+- **Okres rozliczeniowy** — odstęp dwóch ostatnich początków okresów z `billingWeekData` (źródło `billing_periods`), w drugiej kolejności odstęp dat odczytu z encji rachunku (`reading_dates`). Liczba miesięcy = `round(dni / 30,44)`; wynik spoza `BILLING_PERIOD_MONTHS` (1, 2, 6, 12) niczego nie przesądza. Przy rozliczeniu 6- i 12-miesięcznym półroczne okno portalu zwykle ma najwyżej jedną granicę.
+- **Roczne zużycie** — wg taryfy Enea Operator: przedział ustala się z energii zużytej „w okresie jednego roku kończącego się z dniem ostatniego dokonanego odczytu” (pkt 3.1.30); kto zużywa krócej niż rok — z całego zużycia do ostatniego odczytu (pkt 3.1.31); przed pierwszym odczytem — poniżej 500 kWh (pkt 3.1.32). Dzień odczytu: późniejszy z (ostatni początek okresu z `billingWeekData` − 1 dzień, encja `bill_last_reading`); bez żadnego — ostatni dzień statystyk (`last_365_days`, szacunek). Zużycie = różnica sumy „Energia pobrana” na granicach `(rok wcześniej, dzień odczytu]` (`async_query_zone_kwh`). Brak wyniku, gdy statystyki nie sięgają dnia odczytu albo gdy aktywny licznik zamontowano w tym roku, a w `meters[]` jest wcześniejszy (wymiana licznika — statystyki mają tylko nowy, a opłata liczy zużycie odbiorcy). Bez wcześniejszego licznika krótka historia to nowe przyłącze i suma od początku jest dokładnie tym, czego chce pkt 3.1.31. Energia pobrana także u prosumentów — autokonsumpcji nie widzi ani licznik, ani Operator.
+- `capacity_bracket` mapuje zużycie na przedział 0–3 tymi samymi granicami co `MonthlyFees.get_capacity` w enea_prices (`CAPACITY_BRACKET_LIMITS_KWH`).
+
 ### Automatyczne przeładowanie
 
 `enea_prices.__init__` po swoim setup wywołuje `_async_reload_matching_enea_entries`, która przeładowuje wpisy Enea z pasującą taryfą. Dzięki temu użytkownik nie musi ręcznie przeładowywać integracji po zainstalowaniu `enea_prices`.
@@ -286,7 +296,7 @@ Dane za poprzedni dzień są dostępne zwykle po godzinie 11:00 następnego dnia
 | `transmission` | `transmissionStatus` (binary_sensor, `CONNECTIVITY`) |
 | `han_available` | `hanAvailable` (binary_sensor) |
 | `switch_state` | `switchState` (sensor ENUM) + atrybut `load_status` z `drvSwitchLoadStatus` |
-| `billing_period_start` | `billingWeekData` (sensor DATE, `_billing_period_starts`) + atrybut `period_starts` |
+| `billing_period_start` | `billingWeekData` (sensor DATE, `billing_period_starts` z `connector.py`) + atrybut `period_starts` |
 
 Liczba faz instalacji (`phases`) nie występuje w żadnym endpoincie Portalu Odbiorcy Enea (sprawdzone: dashboard PPE, `/user/ppes` — tylko `connectionVoltage: "nN"` i `bestMeterCategory: "AMI"`, `/queryParams/measuredValues/ppe/{id}` — pusta lista). `infer_phases` (`connector.py`) wnioskuje ją najpierw z modelu aktywnego licznika (`PHASES_BY_METER_MODEL` w `const.py` — wpisuj tylko modele o pewnej liczbie faz), a gdy model jest nieznany — z mocy umownej `>= PHASES_THREE_MIN_CAPACITY_KW` (12 kW, z zapasem ponad ~9,2 kW przyłącza jednofazowego 40 A) → trójfazowa. Niska moc niczego nie przesądza; wtedy stan nieznany (`None`). Atrybut `source` (`meter_model` / `contractual_capacity`) jest pomijany, gdy stan nieznany. Wynik zasila też zgłoszenia w Naprawach — patrz sekcja „Zgłoszenia w Naprawach (Repairs)”.
 
@@ -304,7 +314,7 @@ Stany portów HAN odwzorowują ikonki Portalu Odbiorcy Enea (`js/app/portHan/vie
 2026-08-06 → 10-01   długi — bieżący okres od 06.08 (kończy się na dateFrom, czyli początku bieżącego tygodnia)
 ```
 
-Wpisy dzienne między długimi segmentami nie mają znaczenia dla granic. `_billing_period_starts` zwraca `timeFrom` segmentów trwających co najmniej `BILLING_PERIOD_MIN_SEGMENT` (2 dni — odporne na dobę 25 h przy zmianie czasu), z pominięciem segmentu o indeksie 0 (początek okna). Przy rozliczeniu rocznym półroczne okno może nie zawierać żadnej granicy.
+Wpisy dzienne między długimi segmentami nie mają znaczenia dla granic. `billing_period_starts` zwraca `timeFrom` segmentów trwających co najmniej `BILLING_PERIOD_MIN_SEGMENT` (2 dni — odporne na dobę 25 h przy zmianie czasu), z pominięciem segmentu o indeksie 0 (początek okna). Przy rozliczeniu rocznym półroczne okno może nie zawierać żadnej granicy.
 
 Na razie wynik jest **tylko wyświetlany** w sensorze `billing_period_start` — użytkownik obserwuje, czy granice zgadzają się z kolejnymi fakturami.
 

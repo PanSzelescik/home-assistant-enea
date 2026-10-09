@@ -203,3 +203,19 @@ BILL_KEY_CURRENT = "bill_current"
 # cały okres rozliczeniowy; początek tych drugich to granica okresu na fakturze.  Próg
 # odróżnia je od segmentów dziennych także w dniu zmiany czasu (doba 25 h).
 BILLING_PERIOD_MIN_SEGMENT = timedelta(days=2)
+
+# ---------------------------------------------------------------------------
+# Installation — the enea_prices settings worked out from the meter data
+# ---------------------------------------------------------------------------
+
+# Długości okresu rozliczeniowego, dla których taryfa ma stawkę abonamentową (miesiące).
+BILLING_PERIOD_MONTHS = (1, 2, 6, 12)
+AVERAGE_MONTH_DAYS = 30.44
+# Przedziały rocznego zużycia opłaty mocowej (pkt 3.1.29 taryfy Enea Operator, art. 89b
+# ust. 3 ustawy o rynku mocy): poniżej 500, od 500 do 1200, powyżej 1200 do 2800,
+# powyżej 2800 kWh.  Tu górne granice trzech pierwszych (druga i trzecia włącznie).
+CAPACITY_BRACKET_LIMITS_KWH = (500, 1200, 2800)
+# Skąd wzięto wartość — raport diagnostyczny i (dalej) teksty podpowiedzi.
+INSTALLATION_SOURCE_BILLING_PERIODS = "billing_periods"
+INSTALLATION_SOURCE_READING_DATES = "reading_dates"
+INSTALLATION_SOURCE_LAST_365_DAYS = "last_365_days"

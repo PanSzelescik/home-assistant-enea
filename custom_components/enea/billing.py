@@ -184,7 +184,7 @@ async def async_estimate_bill(
         stat_name = f"Energia pobrana – {zone_display}"
         zone_stat_ids[zone_display] = get_statistic_id(meter_code, stat_name)
 
-    kwh_by_zone = await _query_zone_kwh(hass, zone_stat_ids, start, end)
+    kwh_by_zone = await async_query_zone_kwh(hass, zone_stat_ids, start, end)
 
     energy_by_zone_netto: dict[str, float] = {}
     variable_network_by_zone_netto: dict[str, float] = {}
@@ -255,7 +255,7 @@ async def async_estimate_bill(
     )
 
 
-async def _query_zone_kwh(
+async def async_query_zone_kwh(
     hass: HomeAssistant,
     zone_stat_ids: dict[str, str],
     d1: date,

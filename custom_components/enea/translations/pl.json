@@ -8,14 +8,16 @@
           "fetch_consumption": "Pobieraj statystyki energii pobranej",
           "fetch_generation": "Pobieraj statystyki energii oddanej",
           "fetch_power_consumption": "Pobieraj statystyki mocy pobranej",
-          "fetch_power_generation": "Pobieraj statystyki mocy oddanej"
+          "fetch_power_generation": "Pobieraj statystyki mocy oddanej",
+          "net_metering": "System opustów"
         },
         "data_description": {
           "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 3h 30min.",
           "fetch_consumption": "Włącz, aby wyświetlać sensory energii pobranej i importować godzinowe statystyki do Energy Dashboard.",
           "fetch_generation": "Włącz, aby wyświetlać sensory energii oddanej do sieci i importować godzinowe statystyki. Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
           "fetch_power_consumption": "Włącz, aby importować godzinowe statystyki mocy pobranej (kW).",
-          "fetch_power_generation": "Włącz, aby importować godzinowe statystyki mocy oddanej (kW). Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji."
+          "fetch_power_generation": "Włącz, aby importować godzinowe statystyki mocy oddanej (kW). Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
+          "net_metering": "Prosument przyłączony do 31.03.2022 rozlicza energię oddaną w systemie opustów: z każdej oddanej kWh odbiera bez opłat 0,8 kWh (instalacja do 10 kW) albo 0,7 kWh (powyżej 10 kW). Współczynnik obniża szacowany rachunek i wycenę energii oddanej w panelu Energia. Przy net-billingu wybierz „Brak”."
         }
       }
     },
@@ -48,14 +50,16 @@
           "fetch_consumption": "Pobieraj statystyki energii pobranej",
           "fetch_generation": "Pobieraj statystyki energii oddanej",
           "fetch_power_consumption": "Pobieraj statystyki mocy pobranej",
-          "fetch_power_generation": "Pobieraj statystyki mocy oddanej"
+          "fetch_power_generation": "Pobieraj statystyki mocy oddanej",
+          "net_metering": "System opustów"
         },
         "data_description": {
           "update_interval": "Jak często pobierać dane z Portalu Odbiorcy Enea. Minimum 30 minut, domyślnie 3h 30min.",
           "fetch_consumption": "Włącz, aby wyświetlać sensory energii pobranej i importować godzinowe statystyki do Energy Dashboard.",
           "fetch_generation": "Włącz, aby wyświetlać sensory energii oddanej do sieci i importować godzinowe statystyki. Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
           "fetch_power_consumption": "Włącz, aby importować godzinowe statystyki mocy pobranej (kW).",
-          "fetch_power_generation": "Włącz, aby importować godzinowe statystyki mocy oddanej (kW). Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji."
+          "fetch_power_generation": "Włącz, aby importować godzinowe statystyki mocy oddanej (kW). Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
+          "net_metering": "Prosument przyłączony do 31.03.2022 rozlicza energię oddaną w systemie opustów: z każdej oddanej kWh odbiera bez opłat 0,8 kWh (instalacja do 10 kW) albo 0,7 kWh (powyżej 10 kW). Współczynnik obniża szacowany rachunek i wycenę energii oddanej w panelu Energia. Przy net-billingu wybierz „Brak”."
         }
       },
       "reauth": {
@@ -228,12 +232,21 @@
           "months": { "name": "Miesiące" },
           "kwh_dzien": { "name": "Zużycie Dzień (kWh)" },
           "energy_dzien_netto": { "name": "Energia elektryczna czynna Dzień (netto)" },
+          "returned_kwh_dzien": { "name": "Energia oddana Dzień (kWh)" },
+          "billed_kwh_dzien": { "name": "Zużycie po opuście Dzień (kWh)" },
           "kwh_noc": { "name": "Zużycie Noc (kWh)" },
           "energy_noc_netto": { "name": "Energia elektryczna czynna Noc (netto)" },
+          "returned_kwh_noc": { "name": "Energia oddana Noc (kWh)" },
+          "billed_kwh_noc": { "name": "Zużycie po opuście Noc (kWh)" },
           "kwh_szczyt": { "name": "Zużycie Szczyt (kWh)" },
           "energy_szczyt_netto": { "name": "Energia elektryczna czynna Szczyt (netto)" },
+          "returned_kwh_szczyt": { "name": "Energia oddana Szczyt (kWh)" },
+          "billed_kwh_szczyt": { "name": "Zużycie po opuście Szczyt (kWh)" },
           "kwh_poza_szczytem": { "name": "Zużycie Poza szczytem (kWh)" },
           "energy_poza_szczytem_netto": { "name": "Energia elektryczna czynna Poza szczytem (netto)" },
+          "returned_kwh_poza_szczytem": { "name": "Energia oddana Poza szczytem (kWh)" },
+          "billed_kwh_poza_szczytem": { "name": "Zużycie po opuście Poza szczytem (kWh)" },
+          "net_metering_left_kwh": { "name": "Niewykorzystany opust (kWh)" },
           "energy_netto": { "name": "Ogółem wartość – sprzedaż energii (netto)" },
           "fixed_network_netto": { "name": "Opłata stała sieciowa (netto)" },
           "fixed_capacity_netto": { "name": "Opłata mocowa (netto)" },
@@ -266,12 +279,21 @@
           "months": { "name": "Miesiące" },
           "kwh_dzien": { "name": "Zużycie Dzień (kWh)" },
           "energy_dzien_netto": { "name": "Energia elektryczna czynna Dzień (netto)" },
+          "returned_kwh_dzien": { "name": "Energia oddana Dzień (kWh)" },
+          "billed_kwh_dzien": { "name": "Zużycie po opuście Dzień (kWh)" },
           "kwh_noc": { "name": "Zużycie Noc (kWh)" },
           "energy_noc_netto": { "name": "Energia elektryczna czynna Noc (netto)" },
+          "returned_kwh_noc": { "name": "Energia oddana Noc (kWh)" },
+          "billed_kwh_noc": { "name": "Zużycie po opuście Noc (kWh)" },
           "kwh_szczyt": { "name": "Zużycie Szczyt (kWh)" },
           "energy_szczyt_netto": { "name": "Energia elektryczna czynna Szczyt (netto)" },
+          "returned_kwh_szczyt": { "name": "Energia oddana Szczyt (kWh)" },
+          "billed_kwh_szczyt": { "name": "Zużycie po opuście Szczyt (kWh)" },
           "kwh_poza_szczytem": { "name": "Zużycie Poza szczytem (kWh)" },
           "energy_poza_szczytem_netto": { "name": "Energia elektryczna czynna Poza szczytem (netto)" },
+          "returned_kwh_poza_szczytem": { "name": "Energia oddana Poza szczytem (kWh)" },
+          "billed_kwh_poza_szczytem": { "name": "Zużycie po opuście Poza szczytem (kWh)" },
+          "net_metering_left_kwh": { "name": "Niewykorzystany opust (kWh)" },
           "energy_netto": { "name": "Ogółem wartość – sprzedaż energii (netto)" },
           "fixed_network_netto": { "name": "Opłata stała sieciowa (netto)" },
           "fixed_capacity_netto": { "name": "Opłata mocowa (netto)" },
@@ -295,6 +317,15 @@
           "distribution_netto": { "name": "Ogółem wartość – usługa dystrybucji (netto)" },
           "total_netto": { "name": "Ogółem wartość (netto)" }
         }
+      }
+    }
+  },
+  "selector": {
+    "net_metering": {
+      "options": {
+        "none": "Brak (net-billing)",
+        "0_8": "0,8 – instalacja do 10 kW",
+        "0_7": "0,7 – instalacja powyżej 10 kW"
       }
     }
   },

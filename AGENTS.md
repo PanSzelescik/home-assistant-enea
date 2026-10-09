@@ -129,6 +129,8 @@ Dzięki temu `enea_prices` nie jest twardą zależnością i integracja nie wyma
 
 ### Statystyki kosztów = statystyki zewnętrzne (jak energia)
 
+Koszt energii oddanej to energia oddana × cena brutto kWh strefy × `returned_ratio` (`_returned_cost_ratio` koordynatora: współczynnik opustów prosumenta, bez niego 1.0). Współczynnik różny od 1.0 wchodzi do skrótu cen (`price_signatures`), więc zmiana opcji przelicza historię kosztów; przy 1.0 skrót jest taki jak przed wprowadzeniem opcji.
+
 Kierunek, dla którego cały przetwarzany zakres ma zerowe zużycie, jest pomijany — licznik bez fotowoltaiki raportuje dla energii oddanej zera, a nie `null`, więc `has_data()` je akceptuje i powstałby szereg kosztowy złożony z samych `0.00 PLN`. Strażnik (`_has_stored_costs`) decyduje wyłącznie o **założeniu** serii, nie o jej kontynuacji: gdy dla kierunku istnieją już statystyki kosztów, zera przechodzą normalnie — utrzymują ciągłość serii, pozwalają skorygować dzień do zera i przesuwają najnowszą datę kosztów (bez tego kilkudniowa awaria portalu, importowana jako dni wyzerowane, byłaby pobierana ponownie przy każdym odświeżeniu).
 
 Statystyki kosztów używają **`async_add_external_statistics`** z `source=DOMAIN` i `statistic_id` w formacie `enea:{meter_code}_{slugify(name)}` (np. `enea:..._koszt_energii_pobrana_dzien`) — **dokładnie jak statystyki energii**. Nazwa budowana jest przez `get_cost_statistic_name(direction, zone_str)` = `f"Koszt energii {direction} – {zone_display}"`, więc `statistic_id` powstaje przez wspólne `get_statistic_id(meter_code, name)` ze `statistics.py`.
@@ -174,6 +176,7 @@ Koszty są obliczane przez `period.get_zone_at_hour(hour, day=day)` — `enea_pr
 `async_estimate_bill(hass, meter_code, cfg, start, end)` → `BillEstimate` (metoda jak faktura Enea, ale kWh precyzyjne):
 - kWh per strefa = precyzyjna różnica sum skumulowanych statystyk zewnętrznych `enea:..._energia_pobrana_{strefa}` na granicach `(start, end]` (bez zaokrąglania do całości). Nazwa strefy w `statistic_id` to nazwa z Portalu Odbiorcy Enea: `BILL_ZONE_PORTAL_NAMES` (`const.py`), a gdy strefy tam nie ma — `COST_ZONE_DISPLAY`. Przykład: G12w `off_peak` to w portalu „Pozaszczyt”, a w kosztach i atrybutach rachunku „Poza szczytem”.
 - **Sprzedaż energii** netto per strefa = `round(kWh × (zone.energy + cfg.akcyza), 2)`.
+- **System opustów** (`net_metering_ratio` = opcja `net_metering`, tylko prosument): energia i opłaty zmienne liczone od `billed_kwh_by_zone` z `settle_net_metering` — energia oddana (statystyki `Energia oddana – {nazwa z portalu}`) × współczynnik rozlicza najpierw pobór tej samej strefy, nadwyżka idzie na pozostałe strefy od najwyższej `variable_network` (rozporządzenie o rozliczeniach prosumentów); reszta to `net_metering_left_kwh`. Bez przenoszenia nadwyżki między okresami (ważność 12 miesięcy, najpierw najstarsza energia). Opłaty stałe bez zmian.
 - **Usługa dystrybucji** — cztery składniki zaokrąglane osobno per strefa: `round(kWh × zone.variable_network, 2)`, `round(kWh × zone.quality, 2)`, `round(kWh × zone.oze, 2)`, `round(kWh × zone.cogeneration, 2)`.
 - Opłaty stałe netto = `round(network_fixed × months, 2)` + `round(capacity × months, 2)` + `round(subscription × months, 2)`.
 - `total_netto = round(energy_netto + distribution_netto, 2)`, `total = round(total_netto × 1.23, 2)` — VAT doliczany raz na końcu.
@@ -351,7 +354,7 @@ Tworzone gdy `find_tariff_group` zwraca pasującą taryfę z `enea_prices`.
 - Dwie encje `DateEntity` (Platform.DATE, `RestoreEntity`) — „Data poprzedniego odczytu" i „Data ostatniego odczytu". Po zmianie daty wołają `coordinator.async_recompute_bills()`.
 - Dwa sensory `EneaBillSensor` (Platform.SENSOR) — „Szacowany rachunek – poprzedni okres" i „Szacowany rachunek – bieżący okres". `device_class=MONETARY`, PLN, **bez `state_class`**. `native_value` z `coordinator.bill_estimates[key].total`.
 - `coordinator.bill_estimates` (dict `BILL_KEY_PREVIOUS/CURRENT → BillEstimate | None`) przeliczany przez `async_recompute_bills()` — wywołanie: po zmianie daty, po każdym odświeżeniu gdy daty są ustawione.
-- `BillEstimate` z `billing.py`: `kwh_by_zone` (float), `energy_by_zone_netto`, `variable_network_by_zone_netto`, `quality_by_zone_netto`, `oze_by_zone_netto`, `cogeneration_by_zone_netto`, `energy_netto`, `distribution_netto`, `fixed_network_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `total_netto`, `total` (jedyne brutto = stan sensora), `months`, `start`, `end`. Atrybuty sensora (w kolejności faktury): `start`, `end`, `months` → `kwh_{strefa}`, `energy_{strefa}_netto` per strefa → `energy_netto` → `fixed_network_netto`, `fixed_capacity_netto` → `variable_network_{strefa}_netto`, `quality_{strefa}_netto`, `oze_{strefa}_netto`, `cogeneration_{strefa}_netto` per strefa → `fixed_subscription_netto` → `distribution_netto` → `total_netto`.
+- `BillEstimate` z `billing.py`: `kwh_by_zone` (float), `energy_by_zone_netto`, `variable_network_by_zone_netto`, `quality_by_zone_netto`, `oze_by_zone_netto`, `cogeneration_by_zone_netto`, `energy_netto`, `distribution_netto`, `fixed_network_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `total_netto`, `total` (jedyne brutto = stan sensora), `months`, `start`, `end`, a przy opustach `returned_kwh_by_zone`, `billed_kwh_by_zone`, `net_metering_left_kwh` (bez opustów puste / `None`). Atrybuty sensora (w kolejności faktury): `start`, `end`, `months` → `kwh_{strefa}`, (opusty: `returned_kwh_{strefa}`, `billed_kwh_{strefa}`), `energy_{strefa}_netto` per strefa → (opusty: `net_metering_left_kwh`) → `energy_netto` → `fixed_network_netto`, `fixed_capacity_netto` → `variable_network_{strefa}_netto`, `quality_{strefa}_netto`, `oze_{strefa}_netto`, `cogeneration_{strefa}_netto` per strefa → `fixed_subscription_netto` → `distribution_netto` → `total_netto`.
 
 ## Zgłoszenia w Naprawach (Repairs)
 
@@ -402,6 +405,7 @@ Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**
 | `fetch_generation` | `True` | Pobieranie statystyk i sensorów energii oddanej |
 | `fetch_power_consumption` | `False` | Pobieranie statystyk mocy pobranej (kW) |
 | `fetch_power_generation` | `False` | Pobieranie statystyk mocy oddanej (kW) |
+| `net_metering` | `none` | System opustów prosumenta: `none` / `0_8` / `0_7` (`NET_METERING_RATIOS`). Pole tylko dla licznika prosumenta (`coordinator.prosumer`; w kroku `configure` — `type` z `/user/ppes`; zostaje edytowalne, gdy już ustawione). Koordynator stosuje je tylko dla prosumenta (`_net_metering`) |
 
 Zmiana opcji powoduje natychmiastowy reload integracji (`EneaOptionsFlow` dziedziczy po `OptionsFlowWithReload`). Integracja nie ma update listenera — przeładowywałby wpis także przy zapisie `entry.data` przez koordynator (`CONF_BALANCED_HISTORY`).
 

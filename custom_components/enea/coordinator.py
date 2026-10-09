@@ -84,6 +84,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         fetch_generation: bool = True,
         fetch_power_consumption: bool = False,
         fetch_power_generation: bool = False,
+        net_metering_ratio: float | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -105,6 +106,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._tariff_name: str | None = None
         # A prosumer's energy is fetched after balancing, as the invoice settles it.
         self._prosumer = False
+        # The prosumer's net-metering ratio (0.8/0.7) from the options; None without.
+        self._net_metering_ratio = net_metering_ratio
         self._assembly_datetime: datetime | None = None
         self._backfill_task: asyncio.Task[None] | None = None
         # The task swallows its own failure (it only logs it), so the error is kept
@@ -176,6 +179,21 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._prosumer and mtype in BALANCED_MEASUREMENT_TYPES:
             return DataSource.AFTER_BALANCING
         return None
+
+    @property
+    def prosumer(self) -> bool:
+        """Return True when the dashboard reports a prosumer's meter."""
+        return self._prosumer
+
+    @property
+    def _net_metering(self) -> float | None:
+        """Return the net-metering ratio in force: only a prosumer's meter has one."""
+        return self._net_metering_ratio if self._prosumer else None
+
+    @property
+    def _returned_cost_ratio(self) -> float:
+        """Return the share of its price a returned kWh is costed at."""
+        return self._net_metering if self._net_metering is not None else 1.0
 
     def _uses_balanced_data(self) -> bool:
         """Return True when at least one fetched series comes from balanced data."""
@@ -440,6 +458,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 tariff,
                 self._fetch_consumption,
                 self._fetch_generation,
+                self._returned_cost_ratio,
             )
             await self._async_save_cost_prices(tariff, all_days[0][0], all_days[-1][0])
 
@@ -507,6 +526,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {
             "fetch_types": [key for key, _ in self._get_measurement_types()],
             "balanced_data": self._uses_balanced_data(),
+            "net_metering_ratio": self._net_metering,
             "tariff": self._tariff_name,
             "assembly_datetime": iso(self._assembly_datetime),
             "statistics_until": iso(self.statistics_until),
@@ -597,6 +617,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 tariff,
                 self._fetch_consumption,
                 self._fetch_generation,
+                self._returned_cost_ratio,
             )
             _LOGGER.debug("Injected cost statistics for %d day(s)", len(days))
         # Remember the last day the portal answered.  A meter whose every
@@ -648,7 +669,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self._async_save_cost_prices(tariff, first, latest)
             return
         start = first_repriced_day(
-            stored, price_signatures(tariff, first, latest), first, latest
+            stored,
+            price_signatures(tariff, first, latest, self._returned_cost_ratio),
+            first,
+            latest,
         )
         if start is None:
             return
@@ -671,6 +695,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 tariff,
                 self._fetch_consumption,
                 self._fetch_generation,
+                self._returned_cost_ratio,
             )
             # The catch-up that follows counts on from the newest cost total,
             # which the rewrite above may have moved, so it has to be committed
@@ -696,7 +721,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         while day <= last:
             prices.pop(day.isoformat(), None)
             day += timedelta(days=1)
-        prices.update(price_signatures(tariff, first, last))
+        prices.update(price_signatures(tariff, first, last, self._returned_cost_ratio))
         self._cost_prices = prices
         await self._cost_prices_store.async_save({"days": prices})
 
@@ -1084,7 +1109,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         prev: BillEstimate | None = None
         if d1 is not None and d2 is not None and d1 < d2:
             try:
-                prev = await async_estimate_bill(self.hass, self._meter_code, cfg, d1, d2)
+                prev = await async_estimate_bill(
+                    self.hass, self._meter_code, cfg, d1, d2, self._net_metering
+                )
             except Exception as err:
                 _LOGGER.warning("Failed to estimate previous bill: %s", err, exc_info=True)
 
@@ -1092,7 +1119,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if d2 is not None and d2 < yesterday:
             try:
                 current = await async_estimate_bill(
-                    self.hass, self._meter_code, cfg, d2, yesterday
+                    self.hass, self._meter_code, cfg, d2, yesterday, self._net_metering
                 )
             except Exception as err:
                 _LOGGER.warning("Failed to estimate current bill: %s", err, exc_info=True)

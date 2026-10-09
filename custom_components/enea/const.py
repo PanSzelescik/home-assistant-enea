@@ -45,6 +45,8 @@ CONF_FETCH_CONSUMPTION = "fetch_consumption"
 CONF_FETCH_GENERATION = "fetch_generation"
 CONF_FETCH_POWER_CONSUMPTION = "fetch_power_consumption"
 CONF_FETCH_POWER_GENERATION = "fetch_power_generation"
+# Współczynnik systemu opustów prosumenta: DEFAULT_NET_METERING („none”) albo klucz NET_METERING_RATIOS.
+CONF_NET_METERING = "net_metering"
 # Set once a prosumer's energy history has been imported from balanced data.
 CONF_BALANCED_HISTORY = "balanced_history"
 
@@ -148,6 +150,7 @@ SERVICE_BACKFILL = "backfill"
 
 DEFAULT_UPDATE_INTERVAL_DICT: dict[str, int] = {"hours": 3, "minutes": 30, "seconds": 0}
 MIN_UPDATE_INTERVAL_MINUTES = 30
+DEFAULT_NET_METERING = "none"
 METERS_CACHE_TTL = timedelta(minutes=5)
 
 # ---------------------------------------------------------------------------
@@ -234,6 +237,15 @@ COST_ZONE_DISPLAY: dict[str, str] = {
 # zmian, bo jego nazwa jest częścią statistic_id kosztów i nazw atrybutów rachunku.
 BILL_ZONE_PORTAL_NAMES: dict[str, str] = {
     "off_peak": "Pozaszczyt",  # G12w
+}
+
+# System opustów (prosumenci przyłączeni do 31.03.2022, art. 4 ustawy o OZE): z każdej kWh
+# oddanej do sieci można odebrać bez opłat za energię i zmiennych opłat dystrybucyjnych
+# 0,8 kWh (mikroinstalacja do 10 kW) albo 0,7 kWh (powyżej 10 kW).  Opcja licznika
+# prosumenta; DEFAULT_NET_METERING („none”) to brak opustów, np. net-billing.
+NET_METERING_RATIOS: dict[str, float] = {
+    "0_8": 0.8,
+    "0_7": 0.7,
 }
 
 # Bill estimate entity keys

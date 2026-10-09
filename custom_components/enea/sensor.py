@@ -530,7 +530,9 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
 
         Top-level keys: start, end, months, total_netto, total (brutto = state).
         Section 'Sprzedaż energii': energy_netto + per-zone kwh_<zone> and
-        energy_<zone>_netto.
+        energy_<zone>_netto; under net metering also returned_kwh_<zone>,
+        billed_kwh_<zone> (what energy and variable fees are charged on) and
+        net_metering_left_kwh.
         Section 'Usługa dystrybucji': distribution_netto (sum) + fixed fees
         (fixed_network_netto, fixed_capacity_netto, fixed_subscription_netto) +
         per-zone components: variable_network_<zone>_netto, quality_<zone>_netto,
@@ -554,7 +556,12 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
         for zone_display, kwh in est.kwh_by_zone.items():
             safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
             attrs[f"kwh_{safe}"] = kwh
+            if est.returned_kwh_by_zone:
+                attrs[f"returned_kwh_{safe}"] = est.returned_kwh_by_zone.get(zone_display, 0.0)
+                attrs[f"billed_kwh_{safe}"] = est.billed_kwh_by_zone.get(zone_display, 0.0)
             attrs[f"energy_{safe}_netto"] = est.energy_by_zone_netto.get(zone_display, 0.0)
+        if est.net_metering_left_kwh is not None:
+            attrs["net_metering_left_kwh"] = est.net_metering_left_kwh
         attrs["energy_netto"] = est.energy_netto
         # Usługa dystrybucji — kolejność jak na fakturze Enea
         attrs["fixed_network_netto"] = est.fixed_network_netto

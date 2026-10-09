@@ -11,6 +11,9 @@ same calculation method as Enea's invoices:
      OZE, cogeneration) plus fixed monthly fees (network, capacity, subscription).
 3. VAT (23%) is applied **once** to the total netto at the very end:
    total = round(total_netto × 1.23, 2).
+4. A prosumer under net metering (system opustów) pays energy and the variable
+   distribution fees only for the consumption left after the returned energy
+   times the ratio (0.8/0.7) is settled against it — see settle_net_metering.
 
 Requires the enea_prices integration to be configured with a matching tariff.
 """
@@ -19,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
@@ -112,6 +115,16 @@ class BillEstimate:
     end: date
     """Period end (inclusive) — day of the current meter reading."""
 
+    returned_kwh_by_zone: dict[str, float] = field(default_factory=dict)
+    """Returned kWh per zone; empty without net metering."""
+
+    billed_kwh_by_zone: dict[str, float] = field(default_factory=dict)
+    """Consumed kWh per zone left to pay for after net metering; energy and the
+    variable distribution fees are charged on it.  Empty without net metering."""
+
+    net_metering_left_kwh: float | None = None
+    """Net-metering credit left over in the period, kWh; None without net metering."""
+
 
 def find_prices_config(hass: HomeAssistant, tariff_name: str | None) -> PricesConfig | None:
     """Return PricesConfig from the matching enea_prices entry, or None.
@@ -164,12 +177,41 @@ def find_prices_entry(hass: HomeAssistant, tariff_name: str | None) -> ConfigEnt
     )
 
 
+def settle_net_metering(
+    consumed: dict[str, float],
+    returned: dict[str, float],
+    ratio: float,
+    order: list[str],
+) -> tuple[dict[str, float], float]:
+    """Return the consumed kWh per zone left to pay for and the credit left over.
+
+    Follows the regulation on settling prosumers: each zone's returned energy
+    times the ratio is first set against the consumption in the same zone, and
+    whatever is left goes to the other zones, from the one with the highest
+    variable network rate down (order).  Energy carried over from earlier
+    periods is not counted.
+    """
+    billed: dict[str, float] = {}
+    surplus = 0.0
+    for zone, kwh in consumed.items():
+        credit = returned.get(zone, 0.0) * ratio
+        used = min(kwh, credit)
+        billed[zone] = kwh - used
+        surplus += credit - used
+    for zone in order:
+        taken = min(billed.get(zone, 0.0), surplus)
+        billed[zone] = billed.get(zone, 0.0) - taken
+        surplus -= taken
+    return {zone: round(kwh, 3) for zone, kwh in billed.items()}, round(surplus, 3)
+
+
 async def async_estimate_bill(
     hass: HomeAssistant,
     meter_code: str,
     cfg: PricesConfig,
     start: date,
     end: date,
+    net_metering_ratio: float | None = None,
 ) -> BillEstimate | None:
     """Estimate the electricity bill for the period (start, end].
 
@@ -187,6 +229,8 @@ async def async_estimate_bill(
         cfg: Prices configuration from the matching enea_prices entry.
         start: Day of the previous reading (exclusive boundary).
         end: Day of the current reading (inclusive boundary).
+        net_metering_ratio: The prosumer's net-metering ratio (0.8 or 0.7), or
+            None when the meter is not settled by net metering.
 
     Returns:
         BillEstimate or None if period is empty or statistics are unavailable.
@@ -202,13 +246,38 @@ async def async_estimate_bill(
     # Map each tariff zone to its external statistics ID, named after the
     # Portal Odbiorcy Enea's zone, which may differ from the display name.
     zone_stat_ids: dict[str, str] = {}
+    returned_stat_ids: dict[str, str] = {}
     for zone in period.zones:
         zone_display = COST_ZONE_DISPLAY.get(str(zone), str(zone))
         portal_name = BILL_ZONE_PORTAL_NAMES.get(str(zone), zone_display)
-        stat_name = f"Energia pobrana – {portal_name}"
-        zone_stat_ids[zone_display] = get_statistic_id(meter_code, stat_name)
+        zone_stat_ids[zone_display] = get_statistic_id(
+            meter_code, f"Energia pobrana – {portal_name}"
+        )
+        returned_stat_ids[zone_display] = get_statistic_id(
+            meter_code, f"Energia oddana – {portal_name}"
+        )
 
     kwh_by_zone = await async_query_zone_kwh(hass, zone_stat_ids, start, end)
+
+    returned_kwh_by_zone: dict[str, float] = {}
+    billed_kwh_by_zone = kwh_by_zone
+    net_metering_left_kwh: float | None = None
+    if net_metering_ratio is not None:
+        returned_kwh_by_zone = await async_query_zone_kwh(
+            hass, returned_stat_ids, start, end
+        )
+        # A surplus goes first to the zone with the highest variable network rate.
+        order = [
+            COST_ZONE_DISPLAY.get(str(zone), str(zone))
+            for zone in sorted(
+                period.zones,
+                key=lambda zone: period.zones[zone].variable_network,
+                reverse=True,
+            )
+        ]
+        billed_kwh_by_zone, net_metering_left_kwh = settle_net_metering(
+            kwh_by_zone, returned_kwh_by_zone, net_metering_ratio, order
+        )
 
     energy_by_zone_netto: dict[str, float] = {}
     variable_network_by_zone_netto: dict[str, float] = {}
@@ -218,7 +287,7 @@ async def async_estimate_bill(
 
     for zone in period.zones:
         zone_display = COST_ZONE_DISPLAY.get(str(zone), str(zone))
-        kwh = kwh_by_zone.get(zone_display, 0)
+        kwh = billed_kwh_by_zone.get(zone_display, 0)
         pricing = period.zones[zone]
 
         # Sprzedaż energii: energia netto = (cena energii + akcyza) × kWh
@@ -276,6 +345,9 @@ async def async_estimate_bill(
         months=months,
         start=start,
         end=end,
+        returned_kwh_by_zone=returned_kwh_by_zone,
+        billed_kwh_by_zone=billed_kwh_by_zone if net_metering_ratio is not None else {},
+        net_metering_left_kwh=net_metering_left_kwh,
     )
 
 

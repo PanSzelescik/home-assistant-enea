@@ -166,6 +166,7 @@ async def test_report_keeps_what_diagnosis_needs(report: dict[str, Any]) -> None
             "annual_kwh": 3170.0,
             "annual_kwh_source": "billing_periods",
             "annual_kwh_until": "2026-08-05",
+            "annual_kwh_partial": False,
             "capacity_bracket": 3,
         },
         "enea_prices": {"phases": 1, "billing_months": 2, "annual_kwh": 5000},

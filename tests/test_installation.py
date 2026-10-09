@@ -147,6 +147,22 @@ async def test_a_meter_replaced_within_the_year_settles_nothing(detect) -> None:
     assert detected.annual_kwh_until is None
 
 
+async def test_a_replaced_meter_past_the_top_limit_still_settles_the_bracket(detect) -> None:
+    """Half a year on the new meter is over 2800 kWh: the whole year can only be more.
+
+    The case of a meter replaced in March 2026 (MT174 → OTUS3), which used
+    3207 kWh by October and was left with no consumption at all.
+    """
+    detected = await detect(
+        {date(2026, 3, 21): 10.0, READING: 3217.0},
+        _dashboard([date(2026, 6, 6), date(2026, 8, 6)], assembled=date(2026, 3, 20), replaced=True),
+    )
+
+    assert detected.annual_kwh == pytest.approx(3217.0)
+    assert detected.annual_kwh_partial
+    assert installation.capacity_bracket(detected.annual_kwh) == 3
+
+
 async def test_statistics_short_of_the_reading_settle_nothing(detect) -> None:
     detected = await detect(
         {date(2025, 8, 5): 1000.0, date(2026, 7, 30): 4000.0},

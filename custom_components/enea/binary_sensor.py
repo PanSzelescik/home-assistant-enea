@@ -55,6 +55,8 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[EneaBinarySensorEntityDescription, ...] = (
         translation_key=BINARY_SENSOR_KEY_HAN_AVAILABLE,
         icon="mdi:access-point-network",
         entity_category=EntityCategory.DIAGNOSTIC,
+        # Niszowa — domyślnie wyłączona, użytkownik włącza w razie potrzeby.
+        entity_registry_enabled_default=False,
         value_fn=lambda data: _optional_bool(data.get("hanAvailable")),
     ),
 )

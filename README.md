@@ -165,12 +165,14 @@ Tworzone gdy integracja `enea_prices` jest skonfigurowana z pasującą taryfą.
 | Model licznika | Model aktualnie zamontowanego licznika | OTUS3                       |
 | Typ instalacji | Jednofazowa / Trójfazowa — wnioskowany z modelu licznika lub mocy umownej (≥ 12 kW); gdy nie da się ustalić: nieznany | Trójfazowa                  |
 | Transmisja z licznikiem | Czy licznik przesyła dane do Enei | Połączono                   |
-| Port HAN dostępny | Czy licznik obsługuje port HAN | Włączony                    |
-| Port HAN – Wireless M-Bus | Stan portu HAN Wireless M-Bus: Nieaktywny / Aktywny / Wniosek w realizacji / Oczekiwanie na licznik / Niedostępny dla licznika | Nieaktywny                  |
-| Port HAN – P1 | Stan portu HAN P1 (stany jak wyżej) | Nieaktywny                  |
-| Przekaźnik licznika | Stan przekaźnika do zdalnego odłączania zasilania: Załączony / Wyłączony / Ostrzeżenie / Brak przekaźnika | Załączony                   |
+| Port HAN dostępny ¹ | Czy licznik obsługuje port HAN | Włączony                    |
+| Port HAN – Wireless M-Bus ¹ | Stan portu HAN Wireless M-Bus: Nieaktywny / Aktywny / Wniosek w realizacji / Oczekiwanie na licznik / Niedostępny dla licznika | Nieaktywny                  |
+| Port HAN – P1 ¹ | Stan portu HAN P1 (stany jak wyżej) | Nieaktywny                  |
+| Przekaźnik licznika ¹ | Stan przekaźnika do zdalnego odłączania zasilania: Załączony / Wyłączony / Ostrzeżenie / Brak przekaźnika | Załączony                   |
 | Początek okresu rozliczeniowego | Pierwszy dzień bieżącego okresu na fakturze, wykryty z Portalu Odbiorcy Enea (eksperymentalne) | 6 sierpnia 2026             |
 | Statystyki aktualne do | Ostatni dzień zaimportowany do statystyk Energy Dashboard — pozwala zauważyć opóźnienia lub luki w danych Portalu Odbiorcy Enea | 7 października 2026         |
+
+¹ Domyślnie wyłączone — włączysz je w ustawieniach encji urządzenia. Dotyczy nowo dodanych liczników; u istniejących zostają tak, jak były.
 
 ## Opcje
 

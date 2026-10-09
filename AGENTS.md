@@ -11,7 +11,7 @@
   5. **Statistics API** — `MEASUREMENT_ID_*`, `MeasurementType`, `Resolution`, `BACKFILL_*`, `RANGE_FETCH_CHUNK_DAYS`
 - Każda nowa funkcja, metoda i klasa musi mieć **docstring**.
 - **Stan encji koordynatora przypisuj do pól `_attr_*`, nie licz go we właściwości z `@cached_property`.** HA unieważnia swoje buforowane właściwości encji (`native_value`, `is_on`, `extra_state_attributes`, …) tylko przy przypisaniu odpowiadającego pola `_attr_*`, a `CoordinatorEntity._handle_coordinator_update()` jedynie wywołuje `async_write_ha_state()` — `@cached_property` zostawia więc pierwszą wartość aż do restartu. Wzorzec w integracji: metoda `_update_attrs()` liczy stan z `coordinator.data` i przypisuje `_attr_*`; woła ją `__init__` oraz nadpisane `_handle_coordinator_update()` (przed `super()`). Zwykłe `@property` też działa (np. `EneaBillSensor`), ale Pyright zgłasza wtedy `reportIncompatibleVariableOverride`.
-- **Logi i raport diagnostyczny trafiają do publicznych zgłoszeń na GitHubie** (czytać je może także Enea). Nigdy nie loguj pełnego numeru PPE ani wewnętrznego ID licznika z Portalu Odbiorcy Enea (`meter_id`): numer PPE i `statistic_id` przepuszczaj przez `mask_ppe()` (`connector.py`, skraca do `…1234`), a `meter_id` pomijaj. Nowe pola identyfikujące odbiorcę dopisuj do `TO_REDACT` w `diagnostics.py`. ID zgłoszeń w Naprawach buduj z `entry_id`, nie z PPE ani `meter_id`.
+- **Logi i raport diagnostyczny trafiają do publicznych zgłoszeń na GitHubie** (czytać je może także Enea). Nigdy nie loguj pełnego numeru PPE ani wewnętrznego ID licznika z Portalu Odbiorcy Enea (`meter_id`): numer PPE i `statistic_id` przepuszczaj przez `mask_ppe()` (`connector.py`, skraca do `…1234`), a `meter_id` pomijaj. `meter_id` siedzi w URL-ach żądań, a niektóre wyjątki aiohttp (`ContentTypeError`, `TooManyRedirects`, `InvalidURL`) cytują pełny URL — tekst takiego wyjątku przepuszczaj przez `hide_meter_id()` i nie łańcuchuj go (`from None`), bo traceback z `exc_info` przywróciłby URL. `mask_ppe()` tego nie wyłapie (`meter_id` ma mniej niż 10 cyfr). Nowe pola identyfikujące odbiorcę dopisuj do `TO_REDACT` w `diagnostics.py`. ID zgłoszeń w Naprawach buduj z `entry_id`, nie z PPE ani `meter_id`.
 - **Nie twórz metod będących wyłącznie wrapperami** — jeśli metoda X robi tylko `return await self.Y()`, spłaszcz X i Y w jedną metodę. Wyjątek: gdy HA wymusza nazwę metody jako punkt wejścia (np. `async_step_reauth` z `entry_data`), użyj rozróżnienia po zawartości parametru zamiast tworzyć osobną metodę `_confirm`.
 
 ## Konwencje nazewnictwa
@@ -28,7 +28,7 @@ Niniejszy projekt to custom component dla Home Assistant integrujący liczniki z
 ```
 custom_components/enea/
 ├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, _matching_coordinators, serwisy refresh/backfill
-├── connector.py     — klient HTTP (EneaApiClient, _request helper; każde żądanie logowane na poziomie debug: ścieżka z ukrytym ID licznika, status, rozmiar, czas), wyjątki, get_active_meter(), infer_phases(), mask_ppe(), format_address()
+├── connector.py     — klient HTTP (EneaApiClient, _request helper; każde żądanie logowane na poziomie debug: ścieżka z ukrytym ID licznika, status, rozmiar, czas), wyjątki, get_active_meter(), infer_phases(), mask_ppe(), hide_meter_id() (ukrywa ID licznika w ścieżce i w tekście błędów), format_address()
 ├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill; klient API jako self.client; diagnostics_state() dla raportu diagnostycznego
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", "configure", reconfigure, reauth; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
 ├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date, _han_port_state, _switch_state_attrs, _billing_period_starts, EneaStatisticsDateSensor
@@ -181,6 +181,8 @@ Wywoływana: po zmianie daty przez użytkownika (z `EneaBillDateEntity.async_set
 
 Baza URL: `https://portalodbiorcy.operator.enea.pl/portalOdbiorcy/api`
 
+Zapisane odpowiedzi API mogą leżeć lokalnie w `data/` — katalog jest celowo w `.gitignore`, bo zawiera prawdziwe dane odbiorcy (numer PPE, `meter_id`, adres). Nie commituj go i nie przepisuj z niego wartości do kodu, testów, dokumentacji, commitów ani PR — w przykładach używaj zmyślonych (np. `meter_id` `12345`, PPE `590310600000001234`).
+
 ### Logowanie
 
 ```
@@ -205,8 +207,6 @@ Cookie: PER_JSESSIONID=<wartość>
 
 Zwraca listę punktów poboru energii przypisanych do konta. Pole `address` jest zawsze `null` — adres dostępny tylko przez endpoint dashboard. Odpowiedź cachowana przez 5 minut (patrz `METERS_CACHE_TTL` w `const.py`).
 
-Przykład odpowiedzi: patrz `data/ppes.json`.
-
 ### Dashboard PPE (główne źródło danych)
 
 ```
@@ -214,7 +214,7 @@ GET /consumptionDashboard/ppe/{id}
 Cookie: PER_JSESSIONID=<wartość>
 ```
 
-Gdzie `{id}` to pole `id` z odpowiedzi `/user/ppes` (np. `73689`). Główny endpoint odpytywany przez coordinator zgodnie z konfigurowalnym interwałem (domyślnie 3h 30min, zmiana przez options flow).
+Gdzie `{id}` to pole `id` z odpowiedzi `/user/ppes` (np. `12345`). Główny endpoint odpytywany przez coordinator zgodnie z konfigurowalnym interwałem (domyślnie 3h 30min, zmiana przez options flow).
 
 Kluczowe pola odpowiedzi:
 - `address` — pełny adres PPE `{street, houseNum, apartmentNum, postCode, city, district, parcelNum}`
@@ -230,8 +230,6 @@ Kluczowe pola odpowiedzi:
   - `ppeZones[]` — nazwy stref np. `["Dzień 1.8.1", "Noc 1.8.2"]`
   - `readingDate` — timestamp ostatniego odczytu (ms)
   - `unit.symbol="Wh"`, `unit.scaler=3` → wartości są w kWh
-
-Przykład odpowiedzi: patrz `data/ppe73689.json`.
 
 ### Endpoint statystyk historycznych — single day (legacy)
 

@@ -61,7 +61,12 @@ async def _fetch(
             f"SSL error connecting to Portal Odbiorcy Enea: {err}"
         ) from err
     except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as err:
-        raise EneaApiError(f"Cannot connect to Portal Odbiorcy Enea: {err}") from err
+        # Some client errors (TooManyRedirects, InvalidURL) quote the URL with the
+        # meter id; chaining them would bring it back in every logged traceback.
+        raise EneaApiError(
+            f"Cannot connect to Portal Odbiorcy Enea: {type(err).__name__}: "
+            f"{hide_meter_id(str(err))}"
+        ) from None
     try:
         yield resp
     finally:
@@ -105,7 +110,7 @@ class EneaApiClient:
         body = await resp.read()
         _LOGGER.debug(
             "GET %s (%s): HTTP %d, %d B in %.2f s",
-            re.sub(r"(?<=/)\d{4,}(?=/|$)", "…", resp.url.path),
+            hide_meter_id(resp.url.path),
             label,
             resp.status,
             len(body),
@@ -116,7 +121,12 @@ class EneaApiClient:
         try:
             return await resp.json()
         except Exception as err:
-            raise EneaApiError(f"Failed to parse {label} response: {err}") from err
+            # aiohttp's ContentTypeError quotes the full URL, meter id included;
+            # chaining it would bring the URL back in every logged traceback.
+            raise EneaApiError(
+                f"Failed to parse {label} response: {type(err).__name__}: "
+                f"{hide_meter_id(str(err))}"
+            ) from None
 
     def update_credentials(self, password: str) -> None:
         """Update password and invalidate the current session (e.g. after reauth)."""
@@ -255,12 +265,21 @@ def infer_phases(data: dict[str, Any]) -> tuple[str | None, str | None]:
 
 
 def mask_ppe(text: str) -> str:
-    """Shorten every PPE number in text to its last four digits, e.g. "…9990".
+    """Shorten every PPE number in text to its last four digits, e.g. "…1234".
 
     Logs are pasted into public GitHub issues; the tail still tells meters of
     one account apart.  Covers bare meter codes and statistic ids alike.
     """
     return re.sub(r"\d{10,}", lambda m: f"…{m.group()[-4:]}", text)
+
+
+def hide_meter_id(text: str) -> str:
+    """Replace the portal's meter id in a URL path, or text quoting one, with "…".
+
+    The id is a URL segment of at least four digits.  Dates in the path are
+    left alone: their year is followed by "-", not by the end of the segment.
+    """
+    return re.sub(r"(?<=/)\d{4,}(?![\w-])", "…", text)
 
 
 def format_address(addr: dict[str, Any] | None) -> str | None:

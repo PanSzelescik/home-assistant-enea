@@ -13,7 +13,7 @@ from custom_components.enea import diagnostics as diagnostics_module
 from conftest import FakeConfigEntry, FakeHass
 
 PPE = "590310600000000001"
-METER_ID = 73689
+METER_ID = 12345
 SERIAL = "57354308"
 AGREEMENT = "P/I/53/11111111/00001/0"
 

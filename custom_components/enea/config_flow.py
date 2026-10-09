@@ -33,9 +33,13 @@ from .const import (
     CONF_FETCH_POWER_GENERATION,
     CONF_METER_ID,
     CONF_METER_NAME,
+    CONF_NET_METERING,
     CONF_TARIFF,
     CONF_UPDATE_INTERVAL,
+    DEFAULT_NET_METERING,
     DEFAULT_UPDATE_INTERVAL_DICT,
+    NET_METERING_RATIOS,
+    PPE_TYPE_PROSUMER,
     MIN_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
     ERROR_AT_LEAST_ONE_FETCH_TYPE,
@@ -66,13 +70,14 @@ def _validate_options(user_input: dict[str, Any]) -> dict[str, str]:
     return {}
 
 
-def _options_schema(defaults: Mapping[str, Any]) -> vol.Schema:
+def _options_schema(defaults: Mapping[str, Any], prosumer: bool) -> vol.Schema:
     """Build the options schema for update interval and fetch flags.
 
     Shared by the initial configure step and the options flow so both
-    forms stay in sync when options are added or removed.
+    forms stay in sync when options are added or removed.  Only a prosumer's
+    meter is asked for its net-metering ratio.
     """
-    return vol.Schema({
+    schema: dict[Any, Any] = {
         vol.Required(
             CONF_UPDATE_INTERVAL,
             default=defaults.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_DICT),
@@ -93,7 +98,21 @@ def _options_schema(defaults: Mapping[str, Any]) -> vol.Schema:
             CONF_FETCH_POWER_GENERATION,
             default=defaults.get(CONF_FETCH_POWER_GENERATION, False),
         ): BooleanSelector(),
-    })
+    }
+    if prosumer:
+        schema[
+            vol.Required(
+                CONF_NET_METERING,
+                default=defaults.get(CONF_NET_METERING, DEFAULT_NET_METERING),
+            )
+        ] = SelectSelector(
+            SelectSelectorConfig(
+                options=[DEFAULT_NET_METERING, *NET_METERING_RATIOS],
+                translation_key=CONF_NET_METERING,
+                mode=SelectSelectorMode.LIST,
+            )
+        )
+    return vol.Schema(schema)
 
 
 STEP_USER_SCHEMA = vol.Schema(
@@ -237,6 +256,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         meter = self._selected_meter
         if meter is None:
             return self.async_abort(reason=ERROR_UNKNOWN)
+        prosumer = meter.get("type") == PPE_TYPE_PROSUMER
 
         if user_input is not None:
             errors = _validate_options(user_input)
@@ -253,16 +273,10 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_METER_NAME: meter["code"],
                         CONF_TARIFF: meter.get("tariffGroup", {}).get("name", ""),
                     },
-                    options={
-                        CONF_UPDATE_INTERVAL: user_input[CONF_UPDATE_INTERVAL],
-                        CONF_FETCH_CONSUMPTION: user_input[CONF_FETCH_CONSUMPTION],
-                        CONF_FETCH_GENERATION: user_input[CONF_FETCH_GENERATION],
-                        CONF_FETCH_POWER_CONSUMPTION: user_input[CONF_FETCH_POWER_CONSUMPTION],
-                        CONF_FETCH_POWER_GENERATION: user_input[CONF_FETCH_POWER_GENERATION],
-                    },
+                    options=dict(user_input),
                 )
 
-        schema = _options_schema(user_input if user_input else {})
+        schema = _options_schema(user_input if user_input else {}, prosumer)
 
         return self.async_show_form(
             step_id="configure",
@@ -393,6 +407,11 @@ class EneaOptionsFlow(config_entries.OptionsFlowWithReload):
                 return self.async_create_entry(data=user_input)
 
         opts = self.config_entry.options
-        schema = _options_schema(user_input if user_input else opts)
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        # Known once the entry is loaded; a ratio set before stays editable.
+        prosumer = (
+            runtime is not None and runtime.coordinator.prosumer
+        ) or CONF_NET_METERING in opts
+        schema = _options_schema(user_input if user_input else opts, prosumer)
 
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

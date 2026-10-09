@@ -71,13 +71,18 @@ def _kwh_price(pricing: Any, akcyza: float) -> float:
     return round((pricing.energy + akcyza + pricing.total_distribution) * (1 + VAT_RATE), 4)
 
 
-def price_signatures(tariff: Any, first: date, last: date) -> dict[str, str]:
+def price_signatures(
+    tariff: Any, first: date, last: date, returned_ratio: float = 1.0
+) -> dict[str, str]:
     """Return a short fingerprint of the prices each day from first to last is costed at.
 
     Keyed by ISO date.  A day the tariff does not price has no entry.  The
     fingerprint covers what the cost of every hour depends on — the zone the
     hour falls in and that zone's price — so it changes with the price list,
-    with the zone schedule and with a holiday, and with nothing else.
+    with the zone schedule and with a holiday, and with nothing else.  A
+    net-metering ratio other than 1.0 values returned energy below that price,
+    so it is part of the fingerprint too; at 1.0 it is left out, which keeps
+    the fingerprints stored before the ratio existed.
     """
     akcyza = _akcyza()
     signatures: dict[str, str] = {}
@@ -91,6 +96,8 @@ def price_signatures(tariff: Any, first: date, last: date) -> dict[str, str]:
                 pricing = period.zones.get(zone)
                 price = _kwh_price(pricing, akcyza) if pricing is not None else None
                 hours.append(f"{zone}={price}")
+            if returned_ratio != 1.0:
+                hours.append(f"returned={returned_ratio}")
             signatures[day.isoformat()] = hashlib.blake2s(
                 "|".join(hours).encode(), digest_size=8
             ).hexdigest()
@@ -144,6 +151,7 @@ async def async_insert_cost_statistics(
     tariff: Any,
     fetch_consumption: bool = True,
     fetch_generation: bool = True,
+    returned_ratio: float = 1.0,
 ) -> None:
     """Inject hourly cumulative cost statistics (PLN) per zone.
 
@@ -163,6 +171,8 @@ async def async_insert_cost_statistics(
                 import).
         fetch_consumption: Whether to inject costs for consumed energy.
         fetch_generation: Whether to inject costs for returned energy.
+        returned_ratio: Share of each returned kWh's price it is worth — the
+                  prosumer's net-metering ratio (0.8 or 0.7), 1.0 without one.
     """
     if not all_days:
         return
@@ -184,6 +194,8 @@ async def async_insert_cost_statistics(
 
         # {zone_str: [(dt, cost_pln)]} — each hour belongs to exactly one zone.
         series_by_zone: dict[str, list[tuple[datetime, float]]] = {}
+        # Under net metering a returned kWh takes back only part of a consumed one.
+        ratio = returned_ratio if key == STAT_KEY_ENERGY_RETURNED else 1.0
 
         for day, data in all_days:
             api = data.get(key)
@@ -206,7 +218,7 @@ async def async_insert_cost_statistics(
                     for item in entry.get("items", [])
                 )
                 pricing = period.zones[zone]
-                cost = total_kwh * _kwh_price(pricing, akcyza)
+                cost = total_kwh * _kwh_price(pricing, akcyza) * ratio
                 series_by_zone.setdefault(zone_str, []).append((dt, cost))
 
         # An all-zero batch must not start a series.  A meter with no solar

@@ -52,6 +52,7 @@ def refresh(monkeypatch: pytest.MonkeyPatch, wire_recorder):
         coord._fetch_generation = False
         coord._fetch_power_consumption = False
         coord._fetch_power_generation = False
+        coord._prosumer = False
         coord._backfill_task = None
         coord._fetch_days_forward = fetch_days_forward
         coord._async_inject_days = inject_days
@@ -191,6 +192,9 @@ def _cost_coordinator(monkeypatch, insert_costs):
     coord._meter_code = "PPE"
     coord._fetch_consumption = True
     coord._fetch_generation = False
+    coord._fetch_power_consumption = False
+    coord._fetch_power_generation = False
+    coord._prosumer = False
     coord._backfill_task = None
     coord._tariff_name = "G12w"
     coord._assembly_datetime = datetime.datetime.combine(

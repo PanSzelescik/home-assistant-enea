@@ -374,8 +374,12 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-class EneaOptionsFlow(config_entries.OptionsFlow):
-    """Options flow for Enea Energy Meter."""
+class EneaOptionsFlow(config_entries.OptionsFlowWithReload):
+    """Options flow for Enea Energy Meter.
+
+    Reloads the entry when its options change.  An update listener would also
+    reload it on every change to its data, which the coordinator writes to.
+    """
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None

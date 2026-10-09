@@ -108,6 +108,15 @@ PHASES_COUNT: dict[str, int] = {PHASES_SINGLE: 1, PHASES_THREE: 3}
 
 # Repairs — klucze zgłoszeń (muszą pasować do sekcji "issues" w tłumaczeniach)
 ISSUE_PHASES_MISMATCH = "phases_mismatch"
+ISSUE_BILLING_MONTHS_MISMATCH = "billing_months_mismatch"
+ISSUE_ANNUAL_KWH_MISMATCH = "annual_kwh_mismatch"
+# enea_prices jest zainstalowana i zna grupę taryfową licznika, ale nie ma dla niej wpisu.
+ISSUE_PRICES_NOT_CONFIGURED = "prices_not_configured"
+# Klucze wpisu enea_prices, które poprawia przycisk „Napraw” zgłoszeń o niezgodnej instalacji.
+ENEA_PRICES_CONF_TARIFF = "tariff"
+ENEA_PRICES_CONF_PHASES = "phases"
+ENEA_PRICES_CONF_BILLING_MONTHS = "billing_months"
+ENEA_PRICES_CONF_ANNUAL_KWH = "annual_kwh"
 ISSUE_UNKNOWN_METER_MODEL = "unknown_meter_model"
 # Formularz GitHub (.github/ISSUE_TEMPLATE) do zgłoszenia nowego modelu; {lang} = pl / en
 ISSUE_TEMPLATE_NEW_METER_MODEL = "new_meter_model_{lang}.yml"
@@ -203,3 +212,26 @@ BILL_KEY_CURRENT = "bill_current"
 # cały okres rozliczeniowy; początek tych drugich to granica okresu na fakturze.  Próg
 # odróżnia je od segmentów dziennych także w dniu zmiany czasu (doba 25 h).
 BILLING_PERIOD_MIN_SEGMENT = timedelta(days=2)
+
+# ---------------------------------------------------------------------------
+# Installation — the enea_prices settings worked out from the meter data
+# ---------------------------------------------------------------------------
+
+# Długości okresu rozliczeniowego, dla których taryfa ma stawkę abonamentową (miesiące).
+BILLING_PERIOD_MONTHS = (1, 2, 6, 12)
+AVERAGE_MONTH_DAYS = 30.44
+# Przedziały rocznego zużycia opłaty mocowej (pkt 3.1.29 taryfy Enea Operator, art. 89b
+# ust. 3 ustawy o rynku mocy): poniżej 500, od 500 do 1200, powyżej 1200 do 2800,
+# powyżej 2800 kWh.  Tu górne granice trzech pierwszych (druga i trzecia włącznie).
+CAPACITY_BRACKET_LIMITS_KWH = (500, 1200, 2800)
+CAPACITY_BRACKET_LABELS = ("< 500 kWh", "500–1200 kWh", "1200–2800 kWh", "> 2800 kWh")
+# Skąd wzięto wartość — raport diagnostyczny i (dalej) teksty podpowiedzi.
+INSTALLATION_SOURCE_BILLING_PERIODS = "billing_periods"
+INSTALLATION_SOURCE_READING_DATES = "reading_dates"
+INSTALLATION_SOURCE_LAST_365_DAYS = "last_365_days"
+# Odczyt doliczony od ostatniej granicy z billingWeekData co długość okresu — okno
+# portalu kończy się wcześniej niż dziś, więc ostatniego odczytu zwykle nie pokazuje.
+INSTALLATION_SOURCE_BILLING_CYCLE = "billing_cycle"
+# Nowe przyłącze: statystyki zaczynają się razem z licznikiem — najwyżej tyle dni po
+# montażu (pierwsze dni portal bywa publikuje z opóźnieniem).
+NEW_CONNECTION_STATISTICS_SLACK = timedelta(days=7)

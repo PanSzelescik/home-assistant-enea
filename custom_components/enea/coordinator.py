@@ -38,7 +38,12 @@ from .const import (
     STAT_NAME_BY_KEY,
 )
 from .billing import BillEstimate, async_estimate_bill, find_prices_config
-from .issues import async_update_issues
+from .installation import DetectedInstallation, async_detect_installation
+from .issues import (
+    async_update_installation_issues,
+    async_update_issues,
+    async_update_prices_setup_issue,
+)
 from .costs import (
     async_cost_days_missing,
     async_insert_cost_statistics,
@@ -113,6 +118,17 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             BILL_KEY_PREVIOUS: None,
             BILL_KEY_CURRENT: None,
         }
+        # The latest dashboard response.  The statistics step runs inside the
+        # refresh, before coordinator.data takes the new response, or after the
+        # start, long after it — this holds the newest one for both.
+        self._dashboard_data: dict[str, Any] = {}
+        # The enea_prices settings worked out from the meter; see installation.py.
+        self.detected_installation = DetectedInstallation()
+
+    @property
+    def tariff_name(self) -> str | None:
+        """Return the tariff group the Portal Odbiorcy Enea reports for the meter."""
+        return self._tariff_name
 
     def _get_measurement_types(self) -> list[tuple[str, MeasurementType]]:
         """Return active (key, measurement_type) pairs based on fetch settings."""
@@ -134,6 +150,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"Error fetching Enea data: {err}") from err
 
         self._tariff_name = data.get("tariffGroupName")
+        self._dashboard_data = data
 
         # Determine assembly date of the currently active meter (no disassemblyDate).
         # Used as a lower bound when fetching statistics — avoids importing all-zero
@@ -160,9 +177,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self.config_entry is not None:
                 self.config_entry.async_on_unload(unsub)
 
-        async_update_issues(
-            self.hass, self._entry_id, self._meter_code, self._tariff_name, data
-        )
+        async_update_issues(self.hass, self._entry_id, self._meter_code, data)
 
         return data
 
@@ -191,6 +206,34 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:
             self._statistics_error = mask_ppe(f"{type(err).__name__}: {err}")
             _LOGGER.warning("Failed to read the latest statistics date: %s", err, exc_info=True)
+
+        # Here rather than with the dashboard data: the yearly consumption is read
+        # from the statistics just brought up to date.
+        try:
+            self.detected_installation = await async_detect_installation(
+                self.hass,
+                self._meter_code,
+                self._dashboard_data,
+                self.bill_prev_reading,
+                self.bill_last_reading,
+                self.statistics_until,
+            )
+        except Exception as err:
+            _LOGGER.warning("Failed to work out the installation: %s", err, exc_info=True)
+        async_update_installation_issues(
+            self.hass,
+            self._entry_id,
+            self._meter_code,
+            self._tariff_name,
+            self._dashboard_data,
+            self.detected_installation,
+        )
+        try:
+            await async_update_prices_setup_issue(
+                self.hass, self._entry_id, self._meter_code, self._tariff_name
+            )
+        except Exception as err:
+            _LOGGER.warning("Failed to check the enea_prices setup: %s", err, exc_info=True)
 
         # Recompute bill estimates if reading dates are configured (new stats may have arrived).
         if self.bill_prev_reading is not None or self.bill_last_reading is not None:

@@ -301,7 +301,45 @@
   "issues": {
     "phases_mismatch": {
       "title": "Phase count mismatch for meter {meter_code}",
-      "description": "Based on data from the Portal Odbiorcy Enea (meter model: {model}, contractual capacity: {capacity} kW) the installation looks {detected}-phase, but the Enea Ceny integration is set to {configured} phase(s).\n\nThe number of phases determines the fixed network fee, so the bill estimate may be wrong. Fix the setting in the Enea Ceny integration — this issue will clear itself.\n\nIf it is the Enea integration that got the number of phases wrong, please report it on GitHub."
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Set the number of phases from the meter?",
+            "description": "Based on data from the Portal Odbiorcy Enea (meter model: {model}, contractual capacity: {capacity} kW) the installation looks {detected}-phase, but the Enea Ceny integration is set to {configured} phase(s).\n\nThe number of phases determines the fixed network fee, so the bill estimate may be wrong. Confirm to set a {detected}-phase installation in Enea Ceny, or ignore this issue if your invoice says otherwise.\n\nIf it is the Enea integration that got the number of phases wrong, please report it on GitHub."
+          }
+        },
+        "abort": {
+          "prices_entry_missing": "The Enea Ceny integration no longer has an entry for this tariff group."
+        }
+      }
+    },
+    "billing_months_mismatch": {
+      "title": "Billing period mismatch for meter {meter_code}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Set the billing period from the meter?",
+            "description": "According to the billing periods in the Portal Odbiorcy Enea (or the reading dates set for the bill estimate) the meter is billed every {detected} month(s), but the Enea Ceny integration is set to {configured} month(s).\n\nThe billing period length determines the subscription fee. Confirm to set a {detected}-month period in Enea Ceny, or ignore this issue if your invoice says otherwise."
+          }
+        },
+        "abort": {
+          "prices_entry_missing": "The Enea Ceny integration no longer has an entry for this tariff group."
+        }
+      }
+    },
+    "annual_kwh_mismatch": {
+      "title": "Annual consumption mismatch for meter {meter_code}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Set the annual consumption from the meter?",
+            "description": "In the year up to {until} the meter recorded {detected} kWh of energy consumed – the {detected_bracket} bracket, but the Enea Ceny integration is set to the {configured_bracket} bracket.\n\nThe annual consumption bracket determines the capacity fee; Enea Operator sets it from the consumption in the year ending with the latest reading. Confirm to set an annual consumption of {detected} kWh in Enea Ceny, or ignore this issue if your invoice says otherwise."
+          }
+        },
+        "abort": {
+          "prices_entry_missing": "The Enea Ceny integration no longer has an entry for this tariff group."
+        }
+      }
     },
     "unknown_meter_model": {
       "title": "Unknown meter model: {model}",

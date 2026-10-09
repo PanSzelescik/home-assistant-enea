@@ -301,7 +301,45 @@
   "issues": {
     "phases_mismatch": {
       "title": "Niezgodna liczba faz dla licznika {meter_code}",
-      "description": "Na podstawie danych z Portalu Odbiorcy Enea (model licznika: {model}, moc umowna: {capacity} kW) instalacja wygląda na {detected}-fazową, a w integracji Enea Ceny ustawiono liczbę faz: {configured}.\n\nLiczba faz decyduje o wysokości opłaty stałej sieciowej, więc szacowany rachunek może być błędny. Popraw ustawienie w integracji Enea Ceny — zgłoszenie zniknie samo.\n\nJeśli to integracja Enea pomyliła się co do liczby faz, zgłoś to na GitHubie."
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Ustawić liczbę faz z licznika?",
+            "description": "Na podstawie danych z Portalu Odbiorcy Enea (model licznika: {model}, moc umowna: {capacity} kW) instalacja wygląda na {detected}-fazową, a w integracji Enea Ceny ustawiono liczbę faz: {configured}.\n\nLiczba faz decyduje o wysokości opłaty stałej sieciowej, więc szacowany rachunek może być błędny. Zatwierdź, aby ustawić w Enea Ceny instalację {detected}-fazową, albo zignoruj zgłoszenie, jeśli faktura mówi inaczej („Opłata stała sieciowa – układ …-fazowy”).\n\nJeśli to integracja Enea pomyliła się co do liczby faz, zgłoś to na GitHubie."
+          }
+        },
+        "abort": {
+          "prices_entry_missing": "W integracji Enea Ceny nie ma już wpisu dla tej grupy taryfowej."
+        }
+      }
+    },
+    "billing_months_mismatch": {
+      "title": "Niezgodny okres rozliczeniowy dla licznika {meter_code}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Ustawić okres rozliczeniowy z licznika?",
+            "description": "Według okresów rozliczeniowych w Portalu Odbiorcy Enea (albo dat odczytów ustawionych dla szacunku rachunku) licznik jest rozliczany co {detected} mies., a w integracji Enea Ceny ustawiono {configured} mies.\n\nOd długości okresu rozliczeniowego zależy opłata abonamentowa. Zatwierdź, aby ustawić w Enea Ceny okres {detected}-miesięczny, albo zignoruj zgłoszenie, jeśli faktura mówi inaczej."
+          }
+        },
+        "abort": {
+          "prices_entry_missing": "W integracji Enea Ceny nie ma już wpisu dla tej grupy taryfowej."
+        }
+      }
+    },
+    "annual_kwh_mismatch": {
+      "title": "Niezgodne roczne zużycie dla licznika {meter_code}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Ustawić roczne zużycie z licznika?",
+            "description": "W roku do {until} licznik zarejestrował {detected} kWh energii pobranej – to przedział {detected_bracket}, a w integracji Enea Ceny ustawiono przedział {configured_bracket}.\n\nOd przedziału rocznego zużycia zależy opłata mocowa; Enea Operator ustala go ze zużycia w roku kończącym się ostatnim odczytem. Zatwierdź, aby ustawić w Enea Ceny roczne zużycie {detected} kWh, albo zignoruj zgłoszenie, jeśli faktura mówi inaczej."
+          }
+        },
+        "abort": {
+          "prices_entry_missing": "W integracji Enea Ceny nie ma już wpisu dla tej grupy taryfowej."
+        }
+      }
     },
     "unknown_meter_model": {
       "title": "Nieznany model licznika: {model}",

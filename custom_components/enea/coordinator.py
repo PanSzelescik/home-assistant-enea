@@ -39,7 +39,7 @@ from .const import (
 )
 from .billing import BillEstimate, async_estimate_bill, find_prices_config
 from .installation import DetectedInstallation, async_detect_installation
-from .issues import async_update_issues
+from .issues import async_update_installation_issues, async_update_issues
 from .costs import (
     async_cost_days_missing,
     async_insert_cost_statistics,
@@ -173,9 +173,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self.config_entry is not None:
                 self.config_entry.async_on_unload(unsub)
 
-        async_update_issues(
-            self.hass, self._entry_id, self._meter_code, self._tariff_name, data
-        )
+        async_update_issues(self.hass, self._entry_id, self._meter_code, data)
 
         return data
 
@@ -218,6 +216,14 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except Exception as err:
             _LOGGER.warning("Failed to work out the installation: %s", err, exc_info=True)
+        async_update_installation_issues(
+            self.hass,
+            self._entry_id,
+            self._meter_code,
+            self._tariff_name,
+            self._dashboard_data,
+            self.detected_installation,
+        )
 
         # Recompute bill estimates if reading dates are configured (new stats may have arrived).
         if self.bill_prev_reading is not None or self.bill_last_reading is not None:

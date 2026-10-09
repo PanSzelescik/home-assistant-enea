@@ -108,6 +108,13 @@ PHASES_COUNT: dict[str, int] = {PHASES_SINGLE: 1, PHASES_THREE: 3}
 
 # Repairs — klucze zgłoszeń (muszą pasować do sekcji "issues" w tłumaczeniach)
 ISSUE_PHASES_MISMATCH = "phases_mismatch"
+ISSUE_BILLING_MONTHS_MISMATCH = "billing_months_mismatch"
+ISSUE_ANNUAL_KWH_MISMATCH = "annual_kwh_mismatch"
+# Klucze wpisu enea_prices, które poprawia przycisk „Napraw” zgłoszeń o niezgodnej instalacji.
+ENEA_PRICES_CONF_TARIFF = "tariff"
+ENEA_PRICES_CONF_PHASES = "phases"
+ENEA_PRICES_CONF_BILLING_MONTHS = "billing_months"
+ENEA_PRICES_CONF_ANNUAL_KWH = "annual_kwh"
 ISSUE_UNKNOWN_METER_MODEL = "unknown_meter_model"
 # Formularz GitHub (.github/ISSUE_TEMPLATE) do zgłoszenia nowego modelu; {lang} = pl / en
 ISSUE_TEMPLATE_NEW_METER_MODEL = "new_meter_model_{lang}.yml"
@@ -215,6 +222,7 @@ AVERAGE_MONTH_DAYS = 30.44
 # ust. 3 ustawy o rynku mocy): poniżej 500, od 500 do 1200, powyżej 1200 do 2800,
 # powyżej 2800 kWh.  Tu górne granice trzech pierwszych (druga i trzecia włącznie).
 CAPACITY_BRACKET_LIMITS_KWH = (500, 1200, 2800)
+CAPACITY_BRACKET_LABELS = ("< 500 kWh", "500–1200 kWh", "1200–2800 kWh", "> 2800 kWh")
 # Skąd wzięto wartość — raport diagnostyczny i (dalej) teksty podpowiedzi.
 INSTALLATION_SOURCE_BILLING_PERIODS = "billing_periods"
 INSTALLATION_SOURCE_READING_DATES = "reading_dates"

@@ -25,6 +25,7 @@ from .connector import billing_period_starts, get_active_meter, infer_phases
 from .const import (
     AVERAGE_MONTH_DAYS,
     BILLING_PERIOD_MONTHS,
+    BILLING_PERIOD_TOLERANCE_DAYS,
     CAPACITY_BRACKET_LIMITS_KWH,
     EPOCH,
     INSTALLATION_SOURCE_BILLING_CYCLE,
@@ -94,9 +95,19 @@ def capacity_bracket(annual_kwh: float) -> int:
 
 
 def _months(first: date, last: date) -> int | None:
-    """Return the billing period length a span of days stands for, if a tariff has one."""
-    months = round((last - first).days / AVERAGE_MONTH_DAYS)
-    return months if months in BILLING_PERIOD_MONTHS else None
+    """Return the billing period length a span of days stands for, if a tariff has one.
+
+    The span must come close to whole months: a boundary set by something else
+    than a reading (a new agreement, a tariff change) leaves a gap that only
+    rounds to a period length.
+    """
+    days = (last - first).days
+    months = round(days / AVERAGE_MONTH_DAYS)
+    if months not in BILLING_PERIOD_MONTHS:
+        return None
+    if abs(days - months * AVERAGE_MONTH_DAYS) > BILLING_PERIOD_TOLERANCE_DAYS:
+        return None
+    return months
 
 
 def detect_billing_months(
@@ -208,6 +219,11 @@ async def _async_consumption(
     One daily read of the cumulative sums from the very beginning, as
     async_query_zone_kwh does for the bill: the opening balance is the newest
     sum at or before since, which need not fall on since itself.
+
+    The statistics begin with the first day of any consumption.  Leading days
+    with a sum of zero are no history: older versions zero-filled every day
+    from the meter's assembly up to where the portal's data begins, and those
+    would pass a year of missing data for a complete one.
     """
     stats = await get_instance(hass).async_add_executor_job(
         statistics_during_period,
@@ -225,7 +241,8 @@ async def _async_consumption(
     ]
     opening = next((total for day, total in reversed(days) if day <= since), 0.0)
     closing = next((total for day, total in reversed(days) if day <= until), 0.0)
-    return closing - opening, days[0][0] if days else None
+    first_day = next((day for day, total in days if total), None)
+    return closing - opening, first_day
 
 
 async def async_detect_installation(

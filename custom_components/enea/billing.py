@@ -31,6 +31,7 @@ from homeassistant.util import dt as dt_util
 
 from .connector import mask_ppe
 from .const import (
+    BILL_ZONE_PORTAL_NAMES,
     COST_ZONE_DISPLAY,
     ENEA_PRICES_CONF_TARIFF,
     ENEA_PRICES_DOMAIN,
@@ -198,11 +199,13 @@ async def async_estimate_bill(
         _LOGGER.debug("No tariff period found for %s", end)
         return None
 
-    # Map each tariff zone to its external statistics ID
+    # Map each tariff zone to its external statistics ID, named after the
+    # Portal Odbiorcy Enea's zone, which may differ from the display name.
     zone_stat_ids: dict[str, str] = {}
     for zone in period.zones:
         zone_display = COST_ZONE_DISPLAY.get(str(zone), str(zone))
-        stat_name = f"Energia pobrana – {zone_display}"
+        portal_name = BILL_ZONE_PORTAL_NAMES.get(str(zone), zone_display)
+        stat_name = f"Energia pobrana – {portal_name}"
         zone_stat_ids[zone_display] = get_statistic_id(meter_code, stat_name)
 
     kwh_by_zone = await async_query_zone_kwh(hass, zone_stat_ids, start, end)

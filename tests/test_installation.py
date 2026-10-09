@@ -8,6 +8,7 @@ import pytest
 from homeassistant.util import dt as dt_util
 
 from custom_components.enea import installation
+from custom_components.enea.connector import billing_period_starts
 
 READING = date(2026, 8, 5)
 """The latest billing reading: the current period starts on 6 August."""
@@ -81,6 +82,17 @@ def test_billing_months_fall_back_to_the_reading_dates() -> None:
 
 def test_a_gap_no_tariff_bills_by_settles_nothing() -> None:
     starts = [date(2026, 5, 6), date(2026, 8, 6)]
+
+    assert installation.detect_billing_months(starts, None, None) == (None, None)
+
+
+def test_a_boundary_that_is_no_reading_settles_nothing() -> None:
+    """A prosumer's portal split the period at a tariff change and at the new year.
+
+    The 20 days between them rounded to one month, and Repairs suggested
+    changing a yearly billing period to a monthly one.
+    """
+    starts = [date(2025, 2, 25), date(2025, 12, 12), date(2026, 1, 1)]
 
     assert installation.detect_billing_months(starts, None, None) == (None, None)
 
@@ -164,6 +176,55 @@ async def test_a_new_connection_counts_everything_used_so_far(detect) -> None:
 
     assert detected.annual_kwh == pytest.approx(905.0)
     assert not detected.annual_kwh_partial
+
+
+async def test_zero_filled_days_before_the_portals_history_are_no_year(detect) -> None:
+    """Zeros stored from the assembly up to where the portal's data begins.
+
+    Older versions zero-filled those days, so the statistics seemed to reach a
+    year back and the consumption since March passed for a whole year's.
+    """
+    detected = await detect(
+        {date(2025, 8, 4): 0.0, date(2025, 8, 5): 0.0, date(2026, 3, 2): 5.0, READING: 905.0},
+        _dashboard(PERIODS),
+    )
+
+    assert detected.annual_kwh is None
+
+
+async def test_a_prosumers_tariff_change_suggests_no_billing_period(detect) -> None:
+    """The dashboard of a prosumer who moved from G11 to G12W (issue #19).
+
+    Its billingWeekData has no daily segments and starts where the balanced
+    data does.  The tariff change and the new year split the last period 20
+    days apart, which Repairs offered as a monthly billing period.
+    """
+    edges = [
+        date(2024, 1, 1),
+        date(2024, 6, 25),
+        date(2025, 2, 25),
+        date(2025, 12, 12),
+        date(2026, 1, 1),
+        date(2026, 10, 1),
+    ]
+    data = {
+        "meters": [{"typeName": "OTUS3", "assemblyDate": _ms(date(2022, 9, 1))}],
+        "billingWeekData": [
+            {
+                "measurementId": 1,
+                "values": [
+                    {"timeFrom": _ms(a), "timeTo": _ms(b), "items": []}
+                    for a, b in zip(edges, edges[1:])
+                ],
+            }
+        ],
+    }
+
+    detected = await detect({date(2025, 12, 31): 1000.0, date(2026, 10, 8): 4000.0}, data)
+
+    assert billing_period_starts(data) == edges[1:-1]
+    assert detected.billing_months is None
+    assert detected.billing_months_source is None
 
 
 async def test_a_meter_replaced_within_the_year_settles_nothing(detect) -> None:

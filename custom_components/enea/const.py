@@ -229,6 +229,13 @@ COST_ZONE_DISPLAY: dict[str, str] = {
     "off_peak": "Poza szczytem",
 }
 
+# Strefy, które Portal Odbiorcy Enea nazywa inaczej niż COST_ZONE_DISPLAY.  Po tej nazwie
+# rachunek szuka statystyki „Energia pobrana – {nazwa}”.  COST_ZONE_DISPLAY zostaje bez
+# zmian, bo jego nazwa jest częścią statistic_id kosztów i nazw atrybutów rachunku.
+BILL_ZONE_PORTAL_NAMES: dict[str, str] = {
+    "off_peak": "Pozaszczyt",  # G12w
+}
+
 # Bill estimate entity keys
 BILL_KEY_PREV_READING = "bill_prev_reading"
 BILL_KEY_LAST_READING = "bill_last_reading"
@@ -247,6 +254,11 @@ BILLING_PERIOD_MIN_SEGMENT = timedelta(days=2)
 # Długości okresu rozliczeniowego, dla których taryfa ma stawkę abonamentową (miesiące).
 BILLING_PERIOD_MONTHS = (1, 2, 6, 12)
 AVERAGE_MONTH_DAYS = 30.44
+# O ile dni odstęp dwóch granic może odbiegać od pełnej liczby miesięcy, żeby uznać go za
+# okres rozliczeniowy — odczyt bywa przesunięty o kilka dni.  Granice z billingWeekData
+# wyznacza też np. zmiana umowy albo grupy taryfowej: u prosumenta zmiana G11 → G12W
+# i początek roku dały odstęp 20 dni, który zaokrąglony wyglądał na okres miesięczny.
+BILLING_PERIOD_TOLERANCE_DAYS = 7
 # Przedziały rocznego zużycia opłaty mocowej (pkt 3.1.29 taryfy Enea Operator, art. 89b
 # ust. 3 ustawy o rynku mocy): poniżej 500, od 500 do 1200, powyżej 1200 do 2800,
 # powyżej 2800 kWh.  Tu górne granice trzech pierwszych (druga i trzecia włącznie).

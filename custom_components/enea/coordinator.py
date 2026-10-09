@@ -793,6 +793,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         end_date: date,
         zero_fill_stale: bool = False,
         grace_days: int = 0,
+        skip_leading_gaps: bool = False,
     ) -> list[tuple[date, dict[str, Any]]]:
         """Fetch all measurement types for a date range in parallel.
 
@@ -812,12 +813,18 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
           being silently dropped, so it does not leave a hole that corrupts
           the cumulative sum of later days (see MISSING_DAY_GRACE_DAYS).
 
+        With ``skip_leading_gaps`` the days before the first one with data are
+        dropped whatever ``zero_fill_stale`` says: there the meter's history in
+        the Portal Odbiorcy Enea has not begun yet (a prosumer's balanced data
+        starts long after the meter's assembly), so no day of it is missing.
+
         Args:
             start_date: First date to fetch (inclusive); clamped to assembly date.
             end_date: Last date to fetch (inclusive).
             zero_fill_stale: Whether to zero-fill days confirmed missing.
             grace_days: How many days a day may stay missing before it is
                 considered permanently absent (only used when zero_fill_stale).
+            skip_leading_gaps: Whether the range may start before the history.
 
         Returns:
             Chronologically sorted list of (date, day_data) tuples where day_data
@@ -878,27 +885,42 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         today = dt_util.now().date()
         all_days: list[tuple[date, dict[str, Any]]] = []
+        history_started = not skip_leading_gaps
+        zero_filled: list[date] = []
         for day in sorted(all_dates):
             day_data: dict[str, Any] = {
                 key: days_map[day]
                 for key, days_map in per_key_days.items()
                 if day in days_map
             }
-            if not any(has_data(v) for v in day_data.values()):
-                if not zero_fill_stale or (today - day).days < grace_days:
+            if any(has_data(v) for v in day_data.values()):
+                history_started = True
+            else:
+                if (
+                    not history_started
+                    or not zero_fill_stale
+                    or (today - day).days < grace_days
+                ):
                     continue
-                _LOGGER.info(
-                    "Portal Odbiorcy Enea published no data for %s (meter %s) within "
-                    "%d day(s); storing the day as zero consumption. The enea.backfill "
-                    "action re-fetches it if the data appears later",
-                    day,
-                    mask_ppe(self._meter_code),
-                    grace_days,
-                )
                 day_data = self._zero_fill_missing_day(day_data)
-                self._zero_filled_days.add(day)
+                zero_filled.append(day)
             day_data = self._strip_pre_assembly_slots(day, day_data)
             all_days.append((day, day_data))
+
+        if zero_filled:
+            # One line per fetch: a portal outage or a long backfill would
+            # otherwise log every day separately.
+            _LOGGER.info(
+                "Portal Odbiorcy Enea published no data for %d day(s) from %s to %s "
+                "(meter %s) within %d day(s); storing them as zero consumption. The "
+                "enea.backfill action re-fetches them if the data appears later",
+                len(zero_filled),
+                zero_filled[0],
+                zero_filled[-1],
+                mask_ppe(self._meter_code),
+                grace_days,
+            )
+            self._zero_filled_days.update(zero_filled)
 
         return all_days
 
@@ -908,6 +930,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         end_date: date,
         zero_fill_stale: bool = False,
         grace_days: int = 0,
+        skip_leading_gaps: bool = False,
     ) -> list[tuple[date, dict[str, Any]]]:
         """Fetch days chronologically from start_date to end_date (inclusive).
 
@@ -919,7 +942,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         day itself, early-hour slots (before the assembly hour) are stripped by
         _strip_pre_assembly_slots so only new-meter data is imported.
 
-        zero_fill_stale/grace_days are forwarded to _fetch_range — see there.
+        zero_fill_stale/grace_days/skip_leading_gaps are forwarded to
+        _fetch_range — see there.  Leading gaps are skipped only until a chunk
+        brings the first day with data.
         """
         # Assembly-date clamp is also applied inside _fetch_range; repeating it
         # here avoids allocating empty chunks before the assembly date.
@@ -934,8 +959,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 end_date,
             )
             chunk_days = await self._fetch_range(
-                chunk_start, chunk_end, zero_fill_stale, grace_days
+                chunk_start, chunk_end, zero_fill_stale, grace_days, skip_leading_gaps
             )
+            if chunk_days:
+                skip_leading_gaps = False
             all_days.extend(chunk_days)
             chunk_start = chunk_end + timedelta(days=1)
 
@@ -947,7 +974,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch days backward from end_date; stop when data runs out.
 
         When the assembly date is known, delegates to _fetch_days_forward because
-        the exact start is known. When the assembly date is unknown, fetches
+        the exact start is known — though not where the portal's data begins,
+        so the days before the first one with data are skipped, not zero-filled. When the assembly date is unknown, fetches
         RANGE_FETCH_CHUNK_DAYS-sized chunks going backward and stops after
         BACKFILL_MAX_CONSECUTIVE_EMPTY consecutive days with no data at the
         start (oldest end) of a chunk.
@@ -964,6 +992,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 end_date,
                 zero_fill_stale=True,
                 grace_days=MISSING_DAY_GRACE_DAYS,
+                skip_leading_gaps=True,
             )
 
         # Collect chunks newest-first, flatten in reverse at the end — avoids

@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.enea import billing
 from custom_components.enea.billing import PricesConfig, async_estimate_bill
+from custom_components.enea.statistics import get_statistic_id
 
 TZ = datetime.UTC
 
@@ -154,3 +155,52 @@ async def test_period_starting_before_all_history(stored) -> None:
 
     assert estimate is not None
     assert estimate.kwh_by_zone["Szczyt"] == pytest.approx(40.0)
+
+
+async def test_g12w_reads_both_zones_under_the_portals_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """G12w off-peak is "Pozaszczyt" in the portal, though costs call it "Poza szczytem".
+
+    The bill looked for "Energia pobrana – Poza szczytem", found no such
+    statistic and counted 0 kWh for the whole off-peak zone, while the peak
+    zone was read as usual.
+    """
+    sums = {
+        get_statistic_id("PPE", "Energia pobrana – Szczyt"): (100.0, 140.0),
+        get_statistic_id("PPE", "Energia pobrana – Pozaszczyt"): (500.0, 750.0),
+    }
+
+    class Rec:
+        async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
+            return target(*args)
+
+    def during(hass: Any, start: Any, end: Any, ids: set, *rest: Any) -> dict:
+        sid = next(iter(ids))
+        if sid not in sums:
+            return {}
+        opening, closing = sums[sid]
+        return {
+            sid: [
+                {"start": _midnight(datetime.date(2026, 3, 6)).timestamp(), "sum": opening},
+                {"start": _midnight(datetime.date(2026, 3, 20)).timestamp(), "sum": closing},
+            ]
+        }
+
+    monkeypatch.setattr(billing, "get_instance", lambda hass: Rec())
+    monkeypatch.setattr(billing, "statistics_during_period", during)
+    monkeypatch.setattr(_Period, "__init__", _g12w_period)
+
+    estimate = await async_estimate_bill(
+        object(), "PPE", _cfg(), datetime.date(2026, 3, 6), datetime.date(2026, 3, 20)
+    )
+
+    assert estimate is not None
+    assert estimate.kwh_by_zone == pytest.approx({"Szczyt": 40.0, "Poza szczytem": 250.0})
+    assert estimate.energy_by_zone_netto["Poza szczytem"] > 0
+
+
+def _g12w_period(self: _Period) -> None:
+    """Give the fake period the two G12w zones."""
+    self.zones = {"peak": _Pricing(), "off_peak": _Pricing()}
+    self.monthly = _Monthly()

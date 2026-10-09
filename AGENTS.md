@@ -8,7 +8,7 @@
   2. **API URLs** — `BASE_URL`, `URL_*`
   3. **Config entry keys** — `CONF_*`
   4. **Defaults** — `DEFAULT_*`
-  5. **Statistics API** — `MEASUREMENT_ID_*`, `MeasurementType`, `Resolution`, `BACKFILL_*`, `RANGE_FETCH_CHUNK_DAYS`
+  5. **Statistics API** — `MEASUREMENT_ID_*`, `MeasurementType`, `Resolution`, `DataSource`, `PPE_TYPE_PROSUMER`, `BACKFILL_*`, `RANGE_FETCH_CHUNK_DAYS`
 - Każda nowa funkcja, metoda i klasa musi mieć **docstring**.
 - **Stan encji koordynatora przypisuj do pól `_attr_*`, nie licz go we właściwości z `@cached_property`.** HA unieważnia swoje buforowane właściwości encji (`native_value`, `is_on`, `extra_state_attributes`, …) tylko przy przypisaniu odpowiadającego pola `_attr_*`, a `CoordinatorEntity._handle_coordinator_update()` jedynie wywołuje `async_write_ha_state()` — `@cached_property` zostawia więc pierwszą wartość aż do restartu. Wzorzec w integracji: metoda `_update_attrs()` liczy stan z `coordinator.data` i przypisuje `_attr_*`; woła ją `__init__` oraz nadpisane `_handle_coordinator_update()` (przed `super()`). Zwykłe `@property` też działa (np. `EneaBillSensor`), ale Pyright zgłasza wtedy `reportIncompatibleVariableOverride`.
 - **Logi i raport diagnostyczny trafiają do publicznych zgłoszeń na GitHubie** (czytać je może także Enea). Nigdy nie loguj pełnego numeru PPE ani wewnętrznego ID licznika z Portalu Odbiorcy Enea (`meter_id`): numer PPE i `statistic_id` przepuszczaj przez `mask_ppe()` (`connector.py`, skraca do `…1234`), a `meter_id` pomijaj. `meter_id` siedzi w URL-ach żądań, a niektóre wyjątki aiohttp (`ContentTypeError`, `TooManyRedirects`, `InvalidURL`) cytują pełny URL — tekst takiego wyjątku przepuszczaj przez `hide_meter_id()` i nie łańcuchuj go (`from None`), bo traceback z `exc_info` przywróciłby URL. `mask_ppe()` tego nie wyłapie (`meter_id` ma mniej niż 10 cyfr). Nowe pola identyfikujące odbiorcę dopisuj do `TO_REDACT` w `diagnostics.py`. ID zgłoszeń w Naprawach buduj z `entry_id`, nie z PPE ani `meter_id`.
@@ -65,6 +65,11 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 - Pobieranie danych odbywa się przez **range endpoint** (`/consumption/{id}/{startDate}/{endDate}/{mtype}/{resolution}`), który zwraca dane za wiele dni naraz. Zakres jest dzielony na chunki `RANGE_FETCH_CHUNK_DAYS = 180` dni przetwarzane sekwencyjnie; w każdym chunku 2–4 żądania HTTP są wysyłane **równolegle** (`asyncio.gather`) — po jednym na typ pomiaru. Wydajność: ~2s na 6 miesięcy, ~5.5s na rok.
 - Odpowiedź range endpoint to płaska lista slotów godzinowych. **Liczba slotów na dobę NIE jest stała** — w dniu zmiany czasu doba ma 23 lub 25 godzin (API nie dopełnia do 24). `_split_range_response` grupuje sloty po **rzeczywistej dacie** wyliczonej z `integrationEnd` (a nie po sztywnych blokach 24) → odporne na DST. Wynik to per-day dicty `{"values": [...], "zones": [...]}` identyczne ze strukturą single-day, więc `has_data`, `_collect_series` i koszty nie wymagają zmian. Dla dużych zakresów dane bywają w `valuesToTable` (a `values` może zawierać krótki, częściowy wycinek) — kod bierze **dłuższe** z pól `values`/`valuesToTable`. Dokładny czas slotu liczy `slot_start_dt(entry)` z `integrationEnd` (nie z `timeId`) — patrz niżej.
 - Manualny backfill dowolnego zakresu dat: akcja `enea.backfill` (patrz Akcje).
+- **Prosumenci — dane po bilansowaniu.** Licznik prosumenta (`type == PPE_TYPE_PROSUMER`, czyli 2, w dashboardzie i `/user/ppes`) ma w Portalu Odbiorcy Enea przełącznik „Dane przed bilansowaniem” / „Dane po bilansowaniu”; fakturę rozlicza się z tych drugich. `_data_source` w koordynatorze prosi o `DataSource.AFTER_BALANCING` dla energii pobranej i oddanej (`BALANCED_MEASUREMENT_TYPES`) — dla mocy portal ich nie ma, więc moc idzie jak dotąd, bez źródła. Szczegóły:
+  - Opóźnienie publikacji danych po bilansowaniu nie jest znane (brak konta prosumenta), więc dzień brakujący czeka na zera `MISSING_DAY_GRACE_DAYS_BALANCED` (14) zamiast 3 dni (`_grace_days`).
+  - Uzupełnianie przyrostowe startuje od najnowszej godziny serii po bilansowaniu, nie wszystkich serii — moc sprzed bilansowania sięgająca wczoraj nie może udawać aktualnej energii.
+  - Historia zaimportowana wcześniej z danych przed bilansowaniem jest **jednorazowo importowana od nowa** (ta sama ścieżka co pierwszy backfill, w tle); po udanym backfillu prosumenta `entry.data[CONF_BALANCED_HISTORY] = True`. Ten zapis nie przeładowuje wpisu, bo opcje przeładowuje `OptionsFlowWithReload`, a nie update listener — nie przywracaj listenera.
+  - W czasie backfillu w tle odświeżenia nie robią przyrostowego uzupełniania (backfill sam zapisuje wszystko do wczoraj, z kosztami).
 - `has_data` zwraca `False` gdy odpowiedź API zawiera wyłącznie wartości `null` (`if item.get("value") is not None`). Zera są traktowane jako dane (zerowe zużycie) — dni z zerowym zużyciem są importowane. Filtrowanie danych starego licznika odbywa się przez `_strip_pre_assembly_slots` na poziomie godzin, nie przez `has_data`.
 - **Dni bez danych (`has_data() == False`)** — Portal Odbiorcy Enea czasem w ogóle nie publikuje danych za dany dzień (potwierdzone przypadki trwałych dziur, nie tylko opóźnień). `_fetch_range` w `coordinator.py` obsługuje to przez parametry `zero_fill_stale`/`grace_days`: dzień bez danych młodszy niż `MISSING_DAY_GRACE_DAYS` (`const.py`, domyślnie 3 dni) jest pomijany jak dotychczas (dane zwykle pojawiają się po ok. 11:00 następnego dnia — patrz niżej); dzień starszy jest traktowany jako trwale brakujący i wstrzykiwany z wyzerowanymi wartościami — logowane na poziomie INFO, bo to trwały zapis zer widoczny w Energy Dashboard (`_zero_fill_missing_day` — nadpisuje `null` na `0.0` w istniejących slotach, nie tworzy sztucznych slotów) zamiast być pomijany. Dzięki temu luka nie zeruje skumulowanej sumy kolejnych dni w `write_cumulative_series` (zob. sekcja Architektura kosztów). Ponowne uruchomienie `enea.backfill` dla tego samego zakresu zawsze odpytuje API na nowo i nadpisuje wyzerowany dzień prawdziwymi danymi, jeśli się później pojawią. Skanowanie wsteczne w `_fetch_days_backward` (gdy `assemblyDate` jest nieznane) celowo używa `zero_fill_stale=False` — polega na prawdziwym braku danych, żeby wykryć granicę początku historii licznika.
 
@@ -256,7 +261,7 @@ Cookie: PER_JSESSIONID=<wartość>
 ### Endpoint statystyk historycznych — zakres dat
 
 ```
-GET /consumption/{ppeId}/{startDate}/{endDate}/{measurementType}/{resolution}
+GET /consumption/{ppeId}/{startDate}/{endDate}/{measurementType}/{resolution}[/{dataSource}]
 Cookie: PER_JSESSIONID=<wartość>
 ```
 
@@ -267,6 +272,9 @@ Cookie: PER_JSESSIONID=<wartość>
 | `endDate` | Data końcowa w formacie `YYYY-MM-DD` (włącznie) |
 | `measurementType` | 1=energia pobrana, 5=energia oddana, 4=moc pobrana, 9=moc oddana |
 | `resolution` | 2=60 min (zalecane; 24 wpisy × liczba dni) |
+| `dataSource` | opcjonalny, tylko licznik prosumenta: 1=przed bilansowaniem (domyślnie), 2=po bilansowaniu (energia, rozdzielczość 60 min lub grubsza) |
+
+Kolejność segmentów wzięta z frontendu Portalu Odbiorcy Enea (`dist/js/app.js`): polyfill `Object.prototype.join` skleja wartości obiektu zapytania (`id, dateFrom, dateTo, measurementId, dayGranulation, dataSourceId`) przez `/`. Dla innych liczników portal nie wysyła szóstego segmentu.
 
 Kluczowe pola odpowiedzi:
 - `values[]` — płaska lista slotów godzinowych, `timeId` powtarzający się per dzień; dla dużych zakresów bywa pusta **albo zawiera krótki częściowy wycinek** (wtedy pełne dane są w `valuesToTable[]`)
@@ -385,7 +393,7 @@ Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**
 | `fetch_power_consumption` | `False` | Pobieranie statystyk mocy pobranej (kW) |
 | `fetch_power_generation` | `False` | Pobieranie statystyk mocy oddanej (kW) |
 
-Zmiana opcji powoduje natychmiastowy reload integracji (update listener w `__init__.py`).
+Zmiana opcji powoduje natychmiastowy reload integracji (`EneaOptionsFlow` dziedziczy po `OptionsFlowWithReload`). Integracja nie ma update listenera — przeładowywałby wpis także przy zapisie `entry.data` przez koordynator (`CONF_BALANCED_HISTORY`).
 
 ## Akcje (services)
 

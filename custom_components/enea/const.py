@@ -29,6 +29,9 @@ URL_CONSUMPTION_RANGE = (
     f"{BASE_URL}"
     "/consumption/{meter_id}/{start_date}/{end_date}/{measurement_type}/{resolution}"
 )
+# The same endpoint with the data source of a prosumer's meter as one more segment —
+# Portal Odbiorcy Enea joins the query's values with "/" in this order.
+URL_CONSUMPTION_RANGE_DATA_SOURCE = URL_CONSUMPTION_RANGE + "/{data_source}"
 
 # ---------------------------------------------------------------------------
 # Config entry keys
@@ -42,6 +45,8 @@ CONF_FETCH_CONSUMPTION = "fetch_consumption"
 CONF_FETCH_GENERATION = "fetch_generation"
 CONF_FETCH_POWER_CONSUMPTION = "fetch_power_consumption"
 CONF_FETCH_POWER_GENERATION = "fetch_power_generation"
+# Set once a prosumer's energy history has been imported from balanced data.
+CONF_BALANCED_HISTORY = "balanced_history"
 
 # ---------------------------------------------------------------------------
 # Sensor keys (must match translation files)
@@ -166,9 +171,28 @@ class Resolution(IntEnum):
     MIN_15 = 1
     MIN_60 = 2
 
+
+class DataSource(IntEnum):
+    """Data source of a prosumer's meter — "Dane przed / po bilansowaniu" in the portal."""
+
+    BEFORE_BALANCING = 1
+    AFTER_BALANCING = 2
+
+
+# PPE type (field "type" of /user/ppes and of the dashboard) of a prosumer, whose
+# invoice is settled from the balanced data.  Portal Odbiorcy Enea offers that data
+# only for energy; for power it falls back to the data before balancing.
+PPE_TYPE_PROSUMER = 2
+BALANCED_MEASUREMENT_TYPES = frozenset(
+    {MeasurementType.ENERGY_CONSUMED, MeasurementType.ENERGY_RETURNED}
+)
+
 BACKFILL_MAX_CONSECUTIVE_EMPTY = 7  # stop after this many consecutive days with no data
 RANGE_FETCH_CHUNK_DAYS = 180  # max days per single range request (~6 months)
 MISSING_DAY_GRACE_DAYS = 3  # days to keep waiting for a late day before zero-filling it
+# The same for balanced data, whose publication delay is not known yet — kept long so
+# that a slow balancing is not stored as zero consumption.
+MISSING_DAY_GRACE_DAYS_BALANCED = 14
 
 EPOCH = dt_util.utc_from_timestamp(0)
 """Lower bound for a statistics lookup that must not miss anything, however old."""

@@ -232,6 +232,25 @@ Integracja zgłasza w **Ustawienia → System → Naprawy**:
 - Upewnij się, że logujesz się tymi samymi danymi co na [portalodbiorcy.operator.enea.pl](https://portalodbiorcy.operator.enea.pl/)
 - Sprawdź logi Home Assistant (`Ustawienia → System → Logi`) w poszukiwaniu błędów z domeny `enea`
 
+## Testy i pokrycie kodu
+
+Testy uruchomisz lokalnie przez `uv`:
+
+```sh
+uv run --locked --group dev coverage run -m pytest -q
+uv run --locked --group dev coverage report
+uv run --locked --group dev coverage html
+```
+
+Raport HTML znajduje się w `htmlcov/index.html`. Pomiar obejmuje linie i rozgałęzienia
+całej integracji, także moduły niewykonane przez testy. Testy używają atrap usług
+Home Assistant i odpowiedzi HTTP — nie wymagają konta w Portalu Odbiorcy Enea.
+
+Workflow **Tests** uruchamia ten sam pomiar dla pushy i pull requestów. Podsumowanie
+pokrycia jest widoczne w podsumowaniu joba, a raporty HTML i XML w artefakcie
+`coverage-report`, przechowywanym przez 14 dni. Raporty powstają również po porażce
+testów, jeśli pomiar zebrał dane; nie zmienia to wyniku testów na sukces.
+
 ## Podziękowania
 
 Inspirowane integracją [Tauron AMIplus](https://github.com/PiotrMachowski/Home-Assistant-custom-components-Tauron-AMIplus) autorstwa [@PiotrMachowski](https://github.com/PiotrMachowski).

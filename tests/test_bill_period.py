@@ -1,206 +1,207 @@
-"""kWh per zone for a billing period, read out of the stored statistics."""
+"""kWh and charges of a billing period, worked out hour by hour from the statistics."""
 from __future__ import annotations
 
 import datetime
 from typing import Any
 
 import pytest
+from homeassistant.util import dt as dt_util
 
 from custom_components.enea import billing
 from custom_components.enea.billing import PricesConfig, async_estimate_bill
+from custom_components.enea.costs import TariffHistory
 from custom_components.enea.statistics import get_statistic_id
 
-TZ = datetime.UTC
+CONSUMED = get_statistic_id("PPE", "Energia pobrana")
+START = datetime.date(2026, 3, 1)
+END = datetime.date(2026, 3, 31)
 
 
 class _Pricing:
-    """One zone's per-kWh prices."""
+    """One zone's per-kWh netto prices."""
 
-    energy = 0.6518
-    variable_network = 0.2702
-    quality = 0.0332
-    oze = 0.0073
-    cogeneration = 0.0030
+    def __init__(self, energy: float = 0.6, variable_network: float = 0.27) -> None:
+        self.energy = energy
+        self.variable_network = variable_network
+        self.quality = 0.03
+        self.oze = 0.007
+        self.cogeneration = 0.003
 
 
 class _Monthly:
-    """Fixed monthly fees.  These tests check kWh, so the amounts do not matter."""
+    """Fixed monthly fees, scaled so each period's are told apart."""
+
+    def __init__(self, scale: float = 1.0) -> None:
+        self.scale = scale
 
     def get_network_fixed(self, phases: int) -> float:
-        """Fixed network fee, independent of the phase count here."""
-        return 26.23
+        return 20.0 * self.scale
 
     def get_capacity(self, annual_kwh: int) -> float:
-        """Capacity fee, independent of the annual volume here."""
-        return 17.18
+        return 10.0 * self.scale
 
     def get_subscription(self, billing_months: int) -> float:
-        """Subscription fee, independent of the billing period here."""
-        return 3.84
+        return 1.0 * self.scale
 
 
-class _Period:
-    """A tariff period with a single zone."""
+class _G12wPeriod:
+    """Peak from 6:00 to 21:00, off-peak otherwise."""
+
+    def __init__(self, energy: float = 0.6, scale: float = 1.0) -> None:
+        self.zones = {"peak": _Pricing(energy, 0.3), "off_peak": _Pricing(energy / 2, 0.1)}
+        self.monthly = _Monthly(scale)
+
+    def get_zone_at_hour(self, hour: int, day: datetime.date | None = None) -> str:
+        return "peak" if 6 <= hour < 21 else "off_peak"
+
+
+class _G11Period:
+    """One zone for every hour."""
 
     def __init__(self) -> None:
-        self.zones = {"peak": _Pricing()}
-        self.monthly = _Monthly()
+        self.zones = {"day": _Pricing(0.5, 0.25)}
+        self.monthly = _Monthly(0.5)
+
+    def get_zone_at_hour(self, hour: int, day: datetime.date | None = None) -> str:
+        return "day"
 
 
 class _Tariff:
-    """A tariff group that prices every date the same way."""
+    """A tariff group whose prices change on a given day."""
 
-    name = "G12w"
+    def __init__(self, name: str, before: Any, after: Any, change: datetime.date) -> None:
+        self.name = name
+        self._before, self._after, self._change = before, after, change
+        self.periods = [before, after]
 
-    def get_period_for_date(self, d: datetime.date) -> _Period:
-        """Every date falls in the one period this tariff has."""
-        return _Period()
+    def get_period_for_date(self, d: datetime.date) -> Any:
+        return self._after if d >= self._change else self._before
+
+
+def _g12w(change: datetime.date = START) -> _Tariff:
+    """G12w whose energy price doubles on change (pass START for one price)."""
+    return _Tariff("G12w", _G12wPeriod(0.3, 0.5), _G12wPeriod(0.6), change)
+
+
+def _cfg(tariff: Any) -> PricesConfig:
+    return PricesConfig(tariff=tariff, phases=3, annual_kwh=5000, billing_months=1, akcyza=0.0)
+
+
+def _at(day: datetime.date, hour: int) -> datetime.datetime:
+    """An hour on a local day."""
+    return dt_util.start_of_local_day(day) + datetime.timedelta(hours=hour)
 
 
 @pytest.fixture
 def stored(monkeypatch: pytest.MonkeyPatch):
-    """Serve cumulative daily sums to billing, mirroring the recorder."""
+    """Serve hourly changes per statistic, as the recorder works them out from the sums."""
+    windows: list[tuple[datetime.datetime, datetime.datetime]] = []
 
-    def _wire(rows: list[tuple[datetime.date, float]]) -> None:
-        ordered = sorted(rows)
-
+    def _wire(hours: dict[str, list[tuple[datetime.datetime, float]]]) -> list:
         class Rec:
             async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
                 return target(*args)
 
         def during(
-            hass: Any, start: Any, end: Any, ids: set, *rest: Any
+            hass: Any, start: Any, end: Any, ids: set, period: str, units: Any, types: set
         ) -> dict:
+            assert (period, types) == ("hour", {"change"})
+            windows.append((start, end))
             sid = next(iter(ids))
-            picked = [
-                {"start": _midnight(d).timestamp(), "sum": total}
-                for d, total in ordered
-                if start <= _midnight(d) < end
+            rows = [
+                {"start": hour.timestamp(), "change": kwh}
+                for hour, kwh in hours.get(sid, [])
+                if start <= hour < end
             ]
-            return {sid: picked} if picked else {}
+            return {sid: rows} if rows else {}
 
         monkeypatch.setattr(billing, "get_instance", lambda hass: Rec())
         monkeypatch.setattr(billing, "statistics_during_period", during)
+        return windows
 
     return _wire
 
 
-def _midnight(d: datetime.date) -> datetime.datetime:
-    """Local midnight of a day, as the recorder timestamps a daily row."""
-    return datetime.datetime(d.year, d.month, d.day, tzinfo=TZ)
+async def test_each_hour_goes_to_the_zone_of_the_tariff_schedule(stored) -> None:
+    """The zone statistics the portal names play no part — only the hour does.
 
-
-def _cfg() -> PricesConfig:
-    """A prices configuration built on the single-zone fake tariff."""
-    return PricesConfig(
-        tariff=_Tariff(), phases=3, annual_kwh=5000, billing_months=1, akcyza=0.005
-    )
-
-
-async def test_kwh_is_the_difference_between_the_boundaries(stored) -> None:
-    """kWh for a period is the meter total at its end minus the total at its start."""
-    stored(
-        [
-            (datetime.date(2026, 3, 6), 1000.0),
-            (datetime.date(2026, 3, 9), 1010.0),
-            (datetime.date(2026, 3, 20), 1100.0),
-        ]
-    )
-
-    estimate = await async_estimate_bill(
-        object(), "PPE", _cfg(), datetime.date(2026, 3, 6), datetime.date(2026, 3, 20)
-    )
-
-    assert estimate is not None
-    assert estimate.kwh_by_zone["Szczyt"] == pytest.approx(100.0)
-
-
-async def test_boundary_day_without_rows_in_this_zone(stored) -> None:
-    """A zone with no reading on the start date must still find its starting total.
-
-    The starting total came from a query beginning on the first day of the
-    period, and a zone need not have a reading that day.  G12w has no peak
-    hours at a weekend or on a public holiday, and a day the portal never
-    published has none at all.  The starting total then stayed at zero and the
-    period's consumption came out as everything the meter has ever recorded,
-    which showed up as an estimate of thousands of zloty.  The reading dates
-    are typed in by hand, so any weekend date hit this.
+    After a change of tariff group the portal kept naming hours "Bezstrefowo"
+    for weeks, and it calls G12w off-peak "Pozaszczyt" where the tariff says
+    "Poza szczytem"; a bill read from those statistics missed both.
     """
-    friday = datetime.date(2026, 3, 6)
-    saturday = datetime.date(2026, 3, 7)
-    stored(
-        [
-            (friday, 1000.0),
-            # 7-8 March is a weekend: no peak hours, so no rows in this zone.
-            (datetime.date(2026, 3, 9), 1010.0),
-            (datetime.date(2026, 3, 20), 1100.0),
-        ]
-    )
+    stored({CONSUMED: [(_at(START + datetime.timedelta(days=1), 3), 2.0), (_at(END, 10), 3.0)]})
 
-    estimate = await async_estimate_bill(
-        object(), "PPE", _cfg(), saturday, datetime.date(2026, 3, 20)
-    )
+    estimate = await async_estimate_bill(object(), "PPE", _cfg(_g12w()), START, END)
 
     assert estimate is not None
-    assert estimate.kwh_by_zone["Szczyt"] == pytest.approx(100.0)
+    assert estimate.kwh_by_zone == {"Szczyt": 3.0, "Poza szczytem": 2.0}
+    assert estimate.energy_by_zone_netto == {"Szczyt": 1.8, "Poza szczytem": 0.6}
+    assert estimate.unpriced_kwh == 0.0
 
 
-async def test_period_starting_before_all_history(stored) -> None:
-    """With nothing stored before the start date, zero is the right starting total."""
-    stored([(datetime.date(2026, 3, 20), 40.0)])
+async def test_the_period_is_read_from_the_day_after_the_previous_reading(stored) -> None:
+    """(start, end] in days: from midnight after start to midnight after end."""
+    windows = stored({CONSUMED: [(_at(START, 23), 5.0), (_at(END, 23), 1.0)]})
 
-    estimate = await async_estimate_bill(
-        object(), "PPE", _cfg(), datetime.date(2026, 3, 1), datetime.date(2026, 3, 20)
-    )
-
-    assert estimate is not None
-    assert estimate.kwh_by_zone["Szczyt"] == pytest.approx(40.0)
-
-
-async def test_g12w_reads_both_zones_under_the_portals_names(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """G12w off-peak is "Pozaszczyt" in the portal, though costs call it "Poza szczytem".
-
-    The bill looked for "Energia pobrana – Poza szczytem", found no such
-    statistic and counted 0 kWh for the whole off-peak zone, while the peak
-    zone was read as usual.
-    """
-    sums = {
-        get_statistic_id("PPE", "Energia pobrana – Szczyt"): (100.0, 140.0),
-        get_statistic_id("PPE", "Energia pobrana – Pozaszczyt"): (500.0, 750.0),
-    }
-
-    class Rec:
-        async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
-            return target(*args)
-
-    def during(hass: Any, start: Any, end: Any, ids: set, *rest: Any) -> dict:
-        sid = next(iter(ids))
-        if sid not in sums:
-            return {}
-        opening, closing = sums[sid]
-        return {
-            sid: [
-                {"start": _midnight(datetime.date(2026, 3, 6)).timestamp(), "sum": opening},
-                {"start": _midnight(datetime.date(2026, 3, 20)).timestamp(), "sum": closing},
-            ]
-        }
-
-    monkeypatch.setattr(billing, "get_instance", lambda hass: Rec())
-    monkeypatch.setattr(billing, "statistics_during_period", during)
-    monkeypatch.setattr(_Period, "__init__", _g12w_period)
-
-    estimate = await async_estimate_bill(
-        object(), "PPE", _cfg(), datetime.date(2026, 3, 6), datetime.date(2026, 3, 20)
-    )
+    estimate = await async_estimate_bill(object(), "PPE", _cfg(_g12w()), START, END)
 
     assert estimate is not None
-    assert estimate.kwh_by_zone == pytest.approx({"Szczyt": 40.0, "Poza szczytem": 250.0})
-    assert estimate.energy_by_zone_netto["Poza szczytem"] > 0
+    assert estimate.kwh_by_zone == {"Szczyt": 0.0, "Poza szczytem": 1.0}
+    assert windows == [
+        (
+            dt_util.start_of_local_day(START + datetime.timedelta(days=1)),
+            dt_util.start_of_local_day(END + datetime.timedelta(days=1)),
+        )
+    ]
 
 
-def _g12w_period(self: _Period) -> None:
-    """Give the fake period the two G12w zones."""
-    self.zones = {"peak": _Pricing(), "off_peak": _Pricing()}
-    self.monthly = _Monthly()
+async def test_each_hour_is_priced_by_its_own_day(stored) -> None:
+    """A bill across a price change charges each part at its own prices."""
+    change = datetime.date(2026, 3, 16)
+    stored({CONSUMED: [(_at(datetime.date(2026, 3, 10), 10), 10.0), (_at(change, 10), 10.0)]})
+
+    estimate = await async_estimate_bill(object(), "PPE", _cfg(_g12w(change)), START, END)
+
+    assert estimate is not None
+    assert estimate.energy_by_zone_netto["Szczyt"] == pytest.approx(10 * 0.3 + 10 * 0.6)
+    # Fixed fees come from the period at the end of the bill.
+    assert estimate.fixed_network_netto == 20.0
+
+
+async def test_a_change_of_tariff_group_prices_each_part_by_its_group(stored) -> None:
+    """G11 hours before the change go to its single zone, at G11 prices."""
+    change = datetime.date(2026, 3, 16)
+    g11 = _Tariff("G11", _G11Period(), _G11Period(), START)
+    g12w = _g12w()
+    history = TariffHistory(
+        g12w,
+        [(datetime.date(2022, 1, 1), change, g11, "G11"), (change, None, g12w, "G12W")],
+    )
+    stored({CONSUMED: [(_at(datetime.date(2026, 3, 10), 10), 4.0), (_at(change, 10), 6.0)]})
+
+    estimate = await async_estimate_bill(object(), "PPE", _cfg(history), START, END)
+
+    assert estimate is not None
+    assert estimate.kwh_by_zone == {"Szczyt": 6.0, "Poza szczytem": 0.0, "Dzień": 4.0}
+    assert estimate.energy_by_zone_netto["Dzień"] == pytest.approx(4 * 0.5)
+
+
+async def test_hours_of_a_group_without_prices_are_left_out_and_counted(stored) -> None:
+    """Without an enea_prices entry for G11 its hours cannot be priced."""
+    change = datetime.date(2026, 3, 16)
+    history = TariffHistory(_g12w(), [(datetime.date(2022, 1, 1), change, None, "G11")])
+    stored({CONSUMED: [(_at(datetime.date(2026, 3, 10), 10), 4.0), (_at(change, 10), 6.0)]})
+
+    estimate = await async_estimate_bill(object(), "PPE", _cfg(history), START, END)
+
+    assert estimate is not None
+    assert estimate.kwh_by_zone == {"Szczyt": 6.0, "Poza szczytem": 0.0}
+    assert estimate.unpriced_kwh == 4.0
+
+
+async def test_no_prices_on_the_last_day_means_no_bill(stored) -> None:
+    """The fixed fees need the period at the end of the bill."""
+    history = TariffHistory(_g12w(), [(datetime.date(2022, 1, 1), None, None, "G11")])
+    stored({CONSUMED: []})
+
+    assert await async_estimate_bill(object(), "PPE", _cfg(history), START, END) is None

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -1117,11 +1118,16 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Current period:  (bill_last_reading, yesterday].
 
         Sets the corresponding entry in bill_estimates to None when a period
-        is empty, dates are missing, or statistics are unavailable.
+        is empty, dates are missing, or statistics are unavailable.  Prices
+        follow the agreements, like the costs: a period under an earlier tariff
+        group is priced by that group's enea_prices entry.
         """
         cfg = find_prices_config(self.hass, self._tariff_name)
         if cfg is None:
             return
+        history = find_tariff_history(self.hass, self._tariff_name, self._dashboard_data)
+        if history is not None:
+            cfg = replace(cfg, tariff=history)
 
         today = dt_util.now().date()
         yesterday = today - timedelta(days=1)

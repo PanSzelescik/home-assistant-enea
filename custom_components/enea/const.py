@@ -232,13 +232,6 @@ COST_ZONE_DISPLAY: dict[str, str] = {
     "off_peak": "Poza szczytem",
 }
 
-# Strefy, które Portal Odbiorcy Enea nazywa inaczej niż COST_ZONE_DISPLAY.  Po tej nazwie
-# rachunek szuka statystyki „Energia pobrana – {nazwa}”.  COST_ZONE_DISPLAY zostaje bez
-# zmian, bo jego nazwa jest częścią statistic_id kosztów i nazw atrybutów rachunku.
-BILL_ZONE_PORTAL_NAMES: dict[str, str] = {
-    "off_peak": "Pozaszczyt",  # G12w
-}
-
 # System opustów (prosumenci przyłączeni do 31.03.2022, art. 4 ustawy o OZE): z każdej kWh
 # oddanej do sieci można odebrać bez opłat za energię i zmiennych opłat dystrybucyjnych
 # 0,8 kWh (mikroinstalacja do 10 kW) albo 0,7 kWh (powyżej 10 kW).  Opcja licznika

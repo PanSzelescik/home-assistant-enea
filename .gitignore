@@ -5,6 +5,15 @@ __pycache__/
 .eggs/
 *.egg-info/
 
+# Test and coverage output
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+coverage-audit.json
+coverage-audit-html/
+
 # Virtual environments
 .venv/
 venv/

@@ -33,7 +33,6 @@ from .const import (
     COST_PRICES_STORAGE_VERSION,
     DOMAIN,
     MISSING_DAY_GRACE_DAYS,
-    MISSING_DAY_GRACE_DAYS_BALANCED,
     PPE_TYPE_PROSUMER,
     RANGE_FETCH_CHUNK_DAYS,
     STAT_KEY_ENERGY_CONSUMED,
@@ -181,13 +180,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _uses_balanced_data(self) -> bool:
         """Return True when at least one fetched series comes from balanced data."""
         return any(self._data_source(mtype) for _, mtype in self._get_measurement_types())
-
-    @property
-    def _grace_days(self) -> int:
-        """Return how long a missing day is waited for before it is zero-filled."""
-        if self._uses_balanced_data():
-            return MISSING_DAY_GRACE_DAYS_BALANCED
-        return MISSING_DAY_GRACE_DAYS
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch meter data from the API."""
@@ -403,7 +395,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             latest_date + timedelta(days=1),
             yesterday,
             zero_fill_stale=True,
-            grace_days=self._grace_days,
+            grace_days=MISSING_DAY_GRACE_DAYS,
         )
         if all_days:
             # The catch-up above only queued its writes, and the new day
@@ -595,7 +587,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         start, end = missing
         days = await self._fetch_days_forward(
-            start, end, zero_fill_stale=True, grace_days=self._grace_days
+            start, end, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
         )
         if days:
             await async_insert_cost_statistics(
@@ -669,7 +661,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             latest,
         )
         days = await self._fetch_days_forward(
-            start, latest, zero_fill_stale=True, grace_days=self._grace_days
+            start, latest, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
         )
         if days:
             await async_insert_cost_statistics(
@@ -971,7 +963,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._assembly_datetime.date(),
                 end_date,
                 zero_fill_stale=True,
-                grace_days=self._grace_days,
+                grace_days=MISSING_DAY_GRACE_DAYS,
             )
 
         # Collect chunks newest-first, flatten in reverse at the end — avoids
@@ -1027,7 +1019,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Returns the number of days for which data was found and injected.
         """
         all_days = await self._fetch_days_forward(
-            start_date, end_date, zero_fill_stale=True, grace_days=self._grace_days
+            start_date, end_date, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
         )
         if all_days:
             await self._async_inject_days(all_days)

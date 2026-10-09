@@ -190,9 +190,6 @@ BALANCED_MEASUREMENT_TYPES = frozenset(
 BACKFILL_MAX_CONSECUTIVE_EMPTY = 7  # stop after this many consecutive days with no data
 RANGE_FETCH_CHUNK_DAYS = 180  # max days per single range request (~6 months)
 MISSING_DAY_GRACE_DAYS = 3  # days to keep waiting for a late day before zero-filling it
-# The same for balanced data, whose publication delay is not known yet — kept long so
-# that a slow balancing is not stored as zero consumption.
-MISSING_DAY_GRACE_DAYS_BALANCED = 14
 
 EPOCH = dt_util.utc_from_timestamp(0)
 """Lower bound for a statistics lookup that must not miss anything, however old."""

@@ -886,6 +886,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         today = dt_util.now().date()
         all_days: list[tuple[date, dict[str, Any]]] = []
         history_started = not skip_leading_gaps
+        zero_filled: list[date] = []
         for day in sorted(all_dates):
             day_data: dict[str, Any] = {
                 key: days_map[day]
@@ -901,18 +902,25 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     or (today - day).days < grace_days
                 ):
                     continue
-                _LOGGER.info(
-                    "Portal Odbiorcy Enea published no data for %s (meter %s) within "
-                    "%d day(s); storing the day as zero consumption. The enea.backfill "
-                    "action re-fetches it if the data appears later",
-                    day,
-                    mask_ppe(self._meter_code),
-                    grace_days,
-                )
                 day_data = self._zero_fill_missing_day(day_data)
-                self._zero_filled_days.add(day)
+                zero_filled.append(day)
             day_data = self._strip_pre_assembly_slots(day, day_data)
             all_days.append((day, day_data))
+
+        if zero_filled:
+            # One line per fetch: a portal outage or a long backfill would
+            # otherwise log every day separately.
+            _LOGGER.info(
+                "Portal Odbiorcy Enea published no data for %d day(s) from %s to %s "
+                "(meter %s) within %d day(s); storing them as zero consumption. The "
+                "enea.backfill action re-fetches them if the data appears later",
+                len(zero_filled),
+                zero_filled[0],
+                zero_filled[-1],
+                mask_ppe(self._meter_code),
+                grace_days,
+            )
+            self._zero_filled_days.update(zero_filled)
 
         return all_days
 

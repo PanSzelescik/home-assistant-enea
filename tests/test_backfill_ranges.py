@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date, datetime, time, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -251,6 +252,23 @@ async def test_days_before_the_portals_history_are_skipped_not_zeroed(coord):
 
     assert [d for d, _ in result] == days[1:]
     assert coord._zero_filled_days == {days[2]}
+
+
+async def test_zero_filled_days_are_logged_once_per_fetch(coord, caplog):
+    """A long gap logs one summary line, not a line per day."""
+    days = [date(2026, 9, 1) + timedelta(days=i) for i in range(30)]
+    coord.client.get_consumption_data_range.return_value = {
+        "values": [slot for day in days for slot in _slots(day, None)]
+    }
+    caplog.set_level(logging.INFO, logger=module.__name__)
+
+    result = await coord._fetch_range(days[0], days[-1], True, 3)
+
+    assert len(result) == 30
+    assert len(caplog.records) == 1
+    message = caplog.records[0].getMessage()
+    assert "30 day(s) from 2026-09-01 to 2026-09-30" in message
+    assert "590310600000001234" not in message
 
 
 async def test_leading_gaps_are_skipped_only_until_the_history_begins(coord):

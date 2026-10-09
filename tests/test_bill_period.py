@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.enea import billing
 from custom_components.enea.billing import PricesConfig, async_estimate_bill
+from custom_components.enea.statistics import get_statistic_id
 
 TZ = datetime.UTC
 
@@ -154,3 +155,46 @@ async def test_period_starting_before_all_history(stored) -> None:
 
     assert estimate is not None
     assert estimate.kwh_by_zone["Szczyt"] == pytest.approx(40.0)
+
+
+async def test_off_peak_reads_the_portals_zone_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """G12w off-peak is "Pozaszczyt" in the portal, though costs call it "Poza szczytem".
+
+    The bill looked for "Energia pobrana – Poza szczytem", found no such
+    statistic and counted 0 kWh for the whole off-peak zone.
+    """
+    off_peak_sid = get_statistic_id("PPE", "Energia pobrana – Pozaszczyt")
+
+    class Rec:
+        async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
+            return target(*args)
+
+    def during(hass: Any, start: Any, end: Any, ids: set, *rest: Any) -> dict:
+        sid = next(iter(ids))
+        if sid != off_peak_sid:
+            return {}
+        return {
+            sid: [
+                {"start": _midnight(datetime.date(2026, 3, 6)).timestamp(), "sum": 500.0},
+                {"start": _midnight(datetime.date(2026, 3, 20)).timestamp(), "sum": 750.0},
+            ]
+        }
+
+    monkeypatch.setattr(billing, "get_instance", lambda hass: Rec())
+    monkeypatch.setattr(billing, "statistics_during_period", during)
+    monkeypatch.setattr(_Period, "__init__", _off_peak_period)
+
+    estimate = await async_estimate_bill(
+        object(), "PPE", _cfg(), datetime.date(2026, 3, 6), datetime.date(2026, 3, 20)
+    )
+
+    assert estimate is not None
+    assert estimate.kwh_by_zone["Poza szczytem"] == pytest.approx(250.0)
+
+
+def _off_peak_period(self: _Period) -> None:
+    """Give the fake period a single off-peak zone."""
+    self.zones = {"off_peak": _Pricing()}
+    self.monthly = _Monthly()

@@ -85,6 +85,17 @@ def test_a_gap_no_tariff_bills_by_settles_nothing() -> None:
     assert installation.detect_billing_months(starts, None, None) == (None, None)
 
 
+def test_a_boundary_that_is_no_reading_settles_nothing() -> None:
+    """A prosumer's portal split the period at a tariff change and at the new year.
+
+    The 20 days between them rounded to one month, and Repairs suggested
+    changing a yearly billing period to a monthly one.
+    """
+    starts = [date(2025, 2, 25), date(2025, 12, 12), date(2026, 1, 1)]
+
+    assert installation.detect_billing_months(starts, None, None) == (None, None)
+
+
 def test_the_later_of_the_two_readings_counts() -> None:
     """The tariff counts the year up to the latest reading (pkt 3.1.30)."""
     starts = [date(2026, 6, 6), date(2026, 8, 6)]

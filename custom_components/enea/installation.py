@@ -25,6 +25,7 @@ from .connector import billing_period_starts, get_active_meter, infer_phases
 from .const import (
     AVERAGE_MONTH_DAYS,
     BILLING_PERIOD_MONTHS,
+    BILLING_PERIOD_TOLERANCE_DAYS,
     CAPACITY_BRACKET_LIMITS_KWH,
     EPOCH,
     INSTALLATION_SOURCE_BILLING_CYCLE,
@@ -94,9 +95,19 @@ def capacity_bracket(annual_kwh: float) -> int:
 
 
 def _months(first: date, last: date) -> int | None:
-    """Return the billing period length a span of days stands for, if a tariff has one."""
-    months = round((last - first).days / AVERAGE_MONTH_DAYS)
-    return months if months in BILLING_PERIOD_MONTHS else None
+    """Return the billing period length a span of days stands for, if a tariff has one.
+
+    The span must come close to whole months: a boundary set by something else
+    than a reading (a new agreement, a tariff change) leaves a gap that only
+    rounds to a period length.
+    """
+    days = (last - first).days
+    months = round(days / AVERAGE_MONTH_DAYS)
+    if months not in BILLING_PERIOD_MONTHS:
+        return None
+    if abs(days - months * AVERAGE_MONTH_DAYS) > BILLING_PERIOD_TOLERANCE_DAYS:
+        return None
+    return months
 
 
 def detect_billing_months(

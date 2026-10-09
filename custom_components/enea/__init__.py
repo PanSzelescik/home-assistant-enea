@@ -11,9 +11,12 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.storage import Store
 
 from .connector import EneaApiClient
 from .const import (
+    COST_PRICES_STORAGE_KEY,
+    COST_PRICES_STORAGE_VERSION,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
     CONF_FETCH_POWER_CONSUMPTION,
@@ -179,5 +182,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> boo
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> None:
-    """Delete the repair issues of a meter whose config entry is removed."""
+    """Delete the repair issues and the stored cost prices of a removed meter entry."""
     async_delete_issues(hass, entry.entry_id)
+    await Store(
+        hass, COST_PRICES_STORAGE_VERSION, f"{COST_PRICES_STORAGE_KEY}.{entry.entry_id}"
+    ).async_remove()

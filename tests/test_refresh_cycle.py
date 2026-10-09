@@ -11,6 +11,8 @@ from custom_components.enea import costs as costs_module
 from custom_components.enea.connector import EneaApiError
 from custom_components.enea.coordinator import EneaUpdateCoordinator
 
+from conftest import FakeStore
+
 
 @pytest.fixture
 def refresh(monkeypatch: pytest.MonkeyPatch, wire_recorder):
@@ -153,33 +155,60 @@ async def test_a_programming_error_in_the_catch_up_still_propagates(refresh) -> 
         await coord._async_fetch_and_inject_stats()
 
 
+class _Pricing:
+    """Per-kWh prices of one zone, as ZonePricing exposes them."""
+
+    def __init__(self, energy: float = 0.5) -> None:
+        self.energy = energy
+        self.total_distribution = 0.3
+
+
 class _Period:
     """A tariff period broad enough to cover any date these tests use."""
 
-    def __init__(self) -> None:
-        self.zones = {"peak": object()}
+    def __init__(self, energy: float = 0.5) -> None:
+        self.zones = {"peak": _Pricing(energy)}
         self.valid_from = datetime.date(2000, 1, 1)
         self.valid_until = datetime.date(2099, 12, 31)
 
+    def get_zone_at_hour(self, hour: int, day: datetime.date | None = None) -> str:
+        """Every hour belongs to the only zone this period has."""
+        return "peak"
+
 
 class _Tariff:
-    """A tariff group with a single all-covering period."""
+    """A tariff group with a single all-covering period.
 
-    def __init__(self) -> None:
+    changed_from, when given, is the first day priced by a second period
+    whose energy is dearer — a contract entered with a start in the past.
+    """
+
+    def __init__(self, changed_from: datetime.date | None = None) -> None:
         self.periods = [_Period()]
+        self._changed_from = changed_from
+        self._changed = _Period(energy=0.6)
+
+    def get_period_for_date(self, day: datetime.date) -> _Period | None:
+        """Return the period pricing a day."""
+        if self._changed_from is not None and day >= self._changed_from:
+            return self._changed
+        return self.periods[0]
 
 
-def _cost_coordinator(monkeypatch, insert_costs):
+def _cost_coordinator(monkeypatch, insert_costs, fetch_raises=None):
     """A coordinator wired to run _async_inject_missing_costs for real.
 
     Only the portal fetch and the final insert are stubbed: the fetch answers
-    every asked-for day and counts the asks, the insert is the caller's.
+    every asked-for day and counts the asks, the insert is the caller's.  The
+    tariff is coord.tariff, which a test may replace between refreshes.
     """
     yesterday = dt_util.now().date() - datetime.timedelta(days=1)
     fetches: list[tuple[datetime.date, datetime.date]] = []
 
     async def fetch_days_forward(start, end, **kwargs):
         fetches.append((start, end))
+        if fetch_raises is not None:
+            raise fetch_raises
         days = []
         day = start
         while day <= end:
@@ -203,8 +232,14 @@ def _cost_coordinator(monkeypatch, insert_costs):
         tzinfo=dt_util.DEFAULT_TIME_ZONE,
     )
     coord._fetch_days_forward = fetch_days_forward
+    coord._cost_prices_store = FakeStore()
+    coord._cost_prices = None
+    coord._cost_prices_loaded = False
+    coord._cost_reprice_failed = False
+    coord._costs_repriced_from = None
+    coord.tariff = _Tariff()
     monkeypatch.setattr(
-        coordinator_module, "find_tariff_group", lambda hass, name: _Tariff()
+        coordinator_module, "find_tariff_group", lambda hass, name: coord.tariff
     )
     monkeypatch.setattr(
         coordinator_module, "async_insert_cost_statistics", insert_costs
@@ -261,3 +296,121 @@ async def test_a_range_whose_write_failed_is_asked_for_again(
     await coord._async_inject_missing_costs(yesterday)
 
     assert len(fetches) == 2, "fetched again after the failure, not after the success"
+
+
+def _costed_until(day: datetime.date) -> list[tuple[datetime.datetime, float]]:
+    """A cost series whose newest entry is the last hour of day."""
+    return [
+        (datetime.datetime.combine(day, datetime.time(23), tzinfo=dt_util.DEFAULT_TIME_ZONE), 1.0)
+    ]
+
+
+def _costed_coordinator(monkeypatch, wire_recorder, **kwargs):
+    """A meter costed up to yesterday, every day at the prices of coord.tariff."""
+    inserted: list[tuple[datetime.date, datetime.date]] = []
+
+    async def insert_costs(hass, meter_code, days, tariff, *args):
+        inserted.append((days[0][0], days[-1][0]))
+
+    coord, yesterday, fetches = _cost_coordinator(monkeypatch, insert_costs, **kwargs)
+    wire_recorder(costs_module, _costed_until(yesterday))
+    wire_recorder(coordinator_module, [])
+    first = coord._assembly_datetime.date()
+    # Looked up leniently so that, run against the code before re-pricing,
+    # the tests fail on the costs it leaves alone rather than on this name.
+    signatures = getattr(costs_module, "price_signatures", lambda *args: {})
+    coord._cost_prices_store.data = {"days": signatures(coord.tariff, first, yesterday)}
+    return coord, yesterday, fetches, inserted
+
+
+async def test_prices_changed_for_costed_days_are_costed_again_from_that_day(
+    monkeypatch: pytest.MonkeyPatch, wire_recorder
+) -> None:
+    """A contract entered with a start in the past reprices the days after it.
+
+    The catch-up only looks past the newest cost, so those days kept the
+    tariff prices they were first costed at, for good.
+    """
+    coord, yesterday, fetches, inserted = _costed_coordinator(monkeypatch, wire_recorder)
+    changed = yesterday - datetime.timedelta(days=10)
+    coord.tariff = _Tariff(changed_from=changed)
+
+    await coord._async_inject_missing_costs(yesterday)
+
+    assert fetches == [(changed, yesterday)]
+    assert inserted == [(changed, yesterday)]
+    assert coord._costs_repriced_from == changed
+
+
+async def test_repriced_days_are_not_costed_again_on_the_next_refresh(
+    monkeypatch: pytest.MonkeyPatch, wire_recorder
+) -> None:
+    coord, yesterday, fetches, _inserted = _costed_coordinator(monkeypatch, wire_recorder)
+    coord.tariff = _Tariff(changed_from=yesterday - datetime.timedelta(days=10))
+
+    await coord._async_inject_missing_costs(yesterday)
+    await coord._async_inject_missing_costs(yesterday)
+
+    assert len(fetches) == 1
+
+
+async def test_unchanged_prices_fetch_nothing(
+    monkeypatch: pytest.MonkeyPatch, wire_recorder
+) -> None:
+    coord, yesterday, fetches, _inserted = _costed_coordinator(monkeypatch, wire_recorder)
+
+    await coord._async_inject_missing_costs(yesterday)
+
+    assert fetches == []
+
+
+async def test_costs_stored_before_fingerprints_are_taken_as_they_are(
+    monkeypatch: pytest.MonkeyPatch, wire_recorder
+) -> None:
+    """An upgrade must not download the meter's whole history to check it.
+
+    The prices those costs were computed at cannot be known; the tariff's
+    are recorded for them, and a change made after that is caught.
+    """
+    coord, yesterday, fetches, _inserted = _costed_coordinator(monkeypatch, wire_recorder)
+    coord._cost_prices_store.data = None
+
+    await coord._async_inject_missing_costs(yesterday)
+
+    assert fetches == []
+    assert yesterday.isoformat() in coord._cost_prices_store.data["days"]
+
+    changed = yesterday - datetime.timedelta(days=3)
+    coord.tariff = _Tariff(changed_from=changed)
+    await coord._async_inject_missing_costs(yesterday)
+
+    assert fetches == [(changed, yesterday)]
+
+
+async def test_a_refused_repricing_is_not_retried_on_every_refresh(
+    monkeypatch: pytest.MonkeyPatch, wire_recorder, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A range the portal refuses is refused every time; the catch-up goes on."""
+    coord, yesterday, fetches, _inserted = _costed_coordinator(
+        monkeypatch, wire_recorder, fetch_raises=EneaApiError("refused")
+    )
+    coord.tariff = _Tariff(changed_from=yesterday - datetime.timedelta(days=10))
+
+    await coord._async_inject_missing_costs(yesterday)
+    await coord._async_inject_missing_costs(yesterday)
+
+    assert len(fetches) == 1
+    assert any("changed prices" in r.getMessage() for r in caplog.records)
+
+
+def test_a_price_fingerprint_follows_the_price_and_skips_unpriced_days() -> None:
+    day = datetime.date(2026, 3, 2)
+    before = costs_module.price_signatures(_Tariff(), day, day)
+    after = costs_module.price_signatures(_Tariff(changed_from=day), day, day)
+
+    class _Unpriced(_Tariff):
+        def get_period_for_date(self, day: datetime.date) -> None:
+            return None
+
+    assert before[day.isoformat()] != after[day.isoformat()]
+    assert costs_module.price_signatures(_Unpriced(), day, day) == {}

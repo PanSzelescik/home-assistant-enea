@@ -247,6 +247,7 @@ async def test_coordinator_state_reports_failures() -> None:
     coord._tariff_name = "G12"
     coord._assembly_datetime = None
     coord._cost_checked_until = None
+    coord._costs_repriced_from = None
     coord.statistics_until = None
     coord.bill_prev_reading = None
     coord.bill_last_reading = None

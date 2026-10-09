@@ -219,6 +219,12 @@ UNIT_COST = "PLN"
 
 VAT_RATE = 0.23
 
+# Ceny, po których policzono koszty każdego dnia (skrót per dzień, per wpis licznika).
+# Zmiana cen w enea_prices dla dni już policzonych – np. ceny z umowy z datą wsteczną –
+# każe przeliczyć koszty od pierwszego dnia, którego skrót się nie zgadza.
+COST_PRICES_STORAGE_KEY = f"{DOMAIN}.cost_prices"
+COST_PRICES_STORAGE_VERSION = 1
+
 # Strefa z enea_prices → nazwa strefy.  Służy do nazw statystyk kosztów, a w billing.py
 # także do odnalezienia statystyki „Energia pobrana – {nazwa}”, której nazwę nadaje
 # portal Enei – dlatego musi się z nią zgadzać co do znaku.

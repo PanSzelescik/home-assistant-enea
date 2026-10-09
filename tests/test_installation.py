@@ -177,6 +177,20 @@ async def test_a_new_connection_counts_everything_used_so_far(detect) -> None:
     assert not detected.annual_kwh_partial
 
 
+async def test_zero_filled_days_before_the_portals_history_are_no_year(detect) -> None:
+    """Zeros stored from the assembly up to where the portal's data begins.
+
+    Older versions zero-filled those days, so the statistics seemed to reach a
+    year back and the consumption since March passed for a whole year's.
+    """
+    detected = await detect(
+        {date(2025, 8, 4): 0.0, date(2025, 8, 5): 0.0, date(2026, 3, 2): 5.0, READING: 905.0},
+        _dashboard(PERIODS),
+    )
+
+    assert detected.annual_kwh is None
+
+
 async def test_a_meter_replaced_within_the_year_settles_nothing(detect) -> None:
     """The statistics only hold the new meter; the customer used more."""
     detected = await detect(

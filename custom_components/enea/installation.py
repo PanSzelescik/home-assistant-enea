@@ -219,6 +219,11 @@ async def _async_consumption(
     One daily read of the cumulative sums from the very beginning, as
     async_query_zone_kwh does for the bill: the opening balance is the newest
     sum at or before since, which need not fall on since itself.
+
+    The statistics begin with the first day of any consumption.  Leading days
+    with a sum of zero are no history: older versions zero-filled every day
+    from the meter's assembly up to where the portal's data begins, and those
+    would pass a year of missing data for a complete one.
     """
     stats = await get_instance(hass).async_add_executor_job(
         statistics_during_period,
@@ -236,7 +241,8 @@ async def _async_consumption(
     ]
     opening = next((total for day, total in reversed(days) if day <= since), 0.0)
     closing = next((total for day, total in reversed(days) if day <= until), 0.0)
-    return closing - opening, days[0][0] if days else None
+    first_day = next((day for day, total in days if total), None)
+    return closing - opening, first_day
 
 
 async def async_detect_installation(

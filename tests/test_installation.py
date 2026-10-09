@@ -8,6 +8,7 @@ import pytest
 from homeassistant.util import dt as dt_util
 
 from custom_components.enea import installation
+from custom_components.enea.connector import billing_period_starts
 
 READING = date(2026, 8, 5)
 """The latest billing reading: the current period starts on 6 August."""
@@ -189,6 +190,41 @@ async def test_zero_filled_days_before_the_portals_history_are_no_year(detect) -
     )
 
     assert detected.annual_kwh is None
+
+
+async def test_a_prosumers_tariff_change_suggests_no_billing_period(detect) -> None:
+    """The dashboard of a prosumer who moved from G11 to G12W (issue #19).
+
+    Its billingWeekData has no daily segments and starts where the balanced
+    data does.  The tariff change and the new year split the last period 20
+    days apart, which Repairs offered as a monthly billing period.
+    """
+    edges = [
+        date(2024, 1, 1),
+        date(2024, 6, 25),
+        date(2025, 2, 25),
+        date(2025, 12, 12),
+        date(2026, 1, 1),
+        date(2026, 10, 1),
+    ]
+    data = {
+        "meters": [{"typeName": "OTUS3", "assemblyDate": _ms(date(2022, 9, 1))}],
+        "billingWeekData": [
+            {
+                "measurementId": 1,
+                "values": [
+                    {"timeFrom": _ms(a), "timeTo": _ms(b), "items": []}
+                    for a, b in zip(edges, edges[1:])
+                ],
+            }
+        ],
+    }
+
+    detected = await detect({date(2025, 12, 31): 1000.0, date(2026, 10, 8): 4000.0}, data)
+
+    assert billing_period_starts(data) == edges[1:-1]
+    assert detected.billing_months is None
+    assert detected.billing_months_source is None
 
 
 async def test_a_meter_replaced_within_the_year_settles_nothing(detect) -> None:

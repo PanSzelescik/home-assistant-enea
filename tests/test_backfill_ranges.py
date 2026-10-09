@@ -219,8 +219,8 @@ async def test_backward_chunks_are_returned_oldest_first(coord):
     assert coord._fetch_range.await_count == 2
 
 
-async def test_known_assembly_backfills_forward_with_balanced_grace(coord):
-    """Known installation bounds avoid scanning and retain the prosumer's longer grace."""
+async def test_known_assembly_backfills_forward_with_zero_fill(coord):
+    """Known installation bounds avoid scanning and zero-fill a prosumer's stale days."""
     coord._assembly_datetime = datetime(2026, 10, 1, 12, 13, tzinfo=dt_util.DEFAULT_TIME_ZONE)
     coord._prosumer = True
     days = [(date(2026, 10, 2), {"energy_consumed": {"values": _slots(date(2026, 10, 2))}})]
@@ -228,7 +228,7 @@ async def test_known_assembly_backfills_forward_with_balanced_grace(coord):
 
     assert await coord._fetch_days_backward(date(2026, 10, 31)) == days
     coord._fetch_days_forward.assert_awaited_once_with(
-        date(2026, 10, 1), date(2026, 10, 31), zero_fill_stale=True, grace_days=14,
+        date(2026, 10, 1), date(2026, 10, 31), zero_fill_stale=True, grace_days=3,
     )
 
 

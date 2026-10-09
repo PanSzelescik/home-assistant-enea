@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
+from homeassistant.util import dt as dt_util
 
 from custom_components.enea import billing, config_flow, costs
 from custom_components.enea.billing import PricesConfig, async_estimate_bill, settle_net_metering
@@ -90,11 +91,14 @@ class _Monthly:
 
 
 class _Period:
-    """A G12w period: peak has the higher variable network rate."""
+    """A G12w period: peak from 6:00 to 21:00 has the higher variable network rate."""
 
     def __init__(self) -> None:
         self.zones = {"peak": _Pricing(0.3), "off_peak": _Pricing(0.1)}
         self.monthly = _Monthly()
+
+    def get_zone_at_hour(self, hour: int, day: datetime.date | None = None) -> str:
+        return "peak" if 6 <= hour < 21 else "off_peak"
 
 
 class _Tariff:
@@ -106,10 +110,10 @@ class _Tariff:
 
 @pytest.fixture
 def stored(monkeypatch: pytest.MonkeyPatch):
-    """Serve each statistic's total at the start and at the end of the period."""
+    """Serve the hourly changes of each energy statistic."""
 
-    def _wire(totals: dict[str, tuple[float, float]]) -> None:
-        sums = {get_statistic_id("PPE", name): pair for name, pair in totals.items()}
+    def _wire(hours: dict[str, list[tuple[datetime.datetime, float]]]) -> None:
+        by_sid = {get_statistic_id("PPE", name): rows for name, rows in hours.items()}
 
         class Rec:
             async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
@@ -117,15 +121,12 @@ def stored(monkeypatch: pytest.MonkeyPatch):
 
         def during(hass: Any, start: Any, end: Any, ids: set, *rest: Any) -> dict:
             sid = next(iter(ids))
-            if sid not in sums:
-                return {}
-            opening, closing = sums[sid]
-            return {
-                sid: [
-                    {"start": _midnight(START).timestamp(), "sum": opening},
-                    {"start": _midnight(END).timestamp(), "sum": closing},
-                ]
-            }
+            rows = [
+                {"start": hour.timestamp(), "change": kwh}
+                for hour, kwh in by_sid.get(sid, [])
+                if start <= hour < end
+            ]
+            return {sid: rows} if rows else {}
 
         monkeypatch.setattr(billing, "get_instance", lambda hass: Rec())
         monkeypatch.setattr(billing, "statistics_during_period", during)
@@ -133,8 +134,9 @@ def stored(monkeypatch: pytest.MonkeyPatch):
     return _wire
 
 
-def _midnight(d: datetime.date) -> datetime.datetime:
-    return datetime.datetime(d.year, d.month, d.day, tzinfo=TZ)
+def _at(day: datetime.date, hour: int) -> datetime.datetime:
+    """An hour on a local day."""
+    return dt_util.start_of_local_day(day) + datetime.timedelta(hours=hour)
 
 
 def _cfg() -> PricesConfig:
@@ -143,17 +145,16 @@ def _cfg() -> PricesConfig:
     )
 
 
-TOTALS = {
-    "Energia pobrana – Szczyt": (1000.0, 1100.0),  # 100 kWh
-    "Energia pobrana – Pozaszczyt": (2000.0, 2300.0),  # 300 kWh
-    "Energia oddana – Szczyt": (500.0, 1000.0),  # 500 kWh
-    "Energia oddana – Pozaszczyt": (0.0, 0.0),
+DAY = datetime.date(2026, 3, 10)
+HOURS = {
+    "Energia pobrana": [(_at(DAY, 10), 100.0), (_at(DAY, 3), 300.0)],  # peak, off-peak
+    "Energia oddana": [(_at(DAY, 12), 500.0)],  # peak
 }
 
 
 async def test_the_bill_charges_only_what_net_metering_leaves(stored) -> None:
     """Energy and the variable fees fall on the rest; the fixed fees stay."""
-    stored(TOTALS)
+    stored(HOURS)
 
     with_ratio = await async_estimate_bill(object(), "PPE", _cfg(), START, END, 0.7)
     without = await async_estimate_bill(object(), "PPE", _cfg(), START, END)
@@ -171,7 +172,7 @@ async def test_the_bill_charges_only_what_net_metering_leaves(stored) -> None:
 
 
 async def test_without_net_metering_the_bill_is_unchanged(stored) -> None:
-    stored(TOTALS)
+    stored(HOURS)
 
     estimate = await async_estimate_bill(object(), "PPE", _cfg(), START, END)
 

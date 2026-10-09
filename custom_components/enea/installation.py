@@ -216,9 +216,9 @@ async def _async_consumption(
 ) -> tuple[float, date | None]:
     """Return the kWh consumed in (since, until] and the first day of the statistics.
 
-    One daily read of the cumulative sums from the very beginning, as
-    async_query_zone_kwh does for the bill: the opening balance is the newest
-    sum at or before since, which need not fall on since itself.
+    One daily read of the cumulative sums from the very beginning: the
+    opening balance is the newest sum at or before since, which need not fall
+    on since itself.
 
     The statistics begin with the first day of any consumption.  Leading days
     with a sum of zero are no history: older versions zero-filled every day

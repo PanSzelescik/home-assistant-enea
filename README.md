@@ -108,7 +108,7 @@ Gdy `enea_prices` jest skonfigurowane, dla każdego licznika tworzone są dwie e
 | Szacowany rachunek – poprzedni okres | Szacunkowy koszt za okres `(d1, d2]` — ostatni rozliczony rachunek |
 | Szacowany rachunek – bieżący okres | Szacunkowy koszt za okres `(d2, wczoraj]` — narastający bieżący rachunek |
 
-Kwota brutto w PLN obliczana metodą zbliżoną do faktury Enea: kWh pobrane precyzyjnie ze statystyk długoterminowych (bez zaokrąglania do całości), każda pozycja kosztowa zaokrąglana do 2 miejsc po przecinku po cenach netto, VAT 23% doliczany raz do sumy końcowej.
+Kwota brutto w PLN obliczana metodą zbliżoną do faktury Enea: zużycie z każdej godziny przypisane do strefy według harmonogramu taryfy i wycenione cennikiem obowiązującym tego dnia (także cennikiem wcześniejszej grupy taryfowej, jeśli okres obejmuje zmianę grupy), każda pozycja kosztowa zaokrąglana do 2 miejsc po przecinku po cenach netto, VAT 23% doliczany raz do sumy końcowej. Gdy część okresu przypada na grupę taryfową bez wpisu w `enea_prices`, jej zużycie nie jest wyceniane i pokazuje je atrybut `unpriced_kwh`.
 
 Sensory rachunku mają dodatkowe atrybuty: `start`, `end`, `months`, `total_netto`, `energy_netto`, `distribution_netto`, `fixed_network_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `kwh_{strefa}`, `energy_{strefa}_netto`, `variable_network_{strefa}_netto`, `quality_{strefa}_netto`, `oze_{strefa}_netto`, `cogeneration_{strefa}_netto`.
 

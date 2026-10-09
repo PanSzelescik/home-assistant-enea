@@ -538,7 +538,8 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
         Section 'Sprzedaż energii': energy_netto + per-zone kwh_<zone> and
         energy_<zone>_netto; under net metering also returned_kwh_<zone>,
         billed_kwh_<zone> (what energy and variable fees are charged on) and
-        net_metering_left_kwh.
+        net_metering_left_kwh; unpriced_kwh when part of the period has no
+        prices (a tariff group without an enea_prices entry).
         Section 'Usługa dystrybucji': distribution_netto (sum) + fixed fees
         (fixed_network_netto, fixed_capacity_netto, fixed_subscription_netto) +
         per-zone components: variable_network_<zone>_netto, quality_<zone>_netto,
@@ -568,6 +569,8 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
             attrs[f"energy_{safe}_netto"] = est.energy_by_zone_netto.get(zone_display, 0.0)
         if est.net_metering_left_kwh is not None:
             attrs["net_metering_left_kwh"] = est.net_metering_left_kwh
+        if est.unpriced_kwh:
+            attrs["unpriced_kwh"] = est.unpriced_kwh
         attrs["energy_netto"] = est.energy_netto
         # Usługa dystrybucji — kolejność jak na fakturze Enea
         attrs["fixed_network_netto"] = est.fixed_network_netto

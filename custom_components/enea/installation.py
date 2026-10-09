@@ -11,22 +11,27 @@ A fact the data does not settle is None.  Nothing here changes a setting.
 """
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
+from homeassistant.components.recorder.statistics import statistics_during_period
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
-from .billing import async_query_zone_kwh
 from .connector import billing_period_starts, get_active_meter, infer_phases
 from .const import (
     AVERAGE_MONTH_DAYS,
     BILLING_PERIOD_MONTHS,
     CAPACITY_BRACKET_LIMITS_KWH,
+    EPOCH,
+    INSTALLATION_SOURCE_BILLING_CYCLE,
     INSTALLATION_SOURCE_BILLING_PERIODS,
     INSTALLATION_SOURCE_LAST_365_DAYS,
     INSTALLATION_SOURCE_READING_DATES,
+    NEW_CONNECTION_STATISTICS_SLACK,
     PHASES_COUNT,
     STAT_KEY_ENERGY_CONSUMED,
     STAT_NAME_BY_KEY,
@@ -112,20 +117,41 @@ def detect_billing_months(
     return None, None
 
 
+def _add_months(day: date, months: int) -> date:
+    """Return the day a number of months later, on the month's last day if it is shorter."""
+    index = day.month - 1 + months
+    year, month = day.year + index // 12, index % 12 + 1
+    return day.replace(year=year, month=month, day=min(day.day, calendar.monthrange(year, month)[1]))
+
+
 def latest_reading_day(
-    starts: list[date], last_reading: date | None, statistics_until: date | None
+    starts: list[date],
+    last_reading: date | None,
+    statistics_until: date | None,
+    billing_months: int | None = None,
 ) -> tuple[date | None, str | None]:
     """Return the day of the latest billing reading and where it came from.
 
     A billing period starts the day after its opening reading, so a start in
-    billingWeekData stands for a reading the day before.  The reading date set
-    for the bill estimate counts as well; the later of the two wins.  With
-    neither, the newest day of the statistics stands in, which makes the yearly
-    consumption an estimate of the next reading's.
+    billingWeekData stands for a reading the day before.  The portal's window
+    ends well before today, though, and rarely shows the latest reading: with
+    the billing period length known, the readings since are counted on from
+    the latest start, as far as the statistics reach.  The reading date set for
+    the bill estimate counts as well; the latest of them wins.  With none, the
+    newest day of the statistics stands in, which makes the yearly consumption
+    an estimate of the next reading's.
     """
     candidates = []
     if starts:
         candidates.append((starts[-1] - timedelta(days=1), INSTALLATION_SOURCE_BILLING_PERIODS))
+        if billing_months is not None and statistics_until is not None:
+            start = starts[-1]
+            while (following := _add_months(start, billing_months)) - timedelta(
+                days=1
+            ) <= statistics_until:
+                start = following
+            if start != starts[-1]:
+                candidates.append((start - timedelta(days=1), INSTALLATION_SOURCE_BILLING_CYCLE))
     if last_reading is not None:
         candidates.append((last_reading, INSTALLATION_SOURCE_READING_DATES))
     if candidates:
@@ -143,27 +169,63 @@ def _year_before(day: date) -> date:
         return day.replace(year=day.year - 1, day=28)
 
 
-def _history_complete(data: dict[str, Any], since: date) -> bool:
-    """Return False when an earlier meter measured part of the year from since on.
+def _year_complete(data: dict[str, Any], since: date, first_day: date | None) -> bool:
+    """Return True when the statistics hold the customer's whole consumption from since on.
 
-    The statistics only hold the active meter's data, while the capacity fee
-    counts the customer's consumption.  When the meter was replaced within the
-    year, part of it is missing and the sum can only put the customer too low.
-    Without an earlier meter a short history is a new connection, which the
-    tariff qualifies by everything used so far (pkt 3.1.31) — exactly the sum.
+    They do when they reach back to since.  They do as well for a new
+    connection — the active meter assembled after since, no earlier meter, and
+    the statistics starting with it — which the tariff qualifies by everything
+    used so far (pkt 3.1.31), exactly their sum.  Otherwise part of the year is
+    missing, measured by an earlier meter or before the portal's history
+    begins, and the sum can only put the customer too low.
     """
+    if first_day is None:
+        return False
+    if first_day <= since:
+        return True
     active = get_active_meter(data)
     if active is None or not active.get("assemblyDate"):
-        return True
+        return False
     assembled = dt_util.as_local(
         dt_util.utc_from_timestamp(active["assemblyDate"] / 1000)
     ).date()
-    if assembled <= since:
-        return True
-    return not any(
+    earlier_meter = any(
         meter is not active and meter.get("disassemblyDate")
         for meter in data.get("meters", [])
     )
+    return (
+        not earlier_meter
+        and since < assembled
+        and first_day <= assembled + NEW_CONNECTION_STATISTICS_SLACK
+    )
+
+
+async def _async_consumption(
+    hass: HomeAssistant, statistic_id: str, since: date, until: date
+) -> tuple[float, date | None]:
+    """Return the kWh consumed in (since, until] and the first day of the statistics.
+
+    One daily read of the cumulative sums from the very beginning, as
+    async_query_zone_kwh does for the bill: the opening balance is the newest
+    sum at or before since, which need not fall on since itself.
+    """
+    stats = await get_instance(hass).async_add_executor_job(
+        statistics_during_period,
+        hass,
+        EPOCH,
+        dt_util.start_of_local_day(until + timedelta(days=1)),
+        {statistic_id},
+        "day",
+        None,
+        {"sum"},
+    )
+    days = [
+        (dt_util.as_local(dt_util.utc_from_timestamp(row["start"])).date(), row.get("sum") or 0.0)
+        for row in stats.get(statistic_id, [])
+    ]
+    opening = next((total for day, total in reversed(days) if day <= since), 0.0)
+    closing = next((total for day, total in reversed(days) if day <= until), 0.0)
+    return closing - opening, days[0][0] if days else None
 
 
 async def async_detect_installation(
@@ -186,22 +248,23 @@ async def async_detect_installation(
 
     annual_kwh: float | None = None
     partial = False
-    reading_day, annual_source = latest_reading_day(starts, last_reading, statistics_until)
+    reading_day, annual_source = latest_reading_day(
+        starts, last_reading, statistics_until, billing_months
+    )
     if (
         reading_day is not None
         and statistics_until is not None
         and reading_day <= statistics_until
     ):
         sid = get_statistic_id(meter_code, STAT_NAME_BY_KEY[STAT_KEY_ENERGY_CONSUMED])
-        kwh = await async_query_zone_kwh(
-            hass, {"total": sid}, _year_before(reading_day), reading_day
-        )
-        if _history_complete(data, _year_before(reading_day)):
-            annual_kwh = kwh["total"]
-        elif capacity_bracket(kwh["total"]) == len(CAPACITY_BRACKET_LIMITS_KWH):
+        since = _year_before(reading_day)
+        kwh, first_day = await _async_consumption(hass, sid, since, reading_day)
+        if _year_complete(data, since, first_day):
+            annual_kwh = kwh
+        elif first_day is not None and capacity_bracket(kwh) == len(CAPACITY_BRACKET_LIMITS_KWH):
             # Part of the year is missing, so the sum is a lower bound — past
             # the top limit the bracket cannot be any other.
-            annual_kwh, partial = kwh["total"], True
+            annual_kwh, partial = kwh, True
 
     return DetectedInstallation(
         phases=PHASES_COUNT[phases] if phases is not None else None,

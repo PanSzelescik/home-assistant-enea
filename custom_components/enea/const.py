@@ -229,3 +229,9 @@ CAPACITY_BRACKET_LABELS = ("< 500 kWh", "500–1200 kWh", "1200–2800 kWh", "> 
 INSTALLATION_SOURCE_BILLING_PERIODS = "billing_periods"
 INSTALLATION_SOURCE_READING_DATES = "reading_dates"
 INSTALLATION_SOURCE_LAST_365_DAYS = "last_365_days"
+# Odczyt doliczony od ostatniej granicy z billingWeekData co długość okresu — okno
+# portalu kończy się wcześniej niż dziś, więc ostatniego odczytu zwykle nie pokazuje.
+INSTALLATION_SOURCE_BILLING_CYCLE = "billing_cycle"
+# Nowe przyłącze: statystyki zaczynają się razem z licznikiem — najwyżej tyle dni po
+# montażu (pierwsze dni portal bywa publikuje z opóźnieniem).
+NEW_CONNECTION_STATISTICS_SLACK = timedelta(days=7)

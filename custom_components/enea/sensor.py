@@ -25,6 +25,7 @@ from .connector import (
     format_address,
     get_active_meter,
     infer_phases,
+    zone_name,
 )
 from .const import (
     BILL_KEY_CURRENT,
@@ -328,7 +329,6 @@ async def async_setup_entry(
         for i, zone_label in enumerate(cv.get("ppeZones", []), start=1):
             zone_key = f"valueZone{i}"
             if cv.get(zone_key) is not None:
-                short_name = zone_label.split(" ")[0]  # "Dzień 1.8.1" → "Dzień"
                 sensors.append(
                     EneaEnergySensor(
                         coordinator=coordinator,
@@ -336,14 +336,13 @@ async def async_setup_entry(
                         measurement_id=measurement_id,
                         zone_key=zone_key,
                         unique_key=f"{prefix}_zone{i}",
-                        sensor_name=f"Energia {type_label} – {short_name}",
+                        sensor_name=f"Energia {type_label} – {zone_name(zone_label)}",
                         translation_key=None,
                     )
                 )
 
     # Bill sensors — created only when enea_prices is configured with matching tariff
-    tariff_name = data.get("tariffGroupName")
-    if find_tariff_group(hass, tariff_name) is not None:
+    if find_tariff_group(hass, coordinator.tariff_name) is not None:
         sensors.append(EneaBillSensor(coordinator, meter_code, BILL_KEY_PREVIOUS))
         sensors.append(EneaBillSensor(coordinator, meter_code, BILL_KEY_CURRENT))
 

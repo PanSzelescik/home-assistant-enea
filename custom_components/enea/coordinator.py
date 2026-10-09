@@ -24,6 +24,7 @@ from .connector import (
     agreement_tariffs,
     get_active_meter,
     mask_ppe,
+    tariff_group_name,
 )
 from .const import (
     BACKFILL_MAX_CONSECUTIVE_EMPTY,
@@ -211,7 +212,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except EneaApiError as err:
             raise UpdateFailed(f"Error fetching Enea data: {err}") from err
 
-        self._tariff_name = data.get("tariffGroupName")
+        self._tariff_name = tariff_group_name(data.get("tariffGroupName")) or None
         self._prosumer = data.get("type") == PPE_TYPE_PROSUMER
         self._dashboard_data = data
 

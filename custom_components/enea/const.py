@@ -215,6 +215,12 @@ STAT_NAME_BY_KEY: dict[str, str] = {
 
 ENEA_PRICES_DOMAIN = "enea_prices"
 
+# Grupy taryfowe, które Portal Odbiorcy Enea nazywa inaczej niż faktura i enea_prices
+# (klucz po casefold): G12sezON podaje jako „G12sez” (issue #6 w enea_prices).
+TARIFF_GROUP_ALIASES: dict[str, str] = {
+    "g12sez": "G12sezON",
+}
+
 UNIT_COST = "PLN"
 
 VAT_RATE = 0.23

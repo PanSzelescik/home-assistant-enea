@@ -28,7 +28,7 @@ Niniejszy projekt to custom component dla Home Assistant integrujący liczniki z
 ```
 custom_components/enea/
 ├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, _matching_coordinators, serwisy refresh/backfill
-├── connector.py     — klient HTTP (EneaApiClient, _request helper; każde żądanie logowane na poziomie debug: ścieżka z ukrytym ID licznika, status, rozmiar, czas), wyjątki, get_active_meter(), infer_phases(), billing_period_starts(), agreement_tariffs() (grupy taryfowe umów z datami), mask_ppe(), hide_meter_id() (ukrywa ID licznika w ścieżce i w tekście błędów), format_address()
+├── connector.py     — klient HTTP (EneaApiClient, _request helper; każde żądanie logowane na poziomie debug: ścieżka z ukrytym ID licznika, status, rozmiar, czas), wyjątki, get_active_meter(), infer_phases(), billing_period_starts(), agreement_tariffs() (grupy taryfowe umów z datami), tariff_group_name() (nazwa grupy jak na fakturze i w enea_prices), zone_name() (nazwa strefy z `ppeZones` bez kodu OBIS), mask_ppe(), hide_meter_id() (ukrywa ID licznika w ścieżce i w tekście błędów), format_address()
 ├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill, _async_reprice_costs (przeliczanie kosztów po zmianie cen); klient API jako self.client; diagnostics_state() dla raportu diagnostycznego
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", "configure", reconfigure, reauth; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
 ├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date, _han_port_state, _switch_state_attrs, EneaStatisticsDateSensor
@@ -130,6 +130,8 @@ for entry in hass.config_entries.async_entries(ENEA_PRICES_DOMAIN):
 ```
 
 Dzięki temu `enea_prices` nie jest twardą zależnością i integracja nie wymaga wpisu w `manifest.json`.
+
+Portal Odbiorcy Enea skraca niektóre nazwy grup (G12sezON podaje jako `G12sez`). `tariff_group_name` (`connector.py`) zamienia je przez `TARIFF_GROUP_ALIASES` (`const.py`) na nazwy z faktury i enea_prices — stosowane do `coordinator.tariff_name` i grup umów (`agreement_tariffs`). Wszystko, co szuka wpisu enea_prices, bierze nazwę z `coordinator.tariff_name`, nie z surowego `tariffGroupName`; enea_prices też czyta ją z koordynatora. Surowa nazwa zostaje tylko w sensorze `tariff`.
 
 ### Statystyki kosztów = statystyki zewnętrzne (jak energia)
 
@@ -355,7 +357,7 @@ Na razie wynik jest **tylko wyświetlany** w sensorze `billing_period_start` —
 ### Energia (widoczne w dashboardach)
 Tworzone dynamicznie w `async_setup_entry` na podstawie `currentValues[]`. Sensory dla wyłączonego kierunku (`fetch_consumption=False` lub `fetch_generation=False` w options) nie są tworzone.
 - `consumption_total` / `generation_total` — sumy stref (statyczne)
-- `consumption_zone{i}` / `generation_zone{i}` — per strefa (dynamiczne, nazwy z `ppeZones[]`)
+- `consumption_zone{i}` / `generation_zone{i}` — per strefa (dynamiczne, nazwy z `ppeZones[]` bez kodu OBIS — `zone_name`)
 
 ### Szacowanie rachunku (EneaBillSensor + EneaBillDateEntity, opcjonalne)
 Tworzone gdy `find_tariff_group` zwraca pasującą taryfę z `enea_prices`.

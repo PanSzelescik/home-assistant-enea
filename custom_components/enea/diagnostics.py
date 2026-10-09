@@ -125,8 +125,7 @@ async def async_get_config_entry_diagnostics(
 
     await coordinator.async_refresh()
 
-    data = coordinator.data or {}
-    prices = find_prices_config(hass, data.get("tariffGroupName"))
+    prices = find_prices_config(hass, coordinator.tariff_name)
 
     return {
         "config_entry": async_redact_data(dict(entry.data), TO_REDACT),

@@ -28,6 +28,7 @@ from .const import (
     PHASES_SOURCE_METER_MODEL,
     PHASES_THREE,
     PHASES_THREE_MIN_CAPACITY_KW,
+    TARIFF_GROUP_ALIASES,
     DataSource,
     MeasurementType,
     Resolution,
@@ -259,6 +260,26 @@ def get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:
     )
 
 
+def tariff_group_name(name: str | None) -> str:
+    """Return the tariff group's name as the invoice and enea_prices give it.
+
+    The Portal Odbiorcy Enea shortens some names (G12sezON comes as "G12sez");
+    TARIFF_GROUP_ALIASES maps them back.  Other names pass through stripped,
+    and a missing one becomes "".
+    """
+    group = (name or "").strip()
+    return TARIFF_GROUP_ALIASES.get(group.casefold(), group)
+
+
+def zone_name(label: str) -> str:
+    """Return a ppeZones label without its OBIS code.
+
+    "Dzień 1.8.1" → "Dzień", "Strefa zalecanego poboru 1.8.2" → "Strefa
+    zalecanego poboru".  A label with no code is returned whole.
+    """
+    return re.sub(r"\s+\d+(?:\.\d+)+$", "", label.strip())
+
+
 def agreement_tariffs(data: dict[str, Any]) -> list[tuple[date, date | None, str]]:
     """Return the tariff group of each agreement in the dashboard, oldest first.
 
@@ -270,7 +291,7 @@ def agreement_tariffs(data: dict[str, Any]) -> list[tuple[date, date | None, str
     spans: list[tuple[date, date | None, str]] = []
     for agreement in data.get("agreements") or []:
         start, end = agreement.get("from"), agreement.get("to")
-        group = (agreement.get("tariffGroupName") or "").strip()
+        group = tariff_group_name(agreement.get("tariffGroupName"))
         if start is None or not group:
             continue
         spans.append(

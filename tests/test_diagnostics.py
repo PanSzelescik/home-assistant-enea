@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from custom_components.enea import diagnostics as diagnostics_module
+from custom_components.enea.installation import DetectedInstallation
 
 from conftest import FakeConfigEntry, FakeHass
 
@@ -47,6 +48,13 @@ def _entry() -> Any:
         last_exception=None,
         data=dashboard,
         diagnostics_state=lambda: {"initial_backfill": "done", "statistics_until": "2026-10-07"},
+        detected_installation=DetectedInstallation(
+            phases=3,
+            phases_source="meter_model",
+            annual_kwh=3170.04,
+            annual_kwh_source="billing_periods",
+            annual_kwh_until=date(2026, 8, 5),
+        ),
     )
     return SimpleNamespace(
         entry_id="entry1",
@@ -149,7 +157,20 @@ async def test_report_keeps_what_diagnosis_needs(report: dict[str, Any]) -> None
     assert meter_data["meters"][0]["typeName"] == "OTUS3"
     assert meter_data["agreements"][0]["tariffGroupName"] == "G12"
     assert report["coordinator"]["initial_backfill"] == "done"
-    assert report["phases"] == {"inferred": "three_phase", "source": "meter_model", "enea_prices": 1}
+    assert report["installation"] == {
+        "detected": {
+            "phases": 3,
+            "phases_source": "meter_model",
+            "billing_months": None,
+            "billing_months_source": None,
+            "annual_kwh": 3170.0,
+            "annual_kwh_source": "billing_periods",
+            "annual_kwh_until": "2026-08-05",
+            "annual_kwh_partial": False,
+            "capacity_bracket": 3,
+        },
+        "enea_prices": {"phases": 1, "billing_months": 2, "annual_kwh": 5000},
+    }
     assert "enea:…0001_energia_pobrana" in report["statistics"]
 
 

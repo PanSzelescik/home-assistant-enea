@@ -20,11 +20,15 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from . import EneaConfigEntry
-from .connector import format_address, get_active_meter, infer_phases
+from .connector import (
+    billing_period_starts,
+    format_address,
+    get_active_meter,
+    infer_phases,
+)
 from .const import (
     BILL_KEY_CURRENT,
     BILL_KEY_PREVIOUS,
-    BILLING_PERIOD_MIN_SEGMENT,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
     CONF_METER_NAME,
@@ -145,36 +149,6 @@ def _switch_state_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {"load_status": load_status} if load_status else {}
 
 
-def _billing_period_starts(data: dict[str, Any]) -> list[date]:
-    """Return billing period start dates found in the dashboard's billingWeekData.
-
-    Segments spanning a whole billing period are interleaved with daily ones;
-    each such segment starts on the first day of a period on the invoice.  The
-    very first segment is skipped — it starts where the portal's data window
-    begins, not on a reading date.  All measurements share the same segments,
-    so the consumption one is enough.
-    """
-    measurement = next(
-        (
-            m
-            for m in data.get("billingWeekData") or []
-            if m.get("measurementId") == MEASUREMENT_ID_CONSUMPTION
-        ),
-        None,
-    )
-    if measurement is None:
-        return []
-    starts: list[date] = []
-    for i, segment in enumerate(measurement.get("values") or []):
-        time_from, time_to = segment.get("timeFrom"), segment.get("timeTo")
-        if i == 0 or time_from is None or time_to is None:
-            continue
-        start = dt_util.utc_from_timestamp(time_from / 1000)
-        if dt_util.utc_from_timestamp(time_to / 1000) - start >= BILLING_PERIOD_MIN_SEGMENT:
-            starts.append(dt_util.as_local(start).date())
-    return starts
-
-
 @dataclass(frozen=True, kw_only=True)
 class EneaSensorEntityDescription(SensorEntityDescription):
     """Extended sensor description for Enea diagnostic sensors."""
@@ -286,9 +260,9 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         icon="mdi:calendar-start",
         device_class=SensorDeviceClass.DATE,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: next(reversed(_billing_period_starts(data)), None),
+        value_fn=lambda data: next(reversed(billing_period_starts(data)), None),
         attr_fn=lambda data: {
-            "period_starts": [d.isoformat() for d in _billing_period_starts(data)],
+            "period_starts": [d.isoformat() for d in billing_period_starts(data)],
         },
     ),
 )

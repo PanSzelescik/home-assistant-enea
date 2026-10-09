@@ -15,6 +15,8 @@ from homeassistant.util import dt as dt_util
 import aiohttp
 
 from .const import (
+    BILLING_PERIOD_MIN_SEGMENT,
+    MEASUREMENT_ID_CONSUMPTION,
     URL_CONSUMPTION_RANGE,
     URL_LOGIN,
     URL_PPE_DASHBOARD,
@@ -245,6 +247,36 @@ def get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:
         (m for m in data.get("meters", []) if m.get("disassemblyDate") is None),
         None,
     )
+
+
+def billing_period_starts(data: dict[str, Any]) -> list[date]:
+    """Return billing period start dates found in the dashboard's billingWeekData.
+
+    Segments spanning a whole billing period are interleaved with daily ones;
+    each such segment starts on the first day of a period on the invoice.  The
+    very first segment is skipped — it starts where the portal's data window
+    begins, not on a reading date.  All measurements share the same segments,
+    so the consumption one is enough.
+    """
+    measurement = next(
+        (
+            m
+            for m in data.get("billingWeekData") or []
+            if m.get("measurementId") == MEASUREMENT_ID_CONSUMPTION
+        ),
+        None,
+    )
+    if measurement is None:
+        return []
+    starts: list[date] = []
+    for i, segment in enumerate(measurement.get("values") or []):
+        time_from, time_to = segment.get("timeFrom"), segment.get("timeTo")
+        if i == 0 or time_from is None or time_to is None:
+            continue
+        start = dt_util.utc_from_timestamp(time_from / 1000)
+        if dt_util.utc_from_timestamp(time_to / 1000) - start >= BILLING_PERIOD_MIN_SEGMENT:
+            starts.append(dt_util.as_local(start).date())
+    return starts
 
 
 def infer_phases(data: dict[str, Any]) -> tuple[str | None, str | None]:

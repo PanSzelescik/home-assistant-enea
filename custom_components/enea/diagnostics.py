@@ -10,8 +10,8 @@ from homeassistant.helpers import entity_registry as er
 
 from . import EneaConfigEntry
 from .billing import find_prices_config
-from .connector import infer_phases
 from .const import CONF_METER_ID, CONF_METER_NAME, SENSOR_KEY_ADDRESS
+from .installation import DetectedInstallation
 from .statistics import async_statistics_overview
 
 # Dane pozwalające zidentyfikować odbiorcę — raport bywa wklejany w publiczne zgłoszenia,
@@ -126,7 +126,6 @@ async def async_get_config_entry_diagnostics(
     await coordinator.async_refresh()
 
     data = coordinator.data or {}
-    phases, phases_source = infer_phases(data)
     prices = find_prices_config(hass, data.get("tariffGroupName"))
 
     return {
@@ -138,15 +137,18 @@ async def async_get_config_entry_diagnostics(
             "last_exception": str(coordinator.last_exception) if coordinator.last_exception else None,
             **coordinator.diagnostics_state(),
         },
-        "phases": {
-            "inferred": phases,
-            "source": phases_source,
-            "enea_prices": prices.phases if prices is not None else None,
+        "installation": {
+            "detected": getattr(
+                coordinator, "detected_installation", DetectedInstallation()
+            ).as_dict(),
+            "enea_prices": None if prices is None else {
+                "phases": prices.phases,
+                "billing_months": prices.billing_months,
+                "annual_kwh": prices.annual_kwh,
+            },
         },
         "enea_prices": None if prices is None else {
             "tariff": getattr(prices.tariff, "name", None),
-            "billing_months": prices.billing_months,
-            "annual_kwh": prices.annual_kwh,
             "akcyza": prices.akcyza,
             **_prices_coverage(prices.tariff),
         },

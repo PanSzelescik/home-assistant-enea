@@ -233,6 +233,8 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=HAN_STATES,
         entity_category=EntityCategory.DIAGNOSTIC,
+        # Niszowa — domyślnie wyłączona, użytkownik włącza w razie potrzeby.
+        entity_registry_enabled_default=False,
         value_fn=lambda data: _han_port_state(data, "wmbusStatus"),
     ),
     EneaSensorEntityDescription(
@@ -242,6 +244,8 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=HAN_STATES,
         entity_category=EntityCategory.DIAGNOSTIC,
+        # Niszowa — domyślnie wyłączona, użytkownik włącza w razie potrzeby.
+        entity_registry_enabled_default=False,
         value_fn=lambda data: _han_port_state(data, "p1Status"),
     ),
     EneaSensorEntityDescription(
@@ -251,6 +255,8 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=list(SWITCH_STATE_BY_CODE.values()),
         entity_category=EntityCategory.DIAGNOSTIC,
+        # Niszowa — domyślnie wyłączona, użytkownik włącza w razie potrzeby.
+        entity_registry_enabled_default=False,
         value_fn=lambda data: SWITCH_STATE_BY_CODE.get(data.get("switchState")),  # pyright: ignore[reportArgumentType]
         attr_fn=_switch_state_attrs,
     ),

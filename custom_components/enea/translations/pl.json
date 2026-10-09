@@ -130,6 +130,14 @@
         "name": "Data ostatniego odczytu"
       }
     },
+    "binary_sensor": {
+      "transmission": {
+        "name": "Transmisja z licznikiem"
+      },
+      "han_available": {
+        "name": "Port HAN dostępny"
+      }
+    },
     "sensor": {
       "tariff": {
         "name": "Grupa taryfowa"
@@ -148,6 +156,63 @@
       },
       "meter_model": {
         "name": "Model licznika"
+      },
+      "phases": {
+        "name": "Typ instalacji",
+        "state": {
+          "single_phase": "Jednofazowa",
+          "three_phase": "Trójfazowa"
+        },
+        "state_attributes": {
+          "source": {
+            "name": "Źródło",
+            "state": {
+              "meter_model": "Model licznika",
+              "contractual_capacity": "Moc umowna"
+            }
+          }
+        }
+      },
+      "han_wmbus": {
+        "name": "Port HAN – Wireless M-Bus",
+        "state": {
+          "inactive": "Nieaktywny",
+          "active": "Aktywny",
+          "in_progress": "Wniosek w realizacji",
+          "waiting_for_meter": "Oczekiwanie na licznik",
+          "not_supported": "Niedostępny dla licznika"
+        }
+      },
+      "han_p1": {
+        "name": "Port HAN – P1",
+        "state": {
+          "inactive": "Nieaktywny",
+          "active": "Aktywny",
+          "in_progress": "Wniosek w realizacji",
+          "waiting_for_meter": "Oczekiwanie na licznik",
+          "not_supported": "Niedostępny dla licznika"
+        }
+      },
+      "switch_state": {
+        "name": "Przekaźnik licznika",
+        "state": {
+          "on": "Załączony",
+          "off": "Wyłączony",
+          "warning": "Ostrzeżenie",
+          "removed": "Brak przekaźnika"
+        },
+        "state_attributes": {
+          "load_status": { "name": "Stan członu wykonawczego" }
+        }
+      },
+      "billing_period_start": {
+        "name": "Początek okresu rozliczeniowego",
+        "state_attributes": {
+          "period_starts": { "name": "Wykryte początki okresów" }
+        }
+      },
+      "statistics_until": {
+        "name": "Statystyki aktualne do"
       },
       "consumption_total": {
         "name": "Energia pobrana"
@@ -231,6 +296,16 @@
           "total_netto": { "name": "Ogółem wartość (netto)" }
         }
       }
+    }
+  },
+  "issues": {
+    "phases_mismatch": {
+      "title": "Niezgodna liczba faz dla licznika {meter_code}",
+      "description": "Na podstawie danych z Portalu Odbiorcy Enea (model licznika: {model}, moc umowna: {capacity} kW) instalacja wygląda na {detected}-fazową, a w integracji Enea Ceny ustawiono liczbę faz: {configured}.\n\nLiczba faz decyduje o wysokości opłaty stałej sieciowej, więc szacowany rachunek może być błędny. Popraw ustawienie w integracji Enea Ceny — zgłoszenie zniknie samo.\n\nJeśli to integracja Enea pomyliła się co do liczby faz, zgłoś to na GitHubie."
+    },
+    "unknown_meter_model": {
+      "title": "Nieznany model licznika: {model}",
+      "description": "Integracja nie zna jeszcze liczby faz dla licznika **{model}** (PPE {meter_code}), więc sensor „Typ instalacji” może być nieznany albo wywnioskowany tylko z mocy umownej.\n\nJeśli wiesz, czy Twoja instalacja jest jednofazowa czy trójfazowa, [zgłoś ten model na GitHubie]({report_url}) — zostanie dopisany w kolejnej wersji. Do zgłoszenia nie dołączaj numeru PPE ani adresu.\n\nTo powiadomienie możesz zignorować."
     }
   }
 }

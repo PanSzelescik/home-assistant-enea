@@ -10,6 +10,8 @@
   4. **Defaults** — `DEFAULT_*`
   5. **Statistics API** — `MEASUREMENT_ID_*`, `MeasurementType`, `Resolution`, `BACKFILL_*`, `RANGE_FETCH_CHUNK_DAYS`
 - Każda nowa funkcja, metoda i klasa musi mieć **docstring**.
+- **Stan encji koordynatora przypisuj do pól `_attr_*`, nie licz go we właściwości z `@cached_property`.** HA unieważnia swoje buforowane właściwości encji (`native_value`, `is_on`, `extra_state_attributes`, …) tylko przy przypisaniu odpowiadającego pola `_attr_*`, a `CoordinatorEntity._handle_coordinator_update()` jedynie wywołuje `async_write_ha_state()` — `@cached_property` zostawia więc pierwszą wartość aż do restartu. Wzorzec w integracji: metoda `_update_attrs()` liczy stan z `coordinator.data` i przypisuje `_attr_*`; woła ją `__init__` oraz nadpisane `_handle_coordinator_update()` (przed `super()`). Zwykłe `@property` też działa (np. `EneaBillSensor`), ale Pyright zgłasza wtedy `reportIncompatibleVariableOverride`.
+- **Logi i raport diagnostyczny trafiają do publicznych zgłoszeń na GitHubie** (czytać je może także Enea). Nigdy nie loguj pełnego numeru PPE ani wewnętrznego ID licznika z Portalu Odbiorcy Enea (`meter_id`): numer PPE i `statistic_id` przepuszczaj przez `mask_ppe()` (`connector.py`, skraca do `…1234`), a `meter_id` pomijaj. Nowe pola identyfikujące odbiorcę dopisuj do `TO_REDACT` w `diagnostics.py`. ID zgłoszeń w Naprawach buduj z `entry_id`, nie z PPE ani `meter_id`.
 - **Nie twórz metod będących wyłącznie wrapperami** — jeśli metoda X robi tylko `return await self.Y()`, spłaszcz X i Y w jedną metodę. Wyjątek: gdy HA wymusza nazwę metody jako punkt wejścia (np. `async_step_reauth` z `entry_data`), użyj rozróżnienia po zawartości parametru zamiast tworzyć osobną metodę `_confirm`.
 
 ## Konwencje nazewnictwa
@@ -26,15 +28,17 @@ Niniejszy projekt to custom component dla Home Assistant integrujący liczniki z
 ```
 custom_components/enea/
 ├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, _matching_coordinators, serwisy refresh/backfill
-├── connector.py     — klient HTTP (EneaApiClient, _request helper), wyjątki, get_active_meter(), format_address()
-├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill; klient API jako self.client
+├── connector.py     — klient HTTP (EneaApiClient, _request helper; każde żądanie logowane na poziomie debug: ścieżka z ukrytym ID licznika, status, rozmiar, czas), wyjątki, get_active_meter(), infer_phases(), mask_ppe(), format_address()
+├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill; klient API jako self.client; diagnostics_state() dla raportu diagnostycznego
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", "configure", reconfigure, reauth; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
-├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date
+├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date, _han_port_state, _switch_state_attrs, _billing_period_starts, EneaStatisticsDateSensor
+├── binary_sensor.py — EneaBinarySensor, BINARY_SENSOR_DESCRIPTIONS: diagnostyczne transmisja z licznikiem i dostępność portu HAN
+├── issues.py        — async_update_issues, async_delete_issues: zgłoszenia w Naprawach (niezgodna liczba faz z enea_prices, nieznany model licznika)
 ├── date.py          — EneaBillDateEntity (Platform.DATE): edytowalne daty odczytu z RestoreEntity
 ├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill; szacowanie rachunku z long-term statistics
-├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + _shift_later_totals (wspólny zapis serii skumulowanej dla energii i kosztów)
+├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + _shift_later_totals (wspólny zapis serii skumulowanej dla energii i kosztów), async_statistics_overview (przegląd serii licznika do raportu diagnostycznego)
 ├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, async_cost_days_missing, _inject_cost_series, get_cost_statistic_name, find_tariff_group
-├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem)
+├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem): stan koordynatora (`diagnostics_state()`: m.in. ostatnie uruchomienie i błąd kroku statystyk, dni wypełnione zerami od restartu), stany encji (`_entity_states`, kluczowane kluczem encji, nie `entity_id` — ten zawiera PPE; bez `friendly_name`; stan i atrybuty sensora adresu ukryte), fazy (wywnioskowane vs enea_prices), konfiguracja enea_prices z zasięgiem tabeli taryf (`_prices_coverage`: `covered_until`, okresy), przegląd statystyk (`async_statistics_overview`, ID zamaskowane) i dane z dashboardu (`billingWeekData` tylko z energią czynną, `measurementId` 1/2); TO_REDACT + _redact_meter_data ukrywają dane logowania, adres, numer PPE, `meter_id`, `id`/`name` na najwyższym poziomie oraz `id` w `meters[]`/`agreements[]`, `serialNumber`, `agreementNumber` (ID i nazwy stref zostają). HA sam dokłada wersje HA i integracji, strefę czasową i otwarte zgłoszenia z Napraw
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
 ├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk, stałe kosztów (ENEA_PRICES_DOMAIN, UNIT_COST, COST_ZONE_DISPLAY, VAT_RATE, BILL_KEY_*)
 ├── manifest.json    — metadane integracji (wymagane przez HA/HACS/hassfest)
@@ -53,13 +57,14 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 
 - Coordinator co każde odświeżenie sprawdza aktualność statystyk przez `get_last_statistics` — odpytuje wszystkie aktywne serie (energy_consumed/returned, power_consumed/returned) **równolegle** (`asyncio.gather`) i bierze najnowszą datę.
 - Jeśli nie ma danych do wczoraj — pobiera brakujące dni i wstrzykuje.
+- **Podczas startu HA krok statystyk jest odraczany** (`_async_update_statistics` przez `async_at_started`). Wątek recordera zaczyna przetwarzać kolejkę (i commitować) dopiero po starcie HA, a pierwsze odświeżenie biegnie wewnątrz setupu integracji, na który start czeka — `get_instance(hass).async_block_till_done()` wołane w setupie zakleszcza start HA („Waiting for integrations to complete setup”). Zapytania odczytu przez `async_add_executor_job` recordera działają już w trakcie startu; nie wolno w nim czekać na zapis. Dane z dashboardu i sensory są dostępne od razu, statystyki/„Statystyki aktualne do”/rachunki dochodzą po starcie (`async_update_listeners`).
 - Backfill przy pierwszym uruchomieniu: zawsze pobiera maksymalną dostępną historię. Odbywa się jako **background task** (`hass.async_create_task`) — nie blokuje pierwszego odświeżenia koordynatora, sensory stają się dostępne natychmiast. Task jest cancellowany przy unload entry (`entry.async_on_unload`).
 - "Ile się da" = gdy `assemblyDate` jest znane — fetch od daty montażu do wczoraj jednym zakresem; gdy nieznane — cofaj się chunkami 180-dniowymi, zatrzymaj gdy początek chunka zawiera 7 kolejnych dni bez danych.
 - Pobieranie danych odbywa się przez **range endpoint** (`/consumption/{id}/{startDate}/{endDate}/{mtype}/{resolution}`), który zwraca dane za wiele dni naraz. Zakres jest dzielony na chunki `RANGE_FETCH_CHUNK_DAYS = 180` dni przetwarzane sekwencyjnie; w każdym chunku 2–4 żądania HTTP są wysyłane **równolegle** (`asyncio.gather`) — po jednym na typ pomiaru. Wydajność: ~2s na 6 miesięcy, ~5.5s na rok.
 - Odpowiedź range endpoint to płaska lista slotów godzinowych. **Liczba slotów na dobę NIE jest stała** — w dniu zmiany czasu doba ma 23 lub 25 godzin (API nie dopełnia do 24). `_split_range_response` grupuje sloty po **rzeczywistej dacie** wyliczonej z `integrationEnd` (a nie po sztywnych blokach 24) → odporne na DST. Wynik to per-day dicty `{"values": [...], "zones": [...]}` identyczne ze strukturą single-day, więc `has_data`, `_collect_series` i koszty nie wymagają zmian. Dla dużych zakresów dane bywają w `valuesToTable` (a `values` może zawierać krótki, częściowy wycinek) — kod bierze **dłuższe** z pól `values`/`valuesToTable`. Dokładny czas slotu liczy `slot_start_dt(entry)` z `integrationEnd` (nie z `timeId`) — patrz niżej.
 - Manualny backfill dowolnego zakresu dat: akcja `enea.backfill` (patrz Akcje).
 - `has_data` zwraca `False` gdy odpowiedź API zawiera wyłącznie wartości `null` (`if item.get("value") is not None`). Zera są traktowane jako dane (zerowe zużycie) — dni z zerowym zużyciem są importowane. Filtrowanie danych starego licznika odbywa się przez `_strip_pre_assembly_slots` na poziomie godzin, nie przez `has_data`.
-- **Dni bez danych (`has_data() == False`)** — Portal Odbiorcy Enea czasem w ogóle nie publikuje danych za dany dzień (potwierdzone przypadki trwałych dziur, nie tylko opóźnień). `_fetch_range` w `coordinator.py` obsługuje to przez parametry `zero_fill_stale`/`grace_days`: dzień bez danych młodszy niż `MISSING_DAY_GRACE_DAYS` (`const.py`, domyślnie 3 dni) jest pomijany jak dotychczas (dane zwykle pojawiają się po ok. 11:00 następnego dnia — patrz niżej); dzień starszy jest traktowany jako trwale brakujący i wstrzykiwany z wyzerowanymi wartościami (`_zero_fill_missing_day` — nadpisuje `null` na `0.0` w istniejących slotach, nie tworzy sztucznych slotów) zamiast być pomijany. Dzięki temu luka nie zeruje skumulowanej sumy kolejnych dni w `write_cumulative_series` (zob. sekcja Architektura kosztów). Ponowne uruchomienie `enea.backfill` dla tego samego zakresu zawsze odpytuje API na nowo i nadpisuje wyzerowany dzień prawdziwymi danymi, jeśli się później pojawią. Skanowanie wsteczne w `_fetch_days_backward` (gdy `assemblyDate` jest nieznane) celowo używa `zero_fill_stale=False` — polega na prawdziwym braku danych, żeby wykryć granicę początku historii licznika.
+- **Dni bez danych (`has_data() == False`)** — Portal Odbiorcy Enea czasem w ogóle nie publikuje danych za dany dzień (potwierdzone przypadki trwałych dziur, nie tylko opóźnień). `_fetch_range` w `coordinator.py` obsługuje to przez parametry `zero_fill_stale`/`grace_days`: dzień bez danych młodszy niż `MISSING_DAY_GRACE_DAYS` (`const.py`, domyślnie 3 dni) jest pomijany jak dotychczas (dane zwykle pojawiają się po ok. 11:00 następnego dnia — patrz niżej); dzień starszy jest traktowany jako trwale brakujący i wstrzykiwany z wyzerowanymi wartościami — logowane na poziomie INFO, bo to trwały zapis zer widoczny w Energy Dashboard (`_zero_fill_missing_day` — nadpisuje `null` na `0.0` w istniejących slotach, nie tworzy sztucznych slotów) zamiast być pomijany. Dzięki temu luka nie zeruje skumulowanej sumy kolejnych dni w `write_cumulative_series` (zob. sekcja Architektura kosztów). Ponowne uruchomienie `enea.backfill` dla tego samego zakresu zawsze odpytuje API na nowo i nadpisuje wyzerowany dzień prawdziwymi danymi, jeśli się później pojawią. Skanowanie wsteczne w `_fetch_days_backward` (gdy `assemblyDate` jest nieznane) celowo używa `zero_fill_stale=False` — polega na prawdziwym braku danych, żeby wykryć granicę początku historii licznika.
 
 ### Dolna granica fetchowania — assemblyDate
 
@@ -281,6 +286,36 @@ Dane za poprzedni dzień są dostępne zwykle po godzinie 11:00 następnego dnia
 | `address` | `address` (przez `format_address()`) |
 | `reading_date` | `currentValues[0].readingDate` |
 | `meter_model` | `meters[].typeName` aktywnego licznika |
+| `phases` | wnioskowane przez `infer_phases` (sensor ENUM) + atrybut `source` |
+| `statistics_until` | `coordinator.statistics_until` (sensor DATE, osobna klasa `EneaStatisticsDateSensor`) |
+| `han_wmbus` | `wmbusStatus` + `hanAvailable` (sensor ENUM, `_han_port_state`) |
+| `han_p1` | `p1Status` + `hanAvailable` (sensor ENUM, `_han_port_state`) |
+| `transmission` | `transmissionStatus` (binary_sensor, `CONNECTIVITY`) |
+| `han_available` | `hanAvailable` (binary_sensor) |
+| `switch_state` | `switchState` (sensor ENUM) + atrybut `load_status` z `drvSwitchLoadStatus` |
+| `billing_period_start` | `billingWeekData` (sensor DATE, `_billing_period_starts`) + atrybut `period_starts` |
+
+Liczba faz instalacji (`phases`) nie występuje w żadnym endpoincie Portalu Odbiorcy Enea (sprawdzone: dashboard PPE, `/user/ppes` — tylko `connectionVoltage: "nN"` i `bestMeterCategory: "AMI"`, `/queryParams/measuredValues/ppe/{id}` — pusta lista). `infer_phases` (`connector.py`) wnioskuje ją najpierw z modelu aktywnego licznika (`PHASES_BY_METER_MODEL` w `const.py` — wpisuj tylko modele o pewnej liczbie faz), a gdy model jest nieznany — z mocy umownej `>= PHASES_THREE_MIN_CAPACITY_KW` (12 kW, z zapasem ponad ~9,2 kW przyłącza jednofazowego 40 A) → trójfazowa. Niska moc niczego nie przesądza; wtedy stan nieznany (`None`). Atrybut `source` (`meter_model` / `contractual_capacity`) jest pomijany, gdy stan nieznany. Wynik zasila też zgłoszenia w Naprawach — patrz sekcja „Zgłoszenia w Naprawach (Repairs)”.
+
+Stany portów HAN odwzorowują ikonki Portalu Odbiorcy Enea (`js/app/portHan/view/han-status-icons.html`): `hanAvailable = false` → `not_supported`; `wmbusStatus`/`p1Status` `null`/`0` → `inactive`, `1` → `active`, `2` → `in_progress` (wniosek w realizacji), `3` → `waiting_for_meter`; nieznany kod → stan nieznany. Pole `switchState` to stan członu wykonawczego (przekaźnika zdalnego odłączania zasilania), wyświetlany w Portalu Odbiorcy Enea jako kolorowa ikonka przy statusie PPE: `0` → `off` (czerwona), `1` → `removed` (czarna), `2` → `warning` (pomarańczowa), `3` → `on` (zielona) — kody i kolory pochodzą z klas CSS, znaczenie słowne jest wywnioskowane. `drvSwitchLoadStatus` to tekst z tooltipa tej ikonki (zwykle pusty) — trafia do atrybutu `load_status` tylko gdy niepusty.
+
+### Okresy rozliczeniowe z `billingWeekData` (obserwacja)
+
+`billingWeekData[]` z dashboardu PPE (jeden wpis na `measurementId`, segmenty wspólne dla wszystkich pomiarów) przeplata segmenty dzienne z segmentami obejmującymi cały okres rozliczeniowy. Na jednym przykładzie (faktura „Za okres od 07/06/2026 do 05/08/2026”) potwierdzono, że **początek każdego długiego segmentu (`timeFrom`) to pierwszy dzień okresu na fakturze**:
+
+```
+2026-04-07 → 06-02   długi — początek okna danych (dateTo − 6 mies.), NIE granica okresu
+2026-06-02 … 06-07   dzienne
+2026-06-07 → 08-02   długi — okres od 07.06
+2026-08-02 … 08-06   dzienne
+2026-08-06 → 10-01   długi — bieżący okres od 06.08 (kończy się na dateFrom, czyli początku bieżącego tygodnia)
+```
+
+Wpisy dzienne między długimi segmentami nie mają znaczenia dla granic. `_billing_period_starts` zwraca `timeFrom` segmentów trwających co najmniej `BILLING_PERIOD_MIN_SEGMENT` (2 dni — odporne na dobę 25 h przy zmianie czasu), z pominięciem segmentu o indeksie 0 (początek okna). Przy rozliczeniu rocznym półroczne okno może nie zawierać żadnej granicy.
+
+Na razie wynik jest **tylko wyświetlany** w sensorze `billing_period_start` — użytkownik obserwuje, czy granice zgadzają się z kolejnymi fakturami.
+
+**TODO (po potwierdzeniu na kolejnych fakturach):** automatyczne ustawianie encji `bill_prev_reading` / `bill_last_reading` (okres `(d1, d2]`, więc data = początek okresu − 1 dzień; dla przykładu wyżej: d1 = 2026-06-06, d2 = 2026-08-05). Proponowane zachowanie: aktualizować encje dat tylko gdy Portal Odbiorcy Enea pokaże **nową** granicę, żeby ręczna korekta użytkownika nie była nadpisywana przy każdym odświeżeniu.
 
 ### Energia (widoczne w dashboardach)
 Tworzone dynamicznie w `async_setup_entry` na podstawie `currentValues[]`. Sensory dla wyłączonego kierunku (`fetch_consumption=False` lub `fetch_generation=False` w options) nie są tworzone.
@@ -293,6 +328,21 @@ Tworzone gdy `find_tariff_group` zwraca pasującą taryfę z `enea_prices`.
 - Dwa sensory `EneaBillSensor` (Platform.SENSOR) — „Szacowany rachunek – poprzedni okres" i „Szacowany rachunek – bieżący okres". `device_class=MONETARY`, PLN, **bez `state_class`**. `native_value` z `coordinator.bill_estimates[key].total`.
 - `coordinator.bill_estimates` (dict `BILL_KEY_PREVIOUS/CURRENT → BillEstimate | None`) przeliczany przez `async_recompute_bills()` — wywołanie: po zmianie daty, po każdym odświeżeniu gdy daty są ustawione.
 - `BillEstimate` z `billing.py`: `kwh_by_zone` (float), `energy_by_zone_netto`, `variable_network_by_zone_netto`, `quality_by_zone_netto`, `oze_by_zone_netto`, `cogeneration_by_zone_netto`, `trade_fee_netto`, `energy_netto`, `distribution_netto`, `fixed_network_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `total_netto`, `total` (jedyne brutto = stan sensora), `months`, `start`, `end`. Atrybuty sensora (w kolejności faktury): `start`, `end`, `months` → `kwh_{strefa}`, `energy_{strefa}_netto` per strefa → `trade_fee_netto` → `energy_netto` → `fixed_network_netto`, `fixed_capacity_netto` → `variable_network_{strefa}_netto`, `quality_{strefa}_netto`, `oze_{strefa}_netto`, `cogeneration_{strefa}_netto` per strefa → `fixed_subscription_netto` → `distribution_netto` → `total_netto`.
+
+## Zgłoszenia w Naprawach (Repairs)
+
+`issues.py` — `async_update_issues(hass, entry_id, meter_code, tariff_name, data)` wołane na końcu każdego `_async_update_data`; każde zgłoszenie jest tworzone, dopóki warunek zachodzi, i usuwane, gdy przestaje (`ir.async_delete_issue`). ID zgłoszeń: `{klucz}_{entry_id}` (ID zgłoszeń trafiają do raportu diagnostycznego, więc nie mogą zawierać PPE ani `meter_id`; koordynator dostaje `config_entry` w konstruktorze), klucze `ISSUE_*` w `const.py`, teksty w sekcji `issues` tłumaczeń. `async_remove_entry` w `__init__.py` usuwa zgłoszenia licznika przy usunięciu wpisu.
+
+| Klucz | Warunek | Uwagi |
+|-------|---------|-------|
+| `phases_mismatch` | `infer_phases` zna liczbę faz, `find_prices_config` zwraca konfigurację i `PHASES_COUNT[...] != cfg.phases` | Poprawka ustawienia w enea_prices przeładowuje wpisy Enea → zgłoszenie znika przy najbliższym odświeżeniu |
+| `unknown_meter_model` | model aktywnego licznika nie występuje w `PHASES_BY_METER_MODEL` | `learn_more_url` i placeholder `report_url` otwierają formularz `.github/ISSUE_TEMPLATE/new_meter_model_{pl,en}.yml` (`ISSUE_TEMPLATE_NEW_METER_MODEL`; wersja wg `hass.config.language`) z wypełnionymi przez query string polami `model` i `capacity` (id pól formularza) — nigdy PPE/adres. Po zgłoszeniu dopisz model do `PHASES_BY_METER_MODEL`. Zmiana `id` pól w formularzach wymaga zmiany w `_new_meter_model_url` |
+
+Oba zgłoszenia mają `is_fixable=False` i `IssueSeverity.WARNING` — użytkownik może je zignorować w UI.
+
+## Statystyki aktualne do
+
+`coordinator.statistics_until` — lokalna data najnowszej godziny we wszystkich aktywnych seriach energii/mocy (`_async_latest_statistics_date`, to samo zapytanie co na początku `_async_fetch_and_inject_stats`). Odświeżana w każdym `_async_update_data` po `async_block_till_done()` recordera, żeby uwzględnić dni wstrzyknięte w tym samym cyklu; dni z backfillu w tle pojawią się w kolejnym odświeżeniu.
 
 ## Obsługa sesji
 
@@ -360,9 +410,10 @@ Przy zmianie struktury danych w `ConfigEntry` (klucze w `entry.data`):
 ## Wydawanie nowej wersji
 
 1. Podbij `version` w `custom_components/enea/manifest.json` oraz `version` w `pyproject.toml`
-2. Zacommituj: `git commit -m "Release vX.Y.Z"`
-3. Wypchnij: `git push`
-4. Utwórz release przez GitHub CLI:
+2. Podbij przykładową wersję w polu `integration_version` (`placeholder`) w `.github/ISSUE_TEMPLATE/bug_report_pl.yml` i `bug_report_en.yml`
+3. Zacommituj: `git commit -m "Release vX.Y.Z"`
+4. Wypchnij: `git push`
+5. Utwórz release przez GitHub CLI:
    ```
    gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes
    ```

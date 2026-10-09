@@ -10,13 +10,14 @@ from homeassistant.util import dt as dt_util
 # ---------------------------------------------------------------------------
 
 DOMAIN = "enea"
-PLATFORMS = [Platform.SENSOR, Platform.DATE]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.DATE]
 DEFAULT_NAME = "Enea"
 
 # ---------------------------------------------------------------------------
 # API URLs
 # ---------------------------------------------------------------------------
 
+ISSUE_TRACKER_URL = "https://github.com/PanSzelescik/home-assistant-enea/issues"
 PORTAL_URL = "https://portalodbiorcy.operator.enea.pl"
 BASE_URL = f"{PORTAL_URL}/portalOdbiorcy/api"
 URL_LOGIN = f"{BASE_URL}/auth/login"
@@ -52,6 +53,64 @@ SENSOR_KEY_STATUS = "status"
 SENSOR_KEY_ADDRESS = "address"
 SENSOR_KEY_READING_DATE = "reading_date"
 SENSOR_KEY_METER_MODEL = "meter_model"
+SENSOR_KEY_HAN_WMBUS = "han_wmbus"
+SENSOR_KEY_HAN_P1 = "han_p1"
+SENSOR_KEY_SWITCH_STATE = "switch_state"
+SENSOR_KEY_BILLING_PERIOD_START = "billing_period_start"
+SENSOR_KEY_PHASES = "phases"
+SENSOR_KEY_STATISTICS_UNTIL = "statistics_until"
+
+BINARY_SENSOR_KEY_TRANSMISSION = "transmission"
+BINARY_SENSOR_KEY_HAN_AVAILABLE = "han_available"
+
+# Stany portu HAN (pola wmbusStatus / p1Status z dashboardu PPE) — mapowanie jak w
+# ikonkach Portalu Odbiorcy Enea: null/0 = nieaktywny, 1/2/3 jak niżej; gdy licznik
+# nie obsługuje portu HAN (hanAvailable = false), Portal Odbiorcy Enea pokazuje osobny
+# komunikat.
+HAN_STATE_INACTIVE = "inactive"
+HAN_STATE_NOT_SUPPORTED = "not_supported"
+HAN_STATE_BY_CODE: dict[int, str] = {
+    1: "active",
+    2: "in_progress",
+    3: "waiting_for_meter",
+}
+HAN_STATES: list[str] = [
+    HAN_STATE_INACTIVE,
+    *HAN_STATE_BY_CODE.values(),
+    HAN_STATE_NOT_SUPPORTED,
+]
+
+# Stan członu wykonawczego (przekaźnika zdalnego odłączenia) — pole switchState z
+# dashboardu PPE.  Kody odpowiadają klasom CSS ikonki w Portalu Odbiorcy Enea
+# (switch-state--off/removed/warning/on); znaczenie słowne jest wywnioskowane z nich.
+SWITCH_STATE_BY_CODE: dict[int, str] = {
+    0: "off",
+    1: "removed",
+    2: "warning",
+    3: "on",
+}
+
+# Liczba faz instalacji — Portal Odbiorcy Enea jej nie podaje, więc jest wnioskowana.
+# Najpierw z modelu aktywnego licznika (tylko modele o pewnej liczbie faz), a gdy model
+# jest nieznany — z mocy umownej: przyłącze jednofazowe kończy się w praktyce na ok.
+# 9,2 kW (40 A × 230 V), więc próg ma zapas.  Niska moc niczego nie przesądza.
+PHASES_SINGLE = "single_phase"
+PHASES_THREE = "three_phase"
+PHASES_BY_METER_MODEL: dict[str, str] = {
+    "OTUS1": PHASES_SINGLE,
+    "OTUS3": PHASES_THREE,
+    "MT174": PHASES_THREE,
+}
+PHASES_THREE_MIN_CAPACITY_KW = 12
+PHASES_SOURCE_METER_MODEL = "meter_model"
+PHASES_SOURCE_CAPACITY = "contractual_capacity"
+PHASES_COUNT: dict[str, int] = {PHASES_SINGLE: 1, PHASES_THREE: 3}
+
+# Repairs — klucze zgłoszeń (muszą pasować do sekcji "issues" w tłumaczeniach)
+ISSUE_PHASES_MISMATCH = "phases_mismatch"
+ISSUE_UNKNOWN_METER_MODEL = "unknown_meter_model"
+# Formularz GitHub (.github/ISSUE_TEMPLATE) do zgłoszenia nowego modelu; {lang} = pl / en
+ISSUE_TEMPLATE_NEW_METER_MODEL = "new_meter_model_{lang}.yml"
 
 # ---------------------------------------------------------------------------
 # Config flow — error and abort reason keys (must match translation files)
@@ -148,3 +207,8 @@ BILL_KEY_PREV_READING = "bill_prev_reading"
 BILL_KEY_LAST_READING = "bill_last_reading"
 BILL_KEY_PREVIOUS = "bill_previous"
 BILL_KEY_CURRENT = "bill_current"
+
+# billingWeekData z dashboardu PPE przeplata segmenty dzienne z segmentami obejmującymi
+# cały okres rozliczeniowy; początek tych drugich to granica okresu na fakturze.  Próg
+# odróżnia je od segmentów dziennych także w dniu zmiany czasu (doba 25 h).
+BILLING_PERIOD_MIN_SEGMENT = timedelta(days=2)

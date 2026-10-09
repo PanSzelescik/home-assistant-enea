@@ -28,6 +28,7 @@ from .const import (
     SERVICE_REFRESH,
 )
 from .coordinator import EneaUpdateCoordinator
+from .issues import async_delete_issues
 
 
 @dataclass
@@ -85,6 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
     )
     update_coordinator = EneaUpdateCoordinator(
         hass,
+        entry,
         client,
         entry.data[CONF_METER_ID],
         meter_code=entry.data[CONF_METER_NAME],
@@ -180,3 +182,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> boo
             hass.services.async_remove(DOMAIN, SERVICE_BACKFILL)
 
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> None:
+    """Delete the repair issues of a meter whose config entry is removed."""
+    async_delete_issues(hass, entry.entry_id)

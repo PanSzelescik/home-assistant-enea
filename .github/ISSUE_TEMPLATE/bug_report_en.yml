@@ -5,13 +5,22 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting! Please check if a similar issue already exists before submitting.
+        Thanks for reporting! Please ask installation and setup questions in [Discussions](https://github.com/PanSzelescik/home-assistant-enea/discussions).
+
+  - type: checkboxes
+    id: existing
+    attributes:
+      label: Existing Issues
+      options:
+        - label: There is no similar problem in the issue list yet
+          required: true
 
   - type: input
     id: ha_version
     attributes:
       label: Home Assistant Version
-      placeholder: "e.g. 2026.3.3"
+      description: Settings → About
+      placeholder: "e.g. 2026.10.0"
     validations:
       required: true
 
@@ -19,7 +28,23 @@ body:
     id: integration_version
     attributes:
       label: Enea Licznik Version
-      placeholder: "e.g. 0.0.1"
+      description: HACS → Enea Licznik
+      placeholder: "e.g. 1.5.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Problem Area
+      options:
+        - Login and setup
+        - Sensors
+        - Energy Dashboard statistics
+        - Energy costs (Enea Ceny)
+        - Bill estimate
+        - Repairs (issues raised in Home Assistant)
+        - Other
     validations:
       required: true
 
@@ -28,14 +53,12 @@ body:
     attributes:
       label: Tariff Group
       placeholder: "e.g. G11, G12, G13"
-    validations:
-      required: true
 
   - type: textarea
     id: description
     attributes:
       label: Problem Description
-      description: What is happening? What did you expect?
+      description: What is happening, and what was the expected behaviour?
     validations:
       required: true
 
@@ -44,7 +67,7 @@ body:
     attributes:
       label: Home Assistant Logs
       description: |
-        Paste logs from the `enea` domain (Settings → System → Logs, filter by "enea").
+        Debug logs help the most: Settings → Devices & Services → Enea → menu ⋮ → Enable debug logging, reproduce the problem, then disable debug logging — the log file downloads automatically. Paste the parts from the `enea` domain.
       render: text
 
   - type: textarea
@@ -52,5 +75,5 @@ body:
     attributes:
       label: Diagnostics Report
       description: |
-        Optionally attach the diagnostics report (Settings → Devices & Services → Enea → menu ⋮ → Download Diagnostics).
+        Optionally attach the diagnostics report (Settings → Devices & Services → Enea → menu ⋮ → Download diagnostics). Login details, the address, the PPE number, Portal Odbiorcy Enea identifiers and meter and agreement numbers are hidden in it automatically.
       render: json

@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from functools import cached_property
+from datetime import date, datetime, timezone
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -14,29 +13,44 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from . import EneaConfigEntry
-from .connector import format_address, get_active_meter
+from .connector import format_address, get_active_meter, infer_phases
 from .const import (
     BILL_KEY_CURRENT,
     BILL_KEY_PREVIOUS,
+    BILLING_PERIOD_MIN_SEGMENT,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
     CONF_METER_NAME,
     PORTAL_URL,
     DEFAULT_NAME,
     DOMAIN,
+    HAN_STATE_BY_CODE,
+    HAN_STATE_INACTIVE,
+    HAN_STATE_NOT_SUPPORTED,
+    HAN_STATES,
     MEASUREMENT_ID_CONSUMPTION,
+    PHASES_SINGLE,
+    PHASES_THREE,
     SENSOR_KEY_ADDRESS,
+    SENSOR_KEY_BILLING_PERIOD_START,
     SENSOR_KEY_CAPACITY,
+    SENSOR_KEY_HAN_P1,
+    SENSOR_KEY_HAN_WMBUS,
     SENSOR_KEY_METER_MODEL,
+    SENSOR_KEY_PHASES,
     SENSOR_KEY_READING_DATE,
+    SENSOR_KEY_STATISTICS_UNTIL,
     SENSOR_KEY_STATUS,
+    SENSOR_KEY_SWITCH_STATE,
     SENSOR_KEY_TARIFF,
+    SWITCH_STATE_BY_CODE,
     UNIT_COST,
 )
 from .coordinator import EneaUpdateCoordinator
@@ -109,6 +123,58 @@ def _get_reading_date(data: dict[str, Any]) -> datetime | None:
     return datetime.fromtimestamp(ts / 1000, tz=timezone.utc) if ts else None
 
 
+def _han_port_state(data: dict[str, Any], status_key: str) -> str | None:
+    """Return the HAN port state the way the Portal Odbiorcy Enea icons show it.
+
+    A meter without HAN support reports `hanAvailable = false` and its port
+    status is meaningless.  Otherwise a missing or zero status means the port is
+    inactive.  An unrecognised code yields None (unknown) rather than a state
+    outside the ENUM options.
+    """
+    if not data.get("hanAvailable"):
+        return HAN_STATE_NOT_SUPPORTED
+    code = data.get(status_key)
+    if not code:
+        return HAN_STATE_INACTIVE
+    return HAN_STATE_BY_CODE.get(code)
+
+
+def _switch_state_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    """Return the relay description shown in the Portal Odbiorcy Enea tooltip, if any."""
+    load_status = data.get("drvSwitchLoadStatus")
+    return {"load_status": load_status} if load_status else {}
+
+
+def _billing_period_starts(data: dict[str, Any]) -> list[date]:
+    """Return billing period start dates found in the dashboard's billingWeekData.
+
+    Segments spanning a whole billing period are interleaved with daily ones;
+    each such segment starts on the first day of a period on the invoice.  The
+    very first segment is skipped — it starts where the portal's data window
+    begins, not on a reading date.  All measurements share the same segments,
+    so the consumption one is enough.
+    """
+    measurement = next(
+        (
+            m
+            for m in data.get("billingWeekData") or []
+            if m.get("measurementId") == MEASUREMENT_ID_CONSUMPTION
+        ),
+        None,
+    )
+    if measurement is None:
+        return []
+    starts: list[date] = []
+    for i, segment in enumerate(measurement.get("values") or []):
+        time_from, time_to = segment.get("timeFrom"), segment.get("timeTo")
+        if i == 0 or time_from is None or time_to is None:
+            continue
+        start = dt_util.utc_from_timestamp(time_from / 1000)
+        if dt_util.utc_from_timestamp(time_to / 1000) - start >= BILLING_PERIOD_MIN_SEGMENT:
+            starts.append(dt_util.as_local(start).date())
+    return starts
+
+
 @dataclass(frozen=True, kw_only=True)
 class EneaSensorEntityDescription(SensorEntityDescription):
     """Extended sensor description for Enea diagnostic sensors."""
@@ -176,6 +242,55 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         value_fn=lambda data: (get_active_meter(data) or {}).get("typeName"),
         attr_fn=_meter_model_attrs,
     ),
+    EneaSensorEntityDescription(
+        key=SENSOR_KEY_PHASES,
+        translation_key=SENSOR_KEY_PHASES,
+        icon="mdi:sine-wave",
+        device_class=SensorDeviceClass.ENUM,
+        options=[PHASES_SINGLE, PHASES_THREE],
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: infer_phases(data)[0],
+        attr_fn=lambda data: {"source": source} if (source := infer_phases(data)[1]) else {},
+    ),
+    EneaSensorEntityDescription(
+        key=SENSOR_KEY_HAN_WMBUS,
+        translation_key=SENSOR_KEY_HAN_WMBUS,
+        icon="mdi:access-point",
+        device_class=SensorDeviceClass.ENUM,
+        options=HAN_STATES,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _han_port_state(data, "wmbusStatus"),
+    ),
+    EneaSensorEntityDescription(
+        key=SENSOR_KEY_HAN_P1,
+        translation_key=SENSOR_KEY_HAN_P1,
+        icon="mdi:serial-port",
+        device_class=SensorDeviceClass.ENUM,
+        options=HAN_STATES,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _han_port_state(data, "p1Status"),
+    ),
+    EneaSensorEntityDescription(
+        key=SENSOR_KEY_SWITCH_STATE,
+        translation_key=SENSOR_KEY_SWITCH_STATE,
+        icon="mdi:electric-switch-closed",
+        device_class=SensorDeviceClass.ENUM,
+        options=list(SWITCH_STATE_BY_CODE.values()),
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: SWITCH_STATE_BY_CODE.get(data.get("switchState")),  # pyright: ignore[reportArgumentType]
+        attr_fn=_switch_state_attrs,
+    ),
+    EneaSensorEntityDescription(
+        key=SENSOR_KEY_BILLING_PERIOD_START,
+        translation_key=SENSOR_KEY_BILLING_PERIOD_START,
+        icon="mdi:calendar-start",
+        device_class=SensorDeviceClass.DATE,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: next(reversed(_billing_period_starts(data)), None),
+        attr_fn=lambda data: {
+            "period_starts": [d.isoformat() for d in _billing_period_starts(data)],
+        },
+    ),
 )
 
 
@@ -203,6 +318,7 @@ async def async_setup_entry(
         EneaSensor(coordinator, meter_code, description)
         for description in SENSOR_DESCRIPTIONS
     )
+    sensors.append(EneaStatisticsDateSensor(coordinator, meter_code))
 
     # Energy sensors — total (always) + per-zone (dynamic)
     for cv in data.get("currentValues", []):
@@ -271,22 +387,71 @@ class EneaSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  # pyr
         self._meter_code = meter_code
         self._attr_unique_id = f"enea-{meter_code}-{description.key}"
         self._attr_device_info = _get_device_info(meter_code, coordinator.data)
+        self._update_attrs()
 
-    @cached_property
-    def native_value(self) -> Any:
-        """Return the sensor state value."""
-        if self.coordinator.data is None or self.entity_description.value_fn is None:
-            return None
-        return self.entity_description.value_fn(self.coordinator.data)
+    def _update_attrs(self) -> None:
+        """Compute the state and attributes from the coordinator data."""
+        data = self.coordinator.data
+        description = self.entity_description
+        self._attr_native_value = (
+            description.value_fn(data)
+            if data is not None and description.value_fn is not None
+            else None
+        )
+        self._attr_extra_state_attributes = (
+            description.attr_fn(data)
+            if data is not None and description.attr_fn is not None
+            else None
+        ) or {}
 
-    @cached_property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return additional state attributes."""
-        if self.entity_description.attr_fn is None:
-            return None
-        if self.coordinator.data is None:
-            return None
-        return self.entity_description.attr_fn(self.coordinator.data)
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Recompute the state from the fresh coordinator data, then write it.
+
+        Home Assistant only invalidates its cached entity properties when an
+        _attr_ field is assigned, so the state must be assigned here rather
+        than computed in a (cached) property — that would keep the first value
+        until a restart.
+        """
+        self._update_attrs()
+        super()._handle_coordinator_update()
+
+
+class EneaStatisticsDateSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  # pyright: ignore[reportIncompatibleVariableOverride]
+    """Diagnostic sensor with the newest day the imported statistics cover.
+
+    Shows at a glance when the Portal Odbiorcy Enea is late with data or has
+    skipped a day, and lets automations alert on stale statistics.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = SENSOR_KEY_STATISTICS_UNTIL
+    _attr_icon = "mdi:database-clock"
+    _attr_device_class = SensorDeviceClass.DATE
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: EneaUpdateCoordinator, meter_code: str) -> None:
+        """Initialize the statistics date sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"enea-{meter_code}-{SENSOR_KEY_STATISTICS_UNTIL}"
+        self._attr_device_info = _get_device_info(meter_code, coordinator.data)
+        self._update_attrs()
+
+    def _update_attrs(self) -> None:
+        """Take the newest statistics day, None before the first import."""
+        self._attr_native_value = self.coordinator.statistics_until
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Recompute the state from the fresh coordinator data, then write it.
+
+        Home Assistant only invalidates its cached entity properties when an
+        _attr_ field is assigned, so the state must be assigned here rather
+        than computed in a (cached) property — that would keep the first value
+        until a restart.
+        """
+        self._update_attrs()
+        super()._handle_coordinator_update()
 
 
 class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -319,20 +484,33 @@ class EneaEnergySensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity): 
             self._attr_translation_key = translation_key
         else:
             self._attr_name = sensor_name
+        self._update_attrs()
 
-    @cached_property
-    def native_value(self) -> float | None:
-        """Return the energy value in kWh."""
-        data = self.coordinator.data
-        if not data:
-            return None
-        for cv in data.get("currentValues", []):
-            if cv.get("measurementId") == self._measurement_id:
-                zone_data = cv.get(self._zone_key)
-                if zone_data is None:
-                    return None
-                return zone_data.get("value")
-        return None
+    def _update_attrs(self) -> None:
+        """Take the energy value in kWh for this measurement and zone."""
+        data = self.coordinator.data or {}
+        cv = next(
+            (
+                cv
+                for cv in data.get("currentValues", [])
+                if cv.get("measurementId") == self._measurement_id
+            ),
+            None,
+        )
+        zone_data = cv.get(self._zone_key) if cv is not None else None
+        self._attr_native_value = zone_data.get("value") if zone_data is not None else None
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Recompute the state from the fresh coordinator data, then write it.
+
+        Home Assistant only invalidates its cached entity properties when an
+        _attr_ field is assigned, so the state must be assigned here rather
+        than computed in a (cached) property — that would keep the first value
+        until a restart.
+        """
+        self._update_attrs()
+        super()._handle_coordinator_update()
 
 
 

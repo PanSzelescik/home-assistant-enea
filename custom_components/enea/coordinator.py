@@ -8,12 +8,20 @@ from typing import Any
 
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder.statistics import get_last_statistics
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .connector import EneaApiClient, EneaAuthError, EneaApiError, get_active_meter
+from .connector import (
+    EneaApiClient,
+    EneaApiError,
+    EneaAuthError,
+    get_active_meter,
+    mask_ppe,
+)
 from .const import (
     BACKFILL_MAX_CONSECUTIVE_EMPTY,
     BILL_KEY_CURRENT,
@@ -30,6 +38,7 @@ from .const import (
     STAT_NAME_BY_KEY,
 )
 from .billing import BillEstimate, async_estimate_bill, find_prices_config
+from .issues import async_update_issues
 from .costs import (
     async_cost_days_missing,
     async_insert_cost_statistics,
@@ -51,6 +60,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         client: EneaApiClient,
         meter_id: int,
         meter_code: str,
@@ -63,9 +73,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=update_interval,
         )
+        # Identifies the meter in repair issue ids — unlike the PPE number or the
+        # portal's meter id it says nothing about the customer.
+        self._entry_id = config_entry.entry_id
         self.client = client
         self.meter_id = meter_id
         self._meter_code = meter_code
@@ -76,9 +90,23 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._tariff_name: str | None = None
         self._assembly_datetime: datetime | None = None
         self._backfill_task: asyncio.Task[None] | None = None
+        # The task swallows its own failure (it only logs it), so the error is kept
+        # here for the diagnostics report.
+        self._backfill_error: str | None = None
         # Last day the cost catch-up got an answer from the portal for; see
         # _async_inject_missing_costs.
         self._cost_checked_until: date | None = None
+        # Newest day covered by the energy/power statistics, refreshed every update.
+        self.statistics_until: date | None = None
+        # The statistics step of a refresh made during startup waits for Home
+        # Assistant to start; this keeps it from being scheduled more than once.
+        self._statistics_deferred = False
+        # For the diagnostics report: when the statistics step last ran, the error
+        # it swallowed (it only logs it) and the days stored as zero consumption
+        # because the portal never published them — all since the last restart.
+        self._statistics_last_run: datetime | None = None
+        self._statistics_error: str | None = None
+        self._zero_filled_days: set[date] = set()
         self.bill_prev_reading: date | None = None
         self.bill_last_reading: date | None = None
         self.bill_estimates: dict[str, BillEstimate | None] = {
@@ -119,41 +147,74 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 .astimezone(dt_util.DEFAULT_TIME_ZONE)
             )
 
+        # The statistics step waits for the recorder to commit its own writes, but the
+        # recorder thread only starts committing once Home Assistant has started.  The
+        # first refresh runs inside this integration's setup, which startup waits for,
+        # so waiting there would deadlock — during startup the step is deferred until
+        # Home Assistant has started.
+        if self.hass.state is CoreState.running:
+            await self._async_update_statistics()
+        elif not self._statistics_deferred:
+            self._statistics_deferred = True
+            unsub = async_at_started(self.hass, self._async_update_statistics_after_start)
+            if self.config_entry is not None:
+                self.config_entry.async_on_unload(unsub)
+
+        async_update_issues(
+            self.hass, self._entry_id, self._meter_code, self._tariff_name, data
+        )
+
+        return data
+
+    async def _async_update_statistics(self) -> None:
+        """Inject missing statistics, then read back the statistics date and the bills.
+
+        Must only run once Home Assistant has started — see _async_update_data.
+        """
+        self._statistics_last_run = dt_util.now()
+        self._statistics_error = None
         # Inject historical statistics — errors are non-fatal (dashboard data stays valid).
         try:
             await self._async_fetch_and_inject_stats()
         except Exception as err:
+            self._statistics_error = mask_ppe(f"{type(err).__name__}: {err}")
             _LOGGER.warning("Failed to update historical statistics: %s", err, exc_info=True)
 
-        # Recompute bill estimates if reading dates are configured (new stats may have arrived).
         # async_add_external_statistics is non-blocking — it only queues writes in the
         # recorder thread.  Waiting here ensures those writes are committed to the DB
-        # before _query_zone_kwh reads them, so the bill updates in the same refresh
-        # cycle that brought in new data (not only in the next one ~3.5 h later).
+        # before they are read back below, so the statistics date and the bill update
+        # in the same refresh cycle that brought in new data (not only in the next
+        # one ~3.5 h later).
+        await get_instance(self.hass).async_block_till_done()
+        try:
+            self.statistics_until = await self._async_latest_statistics_date()
+        except Exception as err:
+            self._statistics_error = mask_ppe(f"{type(err).__name__}: {err}")
+            _LOGGER.warning("Failed to read the latest statistics date: %s", err, exc_info=True)
+
+        # Recompute bill estimates if reading dates are configured (new stats may have arrived).
         if self.bill_prev_reading is not None or self.bill_last_reading is not None:
-            await get_instance(self.hass).async_block_till_done()
             await self.async_recompute_bills()
 
-        return data
+    async def _async_update_statistics_after_start(self, _hass: HomeAssistant) -> None:
+        """Run the statistics step deferred during startup and refresh the entities."""
+        self._statistics_deferred = False
+        await self._async_update_statistics()
+        self.async_update_listeners()
 
     # ------------------------------------------------------------------
     # Statistics helpers
     # ------------------------------------------------------------------
 
-    async def _async_fetch_and_inject_stats(self) -> None:
-        """Determine which days are missing and inject historical statistics."""
-        keys_and_types = self._get_measurement_types()
-        if not keys_and_types:
-            return
+    async def _async_latest_statistics_date(self) -> date | None:
+        """Return the local date of the newest hour across the active statistic series.
 
-        today = dt_util.now().date()
-        yesterday = today - timedelta(days=1)
-
-        # Find the most-recent date across all active statistic series.
-        # All series are queried in parallel to avoid sequential executor round-trips.
+        All series are queried in parallel to avoid sequential executor
+        round-trips.  None when no series has any statistics yet.
+        """
         stat_ids = [
             get_statistic_id(self._meter_code, STAT_NAME_BY_KEY[key])
-            for key, _ in keys_and_types
+            for key, _ in self._get_measurement_types()
             if STAT_NAME_BY_KEY.get(key)
         ]
         last_stats_list = await asyncio.gather(*(
@@ -165,21 +226,31 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         latest_date: date | None = None
         for sid, last in zip(stat_ids, last_stats_list):
-            if last.get(sid):
-                ts = last[sid][0].get("start")
-                if ts is not None:
-                    d = (
-                        dt_util.utc_from_timestamp(ts)
-                        .astimezone(dt_util.DEFAULT_TIME_ZONE)
-                        .date()
-                    )
-                    if d >= yesterday:
-                        _LOGGER.debug("Statistics already up to date (last: %s)", d)
-                        # Energy is current — check costs independently.
-                        await self._async_inject_missing_costs(yesterday)
-                        return
-                    if latest_date is None or d > latest_date:
-                        latest_date = d
+            if last.get(sid) and (ts := last[sid][0].get("start")) is not None:
+                d = (
+                    dt_util.utc_from_timestamp(ts)
+                    .astimezone(dt_util.DEFAULT_TIME_ZONE)
+                    .date()
+                )
+                if latest_date is None or d > latest_date:
+                    latest_date = d
+        return latest_date
+
+    async def _async_fetch_and_inject_stats(self) -> None:
+        """Determine which days are missing and inject historical statistics."""
+        keys_and_types = self._get_measurement_types()
+        if not keys_and_types:
+            return
+
+        today = dt_util.now().date()
+        yesterday = today - timedelta(days=1)
+
+        latest_date = await self._async_latest_statistics_date()
+        if latest_date is not None and latest_date >= yesterday:
+            _LOGGER.debug("Statistics already up to date (last: %s)", latest_date)
+            # Energy is current — check costs independently.
+            await self._async_inject_missing_costs(yesterday)
+            return
 
         if latest_date is not None:
             # Costs for the days energy already covers are settled first, and
@@ -273,19 +344,66 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.async_update_listeners()
                 _LOGGER.debug(
                     "Initial backfill complete for meter %s: injected %d day(s)",
-                    self._meter_code,
+                    mask_ppe(self._meter_code),
                     len(all_days),
                 )
         except asyncio.CancelledError:
-            _LOGGER.debug("Initial backfill cancelled for meter %s", self._meter_code)
+            _LOGGER.debug("Initial backfill cancelled for meter %s", mask_ppe(self._meter_code))
             raise
         except Exception as err:
+            self._backfill_error = mask_ppe(str(err))
             _LOGGER.warning(
                 "Initial backfill failed for meter %s: %s",
-                self._meter_code,
+                mask_ppe(self._meter_code),
                 err,
                 exc_info=True,
             )
+
+    def diagnostics_state(self) -> dict[str, Any]:
+        """Return the internal state worth seeing in a diagnostics report.
+
+        The initial backfill only runs when a meter has no statistics at all,
+        so "not_started" after a restart is the normal state.
+        """
+        task = self._backfill_task
+        if task is None:
+            backfill = "not_started"
+        elif not task.done():
+            backfill = "running"
+        elif task.cancelled():
+            backfill = "cancelled"
+        elif self._backfill_error is not None:
+            backfill = f"failed: {self._backfill_error}"
+        else:
+            backfill = "done"
+
+        def iso(value: date | None) -> str | None:
+            """Return the value as an ISO string, keeping None."""
+            return value.isoformat() if value is not None else None
+
+        return {
+            "fetch_types": [key for key, _ in self._get_measurement_types()],
+            "tariff": self._tariff_name,
+            "assembly_datetime": iso(self._assembly_datetime),
+            "statistics_until": iso(self.statistics_until),
+            "statistics_last_run": iso(self._statistics_last_run),
+            "statistics_error": self._statistics_error,
+            "zero_filled_days": [iso(day) for day in sorted(self._zero_filled_days)],
+            "initial_backfill": backfill,
+            "cost_checked_until": iso(self._cost_checked_until),
+            "bill_prev_reading": iso(self.bill_prev_reading),
+            "bill_last_reading": iso(self.bill_last_reading),
+            "bill_estimates": {
+                key: None if est is None else {
+                    "start": iso(est.start),
+                    "end": iso(est.end),
+                    "months": est.months,
+                    "total_netto": est.total_netto,
+                    "total": est.total,
+                }
+                for key, est in self.bill_estimates.items()
+            },
+        }
 
     def cancel_backfill(self) -> None:
         """Cancel the background initial-backfill task if it is still running.
@@ -295,7 +413,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         if self._backfill_task is not None and not self._backfill_task.done():
             self._backfill_task.cancel()
-            _LOGGER.debug("Cancelled initial backfill for meter %s", self._meter_code)
+            _LOGGER.debug("Cancelled initial backfill for meter %s", mask_ppe(self._meter_code))
 
     async def _async_inject_missing_costs(self, up_to: date) -> None:
         """Inject cost statistics for days not yet covered, independently of energy.
@@ -537,10 +655,16 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not any(has_data(v) for v in day_data.values()):
                 if not zero_fill_stale or (today - day).days < grace_days:
                     continue
-                _LOGGER.debug(
-                    "No data for %s after %d day(s) — zero-filling", day, grace_days
+                _LOGGER.info(
+                    "Portal Odbiorcy Enea published no data for %s (meter %s) within "
+                    "%d day(s); storing the day as zero consumption. The enea.backfill "
+                    "action re-fetches it if the data appears later",
+                    day,
+                    mask_ppe(self._meter_code),
+                    grace_days,
                 )
                 day_data = self._zero_fill_missing_day(day_data)
+                self._zero_filled_days.add(day)
             day_data = self._strip_pre_assembly_slots(day, day_data)
             all_days.append((day, day_data))
 
@@ -671,7 +795,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.info(
                 "Backfill injected %d day(s) for meter %s (%s – %s)",
                 len(all_days),
-                self._meter_code,
+                mask_ppe(self._meter_code),
                 start_date,
                 end_date,
             )

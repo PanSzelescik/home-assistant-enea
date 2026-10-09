@@ -1,6 +1,7 @@
 """Statistics injection for the Enea Energy Meter integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from functools import partial
@@ -11,6 +12,7 @@ from homeassistant.components.recorder.models import StatisticData, StatisticMea
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
+    get_metadata,
     statistics_during_period,
 )
 from homeassistant.const import UnitOfEnergy, UnitOfPower
@@ -18,6 +20,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
+from .connector import mask_ppe
 from .const import (
     DOMAIN,
     EPOCH,
@@ -33,6 +36,50 @@ _LOGGER = logging.getLogger(__name__)
 def get_statistic_id(meter_code: str, name: str) -> str:
     """Return the external statistic_id for an energy/power statistic."""
     return f"{DOMAIN}:{meter_code}_{slugify(name)}"
+
+
+async def async_statistics_overview(hass: HomeAssistant, meter_code: str) -> dict[str, Any]:
+    """Return the newest stored hour of every statistic of one meter.
+
+    Covers energy, power and cost series alike — everything this integration
+    stored under the meter's statistic_id prefix.  Keys and names are passed
+    through mask_ppe, since the report is pasted into public GitHub issues.
+    """
+    recorder = get_instance(hass)
+    metadata = await recorder.async_add_executor_job(
+        partial(get_metadata, hass, statistic_source=DOMAIN)
+    )
+    prefix = f"{DOMAIN}:{meter_code}_"
+    statistic_ids = sorted(sid for sid in metadata if sid.startswith(prefix))
+    newest = await asyncio.gather(*(
+        recorder.async_add_executor_job(
+            get_last_statistics, hass, 1, sid, False, {"state", "sum", "mean"}
+        )
+        for sid in statistic_ids
+    ))
+
+    overview: dict[str, Any] = {}
+    for sid, last in zip(statistic_ids, newest):
+        meta = metadata[sid][1]
+        row = (last.get(sid) or [{}])[0]
+        start = row.get("start")
+        overview[mask_ppe(sid)] = {
+            "name": mask_ppe(meta.get("name") or ""),
+            "unit": meta.get("unit_of_measurement"),
+            "last_hour": (
+                dt_util.utc_from_timestamp(start)
+                .astimezone(dt_util.DEFAULT_TIME_ZONE)
+                .isoformat()
+                if start is not None
+                else None
+            ),
+            **{
+                key: value
+                for key in ("state", "sum", "mean")
+                if (value := row.get(key)) is not None
+            },
+        }
+    return overview
 
 
 def has_data(api_response: dict[str, Any]) -> bool:
@@ -200,7 +247,7 @@ async def _shift_later_totals(
     _LOGGER.info(
         "Re-import changed %s: %d later entries moved by %.3f to keep the "
         "running total continuous",
-        metadata["statistic_id"],
+        mask_ppe(metadata["statistic_id"]),
         len(rows),
         difference,
     )
@@ -291,7 +338,7 @@ async def _inject_energy_series(
         unit_class="energy",
     )
     await write_cumulative_series(hass, metadata, series)
-    _LOGGER.debug("Injected %d energy stats for %s", len(series), statistic_id)
+    _LOGGER.debug("Injected %d energy stats for %s", len(series), mask_ppe(statistic_id))
 
 
 async def _inject_power_series(
@@ -318,4 +365,4 @@ async def _inject_power_series(
         unit_class="power",
     )
     async_add_external_statistics(hass, metadata, stats_data)
-    _LOGGER.debug("Injected %d power stats for %s", len(stats_data), statistic_id)
+    _LOGGER.debug("Injected %d power stats for %s", len(stats_data), mask_ppe(statistic_id))

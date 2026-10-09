@@ -29,6 +29,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
+from .connector import mask_ppe
 from .const import (
     COST_ZONE_DISPLAY,
     ENEA_PRICES_DOMAIN,
@@ -321,14 +322,15 @@ async def _query_zone_kwh(
         records = stats_result.get(sid, [])
         if not records:
             # The window starts at EPOCH, so no rows at all means the statistic does not
-            # exist: the portal names this zone differently than COST_ZONE_DISPLAY does.
+            # exist: the Portal Odbiorcy Enea names this zone differently than
+            # COST_ZONE_DISPLAY does.
             if sid not in _REPORTED_MISSING_ZONES:
                 _REPORTED_MISSING_ZONES.add(sid)
                 _LOGGER.warning(
                     "No energy statistic %s for zone %s; the bill counts 0 kWh in it. "
-                    "If the meter does use this zone, its name in the Enea portal differs "
-                    "from the one in COST_ZONE_DISPLAY",
-                    sid,
+                    "If the meter does use this zone, its name in the Portal Odbiorcy Enea "
+                    "differs from the one in COST_ZONE_DISPLAY",
+                    mask_ppe(sid),
                     zone_display,
                 )
             result[zone_display] = 0.0

@@ -17,6 +17,7 @@ def coordinator():
     """Provide both reading boundaries and the bill recomputation collaborator."""
     return SimpleNamespace(
         data={"tariffGroupName": "G12", "meters": []},
+        tariff_name="G12",
         bill_prev_reading=date(2026, 6, 5),
         bill_last_reading=date(2026, 8, 5),
         async_recompute_bills=AsyncMock(),

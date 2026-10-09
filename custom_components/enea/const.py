@@ -215,6 +215,12 @@ STAT_NAME_BY_KEY: dict[str, str] = {
 
 ENEA_PRICES_DOMAIN = "enea_prices"
 
+# Grupy taryfowe, które Portal Odbiorcy Enea nazywa inaczej niż faktura i enea_prices
+# (klucz po casefold): G12sezON podaje jako „G12sez” (issue #6 w enea_prices).
+TARIFF_GROUP_ALIASES: dict[str, str] = {
+    "g12sez": "G12sezON",
+}
+
 UNIT_COST = "PLN"
 
 VAT_RATE = 0.23
@@ -225,11 +231,17 @@ VAT_RATE = 0.23
 COST_PRICES_STORAGE_KEY = f"{DOMAIN}.cost_prices"
 COST_PRICES_STORAGE_VERSION = 1
 
+# Strefa z enea_prices → nazwa strefy w statystykach kosztów i atrybutach rachunku.
+# Nazwa jest częścią statistic_id kosztów: zmiana odcięłaby zapisaną historię kosztów.
 COST_ZONE_DISPLAY: dict[str, str] = {
     "day": "Dzień",
     "night": "Noc",
     "peak": "Szczyt",
     "off_peak": "Poza szczytem",
+    # G12sezON i G13active (od 2026), skrócone nazwy stref z enea.pl.
+    "recommended_use": "Zalecany pobór",
+    "remaining": "Pozostałe godziny",
+    "recommended_limit": "Zalecane ograniczenie",
 }
 
 # System opustów (prosumenci przyłączeni do 31.03.2022, art. 4 ustawy o OZE): z każdej kWh

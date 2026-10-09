@@ -48,6 +48,7 @@ def _entry() -> Any:
         update_interval=timedelta(hours=3),
         last_exception=None,
         data=dashboard,
+        tariff_name=dashboard.get("tariffGroupName"),
         diagnostics_state=lambda: {"initial_backfill": "done", "statistics_until": "2026-10-07"},
         detected_installation=DetectedInstallation(
             phases=3,

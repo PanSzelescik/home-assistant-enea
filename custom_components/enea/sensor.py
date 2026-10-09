@@ -25,6 +25,7 @@ from .connector import (
     format_address,
     get_active_meter,
     infer_phases,
+    zone_name,
 )
 from .const import (
     BILL_KEY_CURRENT,
@@ -328,7 +329,6 @@ async def async_setup_entry(
         for i, zone_label in enumerate(cv.get("ppeZones", []), start=1):
             zone_key = f"valueZone{i}"
             if cv.get(zone_key) is not None:
-                short_name = zone_label.split(" ")[0]  # "Dzień 1.8.1" → "Dzień"
                 sensors.append(
                     EneaEnergySensor(
                         coordinator=coordinator,
@@ -336,14 +336,13 @@ async def async_setup_entry(
                         measurement_id=measurement_id,
                         zone_key=zone_key,
                         unique_key=f"{prefix}_zone{i}",
-                        sensor_name=f"Energia {type_label} – {short_name}",
+                        sensor_name=f"Energia {type_label} – {zone_name(zone_label)}",
                         translation_key=None,
                     )
                 )
 
     # Bill sensors — created only when enea_prices is configured with matching tariff
-    tariff_name = data.get("tariffGroupName")
-    if find_tariff_group(hass, tariff_name) is not None:
+    if find_tariff_group(hass, coordinator.tariff_name) is not None:
         sensors.append(EneaBillSensor(coordinator, meter_code, BILL_KEY_PREVIOUS))
         sensors.append(EneaBillSensor(coordinator, meter_code, BILL_KEY_CURRENT))
 
@@ -536,10 +535,11 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
 
         Top-level keys: start, end, months, total_netto, total (brutto = state).
         Section 'Sprzedaż energii': energy_netto + per-zone kwh_<zone> and
-        energy_<zone>_netto; under net metering also returned_kwh_<zone>,
-        billed_kwh_<zone> (what energy and variable fees are charged on) and
-        net_metering_left_kwh; unpriced_kwh when part of the period has no
-        prices (a tariff group without an enea_prices entry).
+        energy_<zone>_netto + trade_fee_netto (opłata handlowa, 0 on the tariff);
+        under net metering also returned_kwh_<zone>, billed_kwh_<zone> (what
+        energy and variable fees are charged on) and net_metering_left_kwh;
+        unpriced_kwh when part of the period has no prices (a tariff group
+        without an enea_prices entry).
         Section 'Usługa dystrybucji': distribution_netto (sum) + fixed fees
         (fixed_network_netto, fixed_capacity_netto, fixed_subscription_netto) +
         per-zone components: variable_network_<zone>_netto, quality_<zone>_netto,
@@ -567,6 +567,7 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
                 attrs[f"returned_kwh_{safe}"] = est.returned_kwh_by_zone.get(zone_display, 0.0)
                 attrs[f"billed_kwh_{safe}"] = est.billed_kwh_by_zone.get(zone_display, 0.0)
             attrs[f"energy_{safe}_netto"] = est.energy_by_zone_netto.get(zone_display, 0.0)
+        attrs["trade_fee_netto"] = est.trade_fee_netto
         if est.net_metering_left_kwh is not None:
             attrs["net_metering_left_kwh"] = est.net_metering_left_kwh
         if est.unpriced_kwh:

@@ -8,6 +8,7 @@ import pytest
 from conftest import FakeConfigEntry, FakeHass
 
 from custom_components.enea.billing import find_prices_config
+from custom_components.enea.connector import agreement_tariffs, tariff_group_name, zone_name
 from custom_components.enea.costs import find_tariff_group
 
 
@@ -88,3 +89,47 @@ def test_prices_config_found_regardless_of_case() -> None:
 def test_prices_config_not_found_for_other_tariff() -> None:
     """A different group yields no configuration."""
     assert find_prices_config(_hass("G11"), "G12w") is None
+
+
+@pytest.mark.parametrize(
+    ("reported", "expected"),
+    [
+        ("G12sez", "G12sezON"),  # issue #6 in enea_prices: the invoice says G12sezON
+        ("G12SEZ", "G12sezON"),
+        (" G12sez ", "G12sezON"),
+        ("G12sezON", "G12sezON"),
+        ("G12W", "G12W"),  # other names pass through; lookups ignore case anyway
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_tariff_group_name_as_on_the_invoice(reported: str | None, expected: str) -> None:
+    """The portal's shortened group names map to the ones enea_prices knows."""
+    assert tariff_group_name(reported) == expected
+
+
+def test_shortened_group_finds_its_prices() -> None:
+    """A meter reporting "G12sez" is priced by the "G12sezON" entry."""
+    assert find_tariff_group(_hass("G12sezON"), tariff_group_name("G12sez")) == "TARIFF_OBJECT"
+
+
+def test_agreements_use_the_invoice_group_name() -> None:
+    """Agreements name their group the portal's way too."""
+    data = {"agreements": [{"from": 1781906400000, "to": None, "tariffGroupName": "G12sez"}]}
+
+    assert [group for _, _, group in agreement_tariffs(data)] == ["G12sezON"]
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("Dzień 1.8.1", "Dzień"),
+        ("Poza szczytem 1.8.2", "Poza szczytem"),
+        ("Strefa zalecanego poboru 1.8.2", "Strefa zalecanego poboru"),
+        ("Pozostałe godziny doby 1.8.1", "Pozostałe godziny doby"),
+        ("Bezstrefowo", "Bezstrefowo"),
+    ],
+)
+def test_zone_name_drops_only_the_obis_code(label: str, expected: str) -> None:
+    """A zone sensor keeps the whole zone name, not just its first word."""
+    assert zone_name(label) == expected

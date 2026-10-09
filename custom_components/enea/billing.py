@@ -7,7 +7,8 @@ same calculation method as Enea's invoices:
    each hour put in its zone by the tariff schedule and priced by its own day.
 2. Every line item is multiplied and rounded to 2 decimal places at **netto**
    (pre-VAT) prices.  The bill is split into two sections mirroring the invoice:
-   - Sprzedaż energii – energy price including the excise duty (akcyza).
+   - Sprzedaż energii – energy price including the excise duty (akcyza), plus
+     the seller's monthly trade fee (opłata handlowa) on a market offer.
    - Usługa dystrybucji – variable distribution fees per zone (grid, quality,
      OZE, cogeneration) plus fixed monthly fees (network, capacity, subscription).
 3. VAT (23%) is applied **once** to the total netto at the very end:
@@ -46,7 +47,6 @@ from .statistics import get_statistic_id
 
 _LOGGER = logging.getLogger(__name__)
 
-
 @dataclass
 class PricesConfig:
     """Runtime configuration from the enea_prices integration (duck-typed)."""
@@ -84,8 +84,13 @@ class BillEstimate:
     cogeneration_by_zone_netto: dict[str, float]
     """Cogeneration fee netto per zone (opłata kogeneracyjna), PLN."""
 
+    trade_fee_netto: float
+    """Seller's trade fee netto for ``months`` full months, PLN.  Only market
+    offers charge one; on the URE tariff it is 0.0."""
+
     energy_netto: float
-    """Total energy sale cost netto — section 'Sprzedaż energii', PLN."""
+    """Total energy sale cost netto — section 'Sprzedaż energii' (energy across
+    all zones + trade fee), PLN."""
 
     distribution_netto: float
     """Total distribution service cost netto — section 'Usługa dystrybucji'
@@ -364,20 +369,23 @@ async def async_estimate_bill(
         oze_by_zone_netto[zone] = round(zone_usage.oze * share, 2)
         cogeneration_by_zone_netto[zone] = round(zone_usage.cogeneration * share, 2)
 
-    energy_netto = round(sum(energy_by_zone_netto.values()), 2)
-
     days = (end - start).days
     months = max(1, round(days / 30.44)) if days > 0 else 0
 
     if months == 0:
+        trade_fee_netto = 0.0
         fixed_network_netto = 0.0
         fixed_capacity_netto = 0.0
         fixed_subscription_netto = 0.0
     else:
         m = period.monthly
+        # Opłata handlowa – tylko przy cenach z umowy; starsze enea_prices jej nie znają.
+        trade_fee_netto = round(getattr(m, "trade", 0.0) * months, 2)
         fixed_network_netto = round(m.get_network_fixed(cfg.phases) * months, 2)
         fixed_capacity_netto = round(m.get_capacity(cfg.annual_kwh) * months, 2)
         fixed_subscription_netto = round(m.get_subscription(cfg.billing_months) * months, 2)
+
+    energy_netto = round(sum(energy_by_zone_netto.values()) + trade_fee_netto, 2)
 
     distribution_netto = round(
         sum(variable_network_by_zone_netto.values())
@@ -400,6 +408,7 @@ async def async_estimate_bill(
         quality_by_zone_netto=quality_by_zone_netto,
         oze_by_zone_netto=oze_by_zone_netto,
         cogeneration_by_zone_netto=cogeneration_by_zone_netto,
+        trade_fee_netto=trade_fee_netto,
         energy_netto=energy_netto,
         distribution_netto=distribution_netto,
         fixed_network_netto=fixed_network_netto,

@@ -54,9 +54,7 @@ async def async_setup_entry(
     """Set up Enea bill date entities from a config entry."""
     coordinator = entry.runtime_data.coordinator
     meter_code = entry.data[CONF_METER_NAME]
-    tariff_name = (coordinator.data or {}).get("tariffGroupName")
-
-    if find_tariff_group(hass, tariff_name) is None:
+    if find_tariff_group(hass, coordinator.tariff_name) is None:
         return
 
     async_add_entities([

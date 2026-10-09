@@ -205,3 +205,43 @@ async def test_no_prices_on_the_last_day_means_no_bill(stored) -> None:
     stored({CONSUMED: []})
 
     assert await async_estimate_bill(object(), "PPE", _cfg(history), START, END) is None
+
+
+class _OfferMonthly(_Monthly):
+    """Fixed fees of a market offer: the seller adds a monthly trade fee."""
+
+    trade = 9.82
+
+
+def _offer() -> _Tariff:
+    """G12w priced from the customer's contract."""
+    period = _G12wPeriod(0.6)
+    period.monthly = _OfferMonthly()
+    return _Tariff("G12w", period, period, START)
+
+
+async def test_a_trade_fee_joins_the_energy_section(stored) -> None:
+    """On a market offer the invoice's 'Sprzedaż energii' includes the trade fee.
+
+    Contract prices entered in enea_prices put it on the period's monthly fees;
+    a tariff period has none, which the plain fakes above stand for.
+    """
+    stored({CONSUMED: [(_at(END, 10), 100.0)]})
+
+    estimate = await async_estimate_bill(object(), "PPE", _cfg(_offer()), START, END)
+
+    assert estimate is not None
+    assert estimate.months == 1
+    assert estimate.trade_fee_netto == 9.82
+    assert estimate.energy_netto == round(100 * 0.6 + 9.82, 2)
+
+
+async def test_no_trade_fee_on_the_tariff(stored) -> None:
+    """A tariff period's monthly fees carry no trade fee."""
+    stored({CONSUMED: [(_at(END, 10), 100.0)]})
+
+    estimate = await async_estimate_bill(object(), "PPE", _cfg(_g12w()), START, END)
+
+    assert estimate is not None
+    assert estimate.trade_fee_netto == 0.0
+    assert estimate.energy_netto == round(100 * 0.6, 2)

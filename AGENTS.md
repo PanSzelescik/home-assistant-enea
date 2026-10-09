@@ -176,6 +176,8 @@ Wywoływana: po zmianie daty przez użytkownika (z `EneaBillDateEntity.async_set
 
 Baza URL: `https://portalodbiorcy.operator.enea.pl/portalOdbiorcy/api`
 
+Zapisane odpowiedzi API mogą leżeć lokalnie w `data/` — katalog jest celowo w `.gitignore`, bo zawiera prawdziwe dane odbiorcy (numer PPE, `meter_id`, adres). Nie commituj go i nie przepisuj z niego wartości do kodu, testów, dokumentacji, commitów ani PR — w przykładach używaj zmyślonych (np. `meter_id` `12345`, PPE `590310600000001234`).
+
 ### Logowanie
 
 ```
@@ -200,8 +202,6 @@ Cookie: PER_JSESSIONID=<wartość>
 
 Zwraca listę punktów poboru energii przypisanych do konta. Pole `address` jest zawsze `null` — adres dostępny tylko przez endpoint dashboard. Odpowiedź cachowana przez 5 minut (patrz `METERS_CACHE_TTL` w `const.py`).
 
-Przykład odpowiedzi: patrz `data/ppes.json`.
-
 ### Dashboard PPE (główne źródło danych)
 
 ```
@@ -225,8 +225,6 @@ Kluczowe pola odpowiedzi:
   - `ppeZones[]` — nazwy stref np. `["Dzień 1.8.1", "Noc 1.8.2"]`
   - `readingDate` — timestamp ostatniego odczytu (ms)
   - `unit.symbol="Wh"`, `unit.scaler=3` → wartości są w kWh
-
-Przykład odpowiedzi: patrz `data/ppe12345.json`.
 
 ### Endpoint statystyk historycznych — single day (legacy)
 

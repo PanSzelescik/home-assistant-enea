@@ -18,6 +18,7 @@ from .const import (
     BILLING_PERIOD_MIN_SEGMENT,
     MEASUREMENT_ID_CONSUMPTION,
     URL_CONSUMPTION_RANGE,
+    URL_CONSUMPTION_RANGE_DATA_SOURCE,
     URL_LOGIN,
     URL_PPE_DASHBOARD,
     URL_PPES,
@@ -27,6 +28,7 @@ from .const import (
     PHASES_SOURCE_METER_MODEL,
     PHASES_THREE,
     PHASES_THREE_MIN_CAPACITY_KW,
+    DataSource,
     MeasurementType,
     Resolution,
 )
@@ -210,6 +212,7 @@ class EneaApiClient:
         end_date: date,
         measurement_type: MeasurementType,
         resolution: Resolution,
+        data_source: DataSource | None = None,
     ) -> dict[str, Any]:
         """Return consumption/power data for a date range at the given resolution.
 
@@ -226,17 +229,24 @@ class EneaApiClient:
                               4=power consumed, 9=power returned).
             resolution: Resolution (1=15-min/96 entries per day,
                         2=60-min/24 entries per day).
+            data_source: DataSource of a prosumer's meter (2=after balancing,
+                         60-min resolution or coarser only); None sends none,
+                         as Portal Odbiorcy Enea does for other meters.
         """
         if start_date > end_date:
             raise ValueError(
                 f"start_date ({start_date}) must be <= end_date ({end_date})"
             )
-        url = URL_CONSUMPTION_RANGE.format(
+        template = (
+            URL_CONSUMPTION_RANGE if data_source is None else URL_CONSUMPTION_RANGE_DATA_SOURCE
+        )
+        url = template.format(
             meter_id=meter_id,
             start_date=start_date.isoformat(),
             end_date=end_date.isoformat(),
             measurement_type=measurement_type,
             resolution=resolution,
+            data_source=data_source,
         )
         return await self._request(url, "consumption_range")
 

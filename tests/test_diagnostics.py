@@ -243,6 +243,7 @@ async def test_coordinator_state_reports_failures() -> None:
     coord._fetch_generation = False
     coord._fetch_power_consumption = False
     coord._fetch_power_generation = False
+    coord._prosumer = False
     coord._tariff_name = "G12"
     coord._assembly_datetime = None
     coord._cost_checked_until = None

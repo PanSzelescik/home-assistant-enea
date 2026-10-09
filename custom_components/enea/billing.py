@@ -24,6 +24,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from homeassistant.components.recorder.statistics import statistics_during_period
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
@@ -31,6 +32,7 @@ from homeassistant.util import dt as dt_util
 from .connector import mask_ppe
 from .const import (
     COST_ZONE_DISPLAY,
+    ENEA_PRICES_CONF_TARIFF,
     ENEA_PRICES_DOMAIN,
     EPOCH,
     VAT_RATE,
@@ -140,6 +142,25 @@ def find_prices_config(hass: HomeAssistant, tariff_name: str | None) -> PricesCo
             akcyza=getattr(enea_prices_const, "AKCYZA", 0.0),
         )
     return None
+
+
+def find_prices_entry(hass: HomeAssistant, tariff_name: str | None) -> ConfigEntry | None:
+    """Return the enea_prices entry of a tariff group, loaded or not, matched as above.
+
+    Unlike find_prices_config this does not need the entry to be set up: an
+    entry that failed to load is still the user's configuration of the group.
+    """
+    if not tariff_name:
+        return None
+    wanted = tariff_name.casefold()
+    return next(
+        (
+            entry
+            for entry in hass.config_entries.async_entries(ENEA_PRICES_DOMAIN)
+            if (entry.data.get(ENEA_PRICES_CONF_TARIFF) or "").casefold() == wanted
+        ),
+        None,
+    )
 
 
 async def async_estimate_bill(

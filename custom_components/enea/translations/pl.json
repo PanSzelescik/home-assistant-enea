@@ -341,6 +341,17 @@
         }
       }
     },
+    "prices_not_configured": {
+      "title": "Skonfiguruj Enea Ceny dla grupy {tariff}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Skonfigurować Enea Ceny?",
+            "description": "Integracja Enea Ceny jest zainstalowana, ale nie ma w niej wpisu dla grupy taryfowej {tariff} licznika {meter_code}.\n\nPo jej skonfigurowaniu integracja Enea Licznik policzy koszty energii do panelu Energia (także dla zaimportowanej historii, którą obejmuje tabela taryf) oraz szacowany rachunek za poprzedni i bieżący okres rozliczeniowy.\n\nZatwierdź, aby przejść do konfiguracji – formularz zostanie wypełniony danymi z licznika. Jeśli nie chcesz liczyć kosztów, zignoruj to zgłoszenie."
+          }
+        }
+      }
+    },
     "unknown_meter_model": {
       "title": "Nieznany model licznika: {model}",
       "description": "Integracja nie zna jeszcze liczby faz dla licznika **{model}** (PPE {meter_code}), więc sensor „Typ instalacji” może być nieznany albo wywnioskowany tylko z mocy umownej.\n\nJeśli wiesz, czy Twoja instalacja jest jednofazowa czy trójfazowa, [zgłoś ten model na GitHubie]({report_url}) — zostanie dopisany w kolejnej wersji. Do zgłoszenia nie dołączaj numeru PPE ani adresu.\n\nTo powiadomienie możesz zignorować."

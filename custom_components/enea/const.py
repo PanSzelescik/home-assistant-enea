@@ -110,6 +110,8 @@ PHASES_COUNT: dict[str, int] = {PHASES_SINGLE: 1, PHASES_THREE: 3}
 ISSUE_PHASES_MISMATCH = "phases_mismatch"
 ISSUE_BILLING_MONTHS_MISMATCH = "billing_months_mismatch"
 ISSUE_ANNUAL_KWH_MISMATCH = "annual_kwh_mismatch"
+# enea_prices jest zainstalowana i zna grupę taryfową licznika, ale nie ma dla niej wpisu.
+ISSUE_PRICES_NOT_CONFIGURED = "prices_not_configured"
 # Klucze wpisu enea_prices, które poprawia przycisk „Napraw” zgłoszeń o niezgodnej instalacji.
 ENEA_PRICES_CONF_TARIFF = "tariff"
 ENEA_PRICES_CONF_PHASES = "phases"

@@ -341,6 +341,17 @@
         }
       }
     },
+    "prices_not_configured": {
+      "title": "Set up Enea Ceny for the {tariff} group",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Set up Enea Ceny?",
+            "description": "The Enea Ceny integration is installed but has no entry for the {tariff} tariff group of meter {meter_code}.\n\nOnce it is set up, the Enea Licznik integration computes energy costs for the Energy dashboard (also for the imported history the tariff table covers) and a bill estimate for the previous and the current billing period.\n\nConfirm to continue to the setup – the form will be filled in from the meter. If you do not want costs, ignore this issue."
+          }
+        }
+      }
+    },
     "unknown_meter_model": {
       "title": "Unknown meter model: {model}",
       "description": "The integration does not know the number of phases for the **{model}** meter yet (PPE {meter_code}), so the “Installation Type” sensor may be unknown or inferred from the contractual capacity only.\n\nIf you know whether your installation is single-phase or three-phase, [report this model on GitHub]({report_url}) — it will be added in a future release. Do not include your PPE number or address in the report.\n\nYou can ignore this notice."

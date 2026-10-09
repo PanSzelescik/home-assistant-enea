@@ -292,3 +292,118 @@ async def test_latest_statistics_date(wire_recorder) -> None:
     wire_recorder(coordinator_module, [(newest, 1.0)])
 
     assert await coord._async_latest_statistics_date() == datetime.date(2026, 10, 7)
+
+
+class _Integration:
+    """A custom integration as the loader lists it, its package already importable."""
+
+    pkg_path = "fake_enea_prices"
+
+    async def async_get_component(self) -> Any:
+        return object()
+
+
+@pytest.fixture
+def prices_installed(monkeypatch: pytest.MonkeyPatch):
+    """Make enea_prices installed, pricing G12 and G12w; the test may uninstall it."""
+    import sys
+
+    installed = {"enea_prices": _Integration()}
+
+    async def custom_components(hass: Any) -> dict[str, Any]:
+        return installed
+
+    monkeypatch.setattr(issues_module, "async_get_custom_components", custom_components)
+    monkeypatch.setitem(
+        sys.modules, "fake_enea_prices.tariffs", SimpleNamespace(TARIFFS={"G12": 0, "G12w": 0})
+    )
+    return installed
+
+
+def _hass_with_prices(*prices: FakeConfigEntry) -> Any:
+    """A hass holding the given enea_prices entries."""
+    return SimpleNamespace(
+        config_entries=SimpleNamespace(
+            async_entries=lambda domain: [e for e in prices if e.domain == domain]
+        )
+    )
+
+
+async def test_an_installed_enea_prices_supports_the_groups_of_its_table(prices_installed) -> None:
+    hass = _hass_with_prices()
+
+    assert await issues_module.async_prices_supports(hass, "g12w")
+    assert not await issues_module.async_prices_supports(hass, "G11pewna")
+    assert not await issues_module.async_prices_supports(hass, None)
+
+
+async def test_without_enea_prices_installed_nothing_is_supported(prices_installed) -> None:
+    prices_installed.clear()
+
+    assert not await issues_module.async_prices_supports(_hass_with_prices(), "G12")
+
+
+async def test_setting_up_enea_prices_is_suggested_for_a_supported_group(
+    registry, prices_installed
+) -> None:
+    await issues_module.async_update_prices_setup_issue(
+        _hass_with_prices(), "entry1", "PPE", "G12"
+    )
+
+    issue = registry["open"]["prices_not_configured_entry1"]
+    assert issue["is_fixable"]
+    assert issue["translation_placeholders"] == {"meter_code": "PPE", "tariff": "G12"}
+
+
+async def test_an_entry_of_the_group_clears_the_suggestion(registry, prices_installed) -> None:
+    """Even one that failed to load: it is still the user's configuration."""
+    await issues_module.async_update_prices_setup_issue(
+        _hass_with_prices(), "entry1", "PPE", "G12"
+    )
+    entry = FakeConfigEntry(domain="enea_prices", data={"tariff": "G12"})
+
+    await issues_module.async_update_prices_setup_issue(
+        _hass_with_prices(entry), "entry1", "PPE", "G12"
+    )
+
+    assert registry["open"] == {}
+
+
+async def test_nothing_is_suggested_without_enea_prices_or_for_another_group(
+    registry, prices_installed
+) -> None:
+    await issues_module.async_update_prices_setup_issue(
+        _hass_with_prices(), "entry1", "PPE", "G11pewna"
+    )
+    prices_installed.clear()
+    await issues_module.async_update_prices_setup_issue(
+        _hass_with_prices(), "entry1", "PPE", "G12"
+    )
+
+    assert registry["open"] == {}
+
+
+async def test_the_setup_fix_continues_in_the_enea_prices_config_flow() -> None:
+    started: list[tuple[str, dict[str, Any]]] = []
+
+    async def async_init(domain: str, *, context: dict[str, Any]) -> dict[str, Any]:
+        started.append((domain, context))
+        return {"flow_id": "prices-flow"}
+
+    flow = await repairs_module.async_create_fix_flow(None, "prices_not_configured_entry1", None)
+    flow.hass = SimpleNamespace(  # type: ignore[assignment]
+        config_entries=SimpleNamespace(
+            flow=SimpleNamespace(
+                async_init=async_init,
+                async_get=lambda flow_id: {"context": {"source": "user"}},
+            )
+        )
+    )
+    flow.handler = "enea"
+    flow.flow_id = "fix"
+
+    result = await flow.async_step_confirm({})
+
+    assert started == [("enea_prices", {"source": "user"})]
+    assert result["type"] == "create_entry"
+    assert result["next_flow"] == ("config_flow", "prices-flow")

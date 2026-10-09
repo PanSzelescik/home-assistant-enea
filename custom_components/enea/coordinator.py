@@ -39,7 +39,11 @@ from .const import (
 )
 from .billing import BillEstimate, async_estimate_bill, find_prices_config
 from .installation import DetectedInstallation, async_detect_installation
-from .issues import async_update_installation_issues, async_update_issues
+from .issues import (
+    async_update_installation_issues,
+    async_update_issues,
+    async_update_prices_setup_issue,
+)
 from .costs import (
     async_cost_days_missing,
     async_insert_cost_statistics,
@@ -224,6 +228,12 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._dashboard_data,
             self.detected_installation,
         )
+        try:
+            await async_update_prices_setup_issue(
+                self.hass, self._entry_id, self._meter_code, self._tariff_name
+            )
+        except Exception as err:
+            _LOGGER.warning("Failed to check the enea_prices setup: %s", err, exc_info=True)
 
         # Recompute bill estimates if reading dates are configured (new stats may have arrived).
         if self.bill_prev_reading is not None or self.bill_last_reading is not None:

@@ -1,7 +1,7 @@
 """Repair issues raised from the meter data of the Portal Odbiorcy Enea.
 
 Each issue is created while its condition holds and deleted as soon as it does
-not.  Two groups are kept in sync:
+not.  Three groups are kept in sync:
 
 - with every dashboard refresh: the active meter model is not in
   PHASES_BY_METER_MODEL, so the user is asked to report it on GitHub;
@@ -10,18 +10,24 @@ not.  Two groups are kept in sync:
   period length, yearly consumption bracket — disagrees with what the meter
   shows.  These are fixable: the repair flow (repairs.py) writes the meter's
   value into the enea_prices entry, whose reload reloads the Enea entries and
-  so clears the issue.
+  so clears the issue;
+- with every statistics step as well: enea_prices is installed and prices the
+  meter's tariff group, but has no entry for it.  Its fix opens the enea_prices
+  config flow.  Without enea_prices installed nothing is raised — Repairs is
+  no place to advertise an integration the user never chose.
 """
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.loader import async_get_custom_components
 
-from .billing import PricesConfig, find_prices_config
+from .billing import PricesConfig, find_prices_config, find_prices_entry
 from .connector import get_active_meter
 from .const import (
     CAPACITY_BRACKET_LABELS,
@@ -29,9 +35,11 @@ from .const import (
     ENEA_PRICES_CONF_ANNUAL_KWH,
     ENEA_PRICES_CONF_BILLING_MONTHS,
     ENEA_PRICES_CONF_PHASES,
+    ENEA_PRICES_DOMAIN,
     ISSUE_ANNUAL_KWH_MISMATCH,
     ISSUE_BILLING_MONTHS_MISMATCH,
     ISSUE_PHASES_MISMATCH,
+    ISSUE_PRICES_NOT_CONFIGURED,
     ISSUE_TEMPLATE_NEW_METER_MODEL,
     ISSUE_TRACKER_URL,
     ISSUE_UNKNOWN_METER_MODEL,
@@ -233,7 +241,58 @@ def async_update_installation_issues(
         )
 
 
+async def async_prices_supports(hass: HomeAssistant, tariff_name: str | None) -> bool:
+    """Return True when enea_prices is installed and prices the tariff group.
+
+    Installed means among Home Assistant's custom integrations, whether set up
+    or not.  Its tariff table is read by duck typing, like AKCYZA elsewhere:
+    the package is imported (once; it is already in memory whenever it has an
+    entry) and TARIFFS looked up in its tariffs module.  Anything short of a
+    table to look the group up in counts as not supported.
+    """
+    if not tariff_name:
+        return False
+    integration = (await async_get_custom_components(hass)).get(ENEA_PRICES_DOMAIN)
+    if integration is None:
+        return False
+    try:
+        await integration.async_get_component()
+    except ImportError:
+        return False
+    tariffs = getattr(sys.modules.get(f"{integration.pkg_path}.tariffs"), "TARIFFS", None)
+    if not isinstance(tariffs, dict):
+        return False
+    wanted = tariff_name.casefold()
+    return any(str(name).casefold() == wanted for name in tariffs)
+
+
+async def async_update_prices_setup_issue(
+    hass: HomeAssistant, entry_id: str, meter_code: str, tariff_name: str | None
+) -> None:
+    """Create or delete the issue asking to set enea_prices up for the meter's group.
+
+    Run in the statistics step, after Home Assistant has started: during
+    startup enea_prices may simply not be set up yet, and the issue would flash
+    up on every restart.  An entry that failed to load still counts as set up.
+    """
+    issue_id = _issue_id(ISSUE_PRICES_NOT_CONFIGURED, entry_id)
+    if find_prices_entry(hass, tariff_name) is not None or not await async_prices_supports(
+        hass, tariff_name
+    ):
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+        return
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=True,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE_PRICES_NOT_CONFIGURED,
+        translation_placeholders={"meter_code": meter_code, "tariff": tariff_name or "?"},
+    )
+
+
 def async_delete_issues(hass: HomeAssistant, entry_id: str) -> None:
     """Delete every repair issue of a meter whose config entry is removed."""
-    for key in (*INSTALLATION_ISSUES, ISSUE_UNKNOWN_METER_MODEL):
+    for key in (*INSTALLATION_ISSUES, ISSUE_PRICES_NOT_CONFIGURED, ISSUE_UNKNOWN_METER_MODEL):
         ir.async_delete_issue(hass, DOMAIN, _issue_id(key, entry_id))

@@ -150,6 +150,14 @@ Tworzone gdy integracja `enea_prices` jest skonfigurowana z pasującą taryfą.
 | Adres | Adres punktu poboru energii | Pastelowa 8, 60-198, Poznań |
 | Ostatni odczyt | Data i godzina ostatniego odczytu z licznika | 2 marca 2026, 14:32         |
 | Model licznika | Model aktualnie zamontowanego licznika | OTUS3                       |
+| Typ instalacji | Jednofazowa / Trójfazowa — wnioskowany z modelu licznika lub mocy umownej (≥ 12 kW); gdy nie da się ustalić: nieznany | Trójfazowa                  |
+| Transmisja z licznikiem | Czy licznik przesyła dane do Enei | Połączono                   |
+| Port HAN dostępny | Czy licznik obsługuje port HAN | Włączony                    |
+| Port HAN – Wireless M-Bus | Stan portu HAN Wireless M-Bus: Nieaktywny / Aktywny / Wniosek w realizacji / Oczekiwanie na licznik / Niedostępny dla licznika | Nieaktywny                  |
+| Port HAN – P1 | Stan portu HAN P1 (stany jak wyżej) | Nieaktywny                  |
+| Przekaźnik licznika | Stan przekaźnika do zdalnego odłączania zasilania: Załączony / Wyłączony / Ostrzeżenie / Brak przekaźnika | Załączony                   |
+| Początek okresu rozliczeniowego | Pierwszy dzień bieżącego okresu na fakturze, wykryty z Portalu Odbiorcy Enea (eksperymentalne) | 6 sierpnia 2026             |
+| Statystyki aktualne do | Ostatni dzień zaimportowany do statystyk Energy Dashboard — pozwala zauważyć opóźnienia lub luki w danych Portalu Odbiorcy Enea | 7 października 2026         |
 
 ## Opcje
 
@@ -199,9 +207,16 @@ Aby zmienić adres e-mail lub hasło bez usuwania integracji:
 
 ### Diagnostyki
 
-W przypadku problemów pobierz raport diagnostyczny (hasło i adres są automatycznie ukrywane):
+W przypadku problemów pobierz raport diagnostyczny (dane logowania, adres, numer PPE, identyfikatory z Portalu Odbiorcy Enea oraz numery liczników i umów są automatycznie ukrywane; w logach numer PPE jest skracany do ostatnich 4 cyfr):
 
 **Ustawienia → Urządzenia i usługi → Enea → menu (⋮) → Pobierz diagnostyki**
+
+### Naprawy
+
+Integracja zgłasza w **Ustawienia → System → Naprawy**:
+
+- **Niezgodna liczba faz** — gdy typ instalacji wykryty na podstawie licznika nie zgadza się z liczbą faz ustawioną w integracji Enea Ceny (wpływa na opłatę stałą sieciową w szacowanym rachunku). Zgłoszenie znika samo po poprawieniu ustawienia.
+- **Nieznany model licznika** — gdy integracja nie zna liczby faz Twojego licznika. Zgłoszenie zawiera link do gotowego zgłoszenia na GitHubie; po dopisaniu modelu w kolejnej wersji zniknie samo. Można je zignorować.
 
 ## Znane ograniczenia
 

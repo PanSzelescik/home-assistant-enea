@@ -1,0 +1,42 @@
+name: New Meter Model (EN)
+description: Report a meter model the Enea Licznik integration does not know yet
+title: "New meter model: "
+labels: ["enhancement", "lang: en"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! The integration uses the meter model to tell whether the installation is single-phase or three-phase (the "Installation Type" sensor).
+        **Do not include your PPE number, meter serial number or address.**
+
+  - type: input
+    id: model
+    attributes:
+      label: Meter Model
+      description: Value of the "Meter Model" sensor in Home Assistant.
+      placeholder: "e.g. OTUS3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phases
+    attributes:
+      label: Installation Type
+      options:
+        - Single-phase
+        - Three-phase
+    validations:
+      required: true
+
+  - type: input
+    id: capacity
+    attributes:
+      label: Contractual Capacity (kW)
+      description: Value of the "Contractual Capacity" sensor.
+      placeholder: "e.g. 14"
+
+  - type: textarea
+    id: source
+    attributes:
+      label: How do you know the number of phases?
+      description: E.g. the meter's rating plate, the contract, the number of main fuses, the meter's datasheet.

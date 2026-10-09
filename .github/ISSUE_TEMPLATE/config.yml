@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Pytania i pomoc (PL)
+    url: https://github.com/PanSzelescik/home-assistant-enea/discussions
+    about: Pytania o instalację i konfigurację zadawaj w Dyskusjach.
+  - name: Questions & help (EN)
+    url: https://github.com/PanSzelescik/home-assistant-enea/discussions
+    about: Ask installation and setup questions in Discussions.

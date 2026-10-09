@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import time
 from collections.abc import AsyncGenerator, Awaitable
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -18,6 +20,11 @@ from .const import (
     URL_PPE_DASHBOARD,
     URL_PPES,
     METERS_CACHE_TTL,
+    PHASES_BY_METER_MODEL,
+    PHASES_SOURCE_CAPACITY,
+    PHASES_SOURCE_METER_MODEL,
+    PHASES_THREE,
+    PHASES_THREE_MIN_CAPACITY_KW,
     MeasurementType,
     Resolution,
 )
@@ -85,8 +92,25 @@ class EneaApiClient:
         return self._session.closed
 
     @staticmethod
-    async def _parse_response(resp: aiohttp.ClientResponse, label: str) -> Any:
-        """Check response status and return the parsed JSON body."""
+    async def _parse_response(
+        resp: aiohttp.ClientResponse, label: str, started: float
+    ) -> Any:
+        """Check response status and return the parsed JSON body.
+
+        Logs every request at debug level — path, status, body size and time
+        since `started` (time.monotonic() before the request was sent).  The
+        portal's meter id in the path is replaced with "…" (logs end up in public
+        GitHub issues); measurement type and resolution stay readable.
+        """
+        body = await resp.read()
+        _LOGGER.debug(
+            "GET %s (%s): HTTP %d, %d B in %.2f s",
+            re.sub(r"(?<=/)\d{4,}(?=/|$)", "…", resp.url.path),
+            label,
+            resp.status,
+            len(body),
+            time.monotonic() - started,
+        )
         if resp.status != 200:
             raise EneaApiError(f"Unexpected response from {label} endpoint: {resp.status}")
         try:
@@ -124,9 +148,10 @@ class EneaApiClient:
             await self.authenticate()
 
         auth_gen = self._auth_gen
+        started = time.monotonic()
         async with _fetch(self._session.get(url)) as resp:
             if resp.status not in (401, 403):
-                return await self._parse_response(resp, label)
+                return await self._parse_response(resp, label, started)
 
         async with self._auth_lock:
             if self._auth_gen == auth_gen:
@@ -137,8 +162,9 @@ class EneaApiClient:
                 self._meters_cache_time = None
                 await self.authenticate()
 
+        started = time.monotonic()
         async with _fetch(self._session.get(url)) as resp:
-            return await self._parse_response(resp, label)
+            return await self._parse_response(resp, label, started)
 
     async def get_meters(self) -> list[dict[str, Any]]:
         """Return the list of PPE meters associated with the account.
@@ -209,6 +235,32 @@ def get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:
         (m for m in data.get("meters", []) if m.get("disassemblyDate") is None),
         None,
     )
+
+
+def infer_phases(data: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Return the inferred installation phases and what they were inferred from.
+
+    The Portal Odbiorcy Enea does not report the number of phases.  The active
+    meter model decides when it is a known one; otherwise a contractual capacity
+    beyond what a single-phase connection carries implies three phases.  Any
+    other case stays unknown — (None, None).
+    """
+    model = ((get_active_meter(data) or {}).get("typeName") or "").strip().upper()
+    if (phases := PHASES_BY_METER_MODEL.get(model)) is not None:
+        return phases, PHASES_SOURCE_METER_MODEL
+    capacity = data.get("agreementPower")
+    if capacity is not None and capacity >= PHASES_THREE_MIN_CAPACITY_KW:
+        return PHASES_THREE, PHASES_SOURCE_CAPACITY
+    return None, None
+
+
+def mask_ppe(text: str) -> str:
+    """Shorten every PPE number in text to its last four digits, e.g. "…9990".
+
+    Logs are pasted into public GitHub issues; the tail still tells meters of
+    one account apart.  Covers bare meter codes and statistic ids alike.
+    """
+    return re.sub(r"\d{10,}", lambda m: f"…{m.group()[-4:]}", text)
 
 
 def format_address(addr: dict[str, Any] | None) -> str | None:

@@ -176,9 +176,11 @@ Koszty są obliczane przez `period.get_zone_at_hour(hour, day=day)` — `enea_pr
 - **Sprzedaż energii** netto per strefa = `round(kWh × (zone.energy + cfg.akcyza), 2)`;
   do sekcji dochodzi opłata handlowa `round(getattr(monthly, "trade", 0.0) × months, 2)` —
   niezerowa tylko przy cenach z umowy w `enea_prices` (oferta rynkowa), `energy_netto` ją zawiera.
-- Nazwa strefy w `COST_ZONE_DISPLAY` musi być identyczna z nazwą z portalu, bo po niej szukana jest
+- Nazwa strefy w `COST_ZONE_DISPLAY` musi być identyczna z nazwą z Portalu Odbiorcy Enea, bo po niej szukana jest
   statystyka `Energia pobrana – {nazwa}`; brak takiej statystyki → jednorazowe ostrzeżenie i 0 kWh.
-  Nazwy stref G12sezON/G13active są tymczasowe (niepotwierdzone danymi z portalu).
+  Ta sama nazwa wchodzi do `statistic_id` kosztów, więc istniejących nazw nie zmieniaj. Nazwy stref
+  G12sezON/G13active to skrócone nazwy z enea.pl, niepotwierdzone danymi z Portalu Odbiorcy Enea — gdy
+  portal nazywa je inaczej, rachunek dostaje osobne mapowanie, a nazwy kosztów zostają.
 - **Usługa dystrybucji** — cztery składniki zaokrąglane osobno per strefa: `round(kWh × zone.variable_network, 2)`, `round(kWh × zone.quality, 2)`, `round(kWh × zone.oze, 2)`, `round(kWh × zone.cogeneration, 2)`.
 - Opłaty stałe netto = `round(network_fixed × months, 2)` + `round(capacity × months, 2)` + `round(subscription × months, 2)`.
 - `total_netto = round(energy_netto + distribution_netto, 2)`, `total = round(total_netto × 1.23, 2)` — VAT doliczany raz na końcu.

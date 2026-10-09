@@ -224,18 +224,20 @@ COST_PRICES_STORAGE_VERSION = 1
 
 # Strefa z enea_prices → nazwa strefy.  Służy do nazw statystyk kosztów, a w billing.py
 # także do odnalezienia statystyki „Energia pobrana – {nazwa}”, której nazwę nadaje
-# portal Enei – dlatego musi się z nią zgadzać co do znaku.
+# Portal Odbiorcy Enea – dlatego musi się z nią zgadzać co do znaku.  Nazwa jest częścią
+# statistic_id kosztów: zmiana odcięłaby zapisaną historię kosztów.
 COST_ZONE_DISPLAY: dict[str, str] = {
     "day": "Dzień",
     "night": "Noc",
     "peak": "Szczyt",
     "off_peak": "Poza szczytem",
-    # G12sezON i G13active (od 2026).  Nazwy TYMCZASOWE – nie widzieliśmy jeszcze, jak
-    # portal nazywa te strefy; do potwierdzenia z danymi licznika w tej grupie (issue #6
-    # w enea_prices).  Niezgodność zgłasza ostrzeżenie w billing.py.
+    # G12sezON i G13active (od 2026), skrócone nazwy stref z enea.pl.  Nie wiemy jeszcze,
+    # jak nazywa je Portal Odbiorcy Enea (issue #6 w enea_prices); niezgodność zgłasza
+    # ostrzeżenie w billing.py.  Wtedy rachunek dostanie osobne mapowanie, a te nazwy
+    # zostają ze względu na statistic_id kosztów.
     "recommended_use": "Zalecany pobór",
     "remaining": "Pozostałe godziny",
-    "recommended_limit": "Zalecane ograniczanie",
+    "recommended_limit": "Zalecane ograniczenie",
 }
 
 # Bill estimate entity keys

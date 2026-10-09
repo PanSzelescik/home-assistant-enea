@@ -20,3 +20,16 @@ def test_cost_statistic_name_is_stable() -> None:
         get_cost_statistic_name("oddana", "off_peak")
         == "Koszt energii oddana – Poza szczytem"
     )
+    # G12sezON i G13active z enea_prices
+    assert (
+        get_cost_statistic_name("pobrana", "recommended_use")
+        == "Koszt energii pobrana – Zalecany pobór"
+    )
+    assert (
+        get_cost_statistic_name("pobrana", "remaining")
+        == "Koszt energii pobrana – Pozostałe godziny"
+    )
+    assert (
+        get_cost_statistic_name("pobrana", "recommended_limit")
+        == "Koszt energii pobrana – Zalecane ograniczenie"
+    )

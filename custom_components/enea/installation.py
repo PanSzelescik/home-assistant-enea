@@ -40,7 +40,9 @@ class DetectedInstallation:
 
     annual_kwh is the consumption the capacity fee is charged by: the year
     ending on annual_kwh_until, the day of the latest reading (see
-    async_detect_installation).
+    async_detect_installation).  annual_kwh_partial marks only part of that
+    year measured — a meter replaced within it — where the sum is a lower
+    bound, kept only when it settles the bracket all the same.
     """
 
     phases: int | None = None
@@ -50,6 +52,7 @@ class DetectedInstallation:
     annual_kwh: float | None = None
     annual_kwh_source: str | None = None
     annual_kwh_until: date | None = None
+    annual_kwh_partial: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         """Return the facts for the diagnostics report."""
@@ -62,6 +65,7 @@ class DetectedInstallation:
             "annual_kwh": None if self.annual_kwh is None else round(self.annual_kwh, 1),
             "annual_kwh_source": self.annual_kwh_source,
             "annual_kwh_until": until.isoformat() if until is not None else None,
+            "annual_kwh_partial": self.annual_kwh_partial,
             "capacity_bracket": (
                 None if self.annual_kwh is None else capacity_bracket(self.annual_kwh)
             ),
@@ -144,7 +148,7 @@ def _history_complete(data: dict[str, Any], since: date) -> bool:
 
     The statistics only hold the active meter's data, while the capacity fee
     counts the customer's consumption.  When the meter was replaced within the
-    year, part of it is missing and the sum would put the customer too low.
+    year, part of it is missing and the sum can only put the customer too low.
     Without an earlier meter a short history is a new connection, which the
     tariff qualifies by everything used so far (pkt 3.1.31) — exactly the sum.
     """
@@ -181,18 +185,23 @@ async def async_detect_installation(
     billing_months, billing_source = detect_billing_months(starts, prev_reading, last_reading)
 
     annual_kwh: float | None = None
+    partial = False
     reading_day, annual_source = latest_reading_day(starts, last_reading, statistics_until)
     if (
         reading_day is not None
         and statistics_until is not None
         and reading_day <= statistics_until
-        and _history_complete(data, _year_before(reading_day))
     ):
         sid = get_statistic_id(meter_code, STAT_NAME_BY_KEY[STAT_KEY_ENERGY_CONSUMED])
         kwh = await async_query_zone_kwh(
             hass, {"total": sid}, _year_before(reading_day), reading_day
         )
-        annual_kwh = kwh["total"]
+        if _history_complete(data, _year_before(reading_day)):
+            annual_kwh = kwh["total"]
+        elif capacity_bracket(kwh["total"]) == len(CAPACITY_BRACKET_LIMITS_KWH):
+            # Part of the year is missing, so the sum is a lower bound — past
+            # the top limit the bracket cannot be any other.
+            annual_kwh, partial = kwh["total"], True
 
     return DetectedInstallation(
         phases=PHASES_COUNT[phases] if phases is not None else None,
@@ -202,4 +211,5 @@ async def async_detect_installation(
         annual_kwh=annual_kwh,
         annual_kwh_source=annual_source if annual_kwh is not None else None,
         annual_kwh_until=reading_day if annual_kwh is not None else None,
+        annual_kwh_partial=partial,
     )

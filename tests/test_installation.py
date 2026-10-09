@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 from homeassistant.util import dt as dt_util
 
-from custom_components.enea import billing as billing_module
 from custom_components.enea import installation
 
 READING = date(2026, 8, 5)
@@ -100,23 +99,42 @@ def test_the_later_of_the_two_readings_counts() -> None:
     )
 
 
+def test_readings_since_the_portals_window_are_counted_by_the_cycle() -> None:
+    """The window ended on 30 September; billed every 2 months, 5 October was read too."""
+    starts = [date(2026, 6, 6), date(2026, 8, 6)]
+
+    assert installation.latest_reading_day(starts, None, date(2026, 10, 8), 2) == (
+        date(2026, 10, 5),
+        "billing_cycle",
+    )
+    assert installation.latest_reading_day(starts, None, date(2026, 10, 4), 2) == (
+        READING,
+        "billing_periods",
+    )
+
+
 @pytest.fixture
 def detect(wire_recorder):
     """Run the detection over energy totals stored at the end of the given days."""
 
-    async def _run(totals: dict[date, float], data: dict[str, Any]) -> Any:
-        wire_recorder(billing_module, [(_hour(day), total) for day, total in totals.items()])
+    async def _run(
+        totals: dict[date, float], data: dict[str, Any], last_reading: date | None = None
+    ) -> Any:
+        wire_recorder(installation, [(_hour(day), total) for day, total in totals.items()])
         return await installation.async_detect_installation(
-            object(), "PPE", data, None, None, max(totals)
+            object(), "PPE", data, None, last_reading, max(totals)
         )
 
     return _run
 
 
+PERIODS = [date(2026, 6, 6), date(2026, 8, 6)]
+
+
 async def test_the_year_ends_on_the_latest_reading(detect) -> None:
     detected = await detect(
-        {date(2025, 8, 4): 900.0, date(2025, 8, 5): 1000.0, READING: 4170.0, date(2026, 10, 8): 4800.0},
-        _dashboard([date(2026, 6, 6), date(2026, 8, 6)]),
+        {date(2025, 8, 4): 900.0, date(2025, 8, 5): 1000.0, READING: 4170.0},
+        _dashboard(PERIODS),
     )
 
     assert detected.annual_kwh == pytest.approx(3170.0)
@@ -126,36 +144,55 @@ async def test_the_year_ends_on_the_latest_reading(detect) -> None:
     assert detected.phases == 3
 
 
+async def test_the_year_ends_on_the_reading_the_cycle_brings(detect) -> None:
+    detected = await detect(
+        {date(2025, 10, 5): 1000.0, READING: 3000.0, date(2026, 10, 5): 4170.0, date(2026, 10, 8): 4300.0},
+        _dashboard(PERIODS),
+    )
+
+    assert detected.annual_kwh == pytest.approx(3170.0)
+    assert detected.annual_kwh_until == date(2026, 10, 5)
+    assert detected.annual_kwh_source == "billing_cycle"
+
+
 async def test_a_new_connection_counts_everything_used_so_far(detect) -> None:
     """Less than a year of use qualifies by the whole of it (pkt 3.1.31)."""
     detected = await detect(
         {date(2026, 3, 2): 5.0, READING: 905.0},
-        _dashboard([date(2026, 6, 6), date(2026, 8, 6)], assembled=date(2026, 3, 1)),
+        _dashboard(PERIODS, assembled=date(2026, 3, 1)),
     )
 
     assert detected.annual_kwh == pytest.approx(905.0)
+    assert not detected.annual_kwh_partial
 
 
 async def test_a_meter_replaced_within_the_year_settles_nothing(detect) -> None:
     """The statistics only hold the new meter; the customer used more."""
     detected = await detect(
         {date(2026, 3, 2): 5.0, READING: 905.0},
-        _dashboard([date(2026, 6, 6), date(2026, 8, 6)], assembled=date(2026, 3, 1), replaced=True),
+        _dashboard(PERIODS, assembled=date(2026, 3, 1), replaced=True),
     )
 
     assert detected.annual_kwh is None
     assert detected.annual_kwh_until is None
 
 
-async def test_a_replaced_meter_past_the_top_limit_still_settles_the_bracket(detect) -> None:
-    """Half a year on the new meter is over 2800 kWh: the whole year can only be more.
+async def test_statistics_from_before_the_replacement_cover_the_year(detect) -> None:
+    """An Enea entry older than the new meter holds the old one's data too."""
+    detected = await detect(
+        {date(2025, 8, 4): 900.0, date(2025, 8, 5): 1000.0, READING: 1905.0},
+        _dashboard(PERIODS, assembled=date(2026, 3, 1), replaced=True),
+    )
 
-    The case of a meter replaced in March 2026 (MT174 → OTUS3), which used
-    3207 kWh by October and was left with no consumption at all.
-    """
+    assert detected.annual_kwh == pytest.approx(905.0)
+    assert not detected.annual_kwh_partial
+
+
+async def test_a_replaced_meter_past_the_top_limit_still_settles_the_bracket(detect) -> None:
+    """Half a year on the new meter is over 2800 kWh: the whole year can only be more."""
     detected = await detect(
         {date(2026, 3, 21): 10.0, READING: 3217.0},
-        _dashboard([date(2026, 6, 6), date(2026, 8, 6)], assembled=date(2026, 3, 20), replaced=True),
+        _dashboard(PERIODS, assembled=date(2026, 3, 20), replaced=True),
     )
 
     assert detected.annual_kwh == pytest.approx(3217.0)
@@ -163,10 +200,34 @@ async def test_a_replaced_meter_past_the_top_limit_still_settles_the_bracket(det
     assert installation.capacity_bracket(detected.annual_kwh) == 3
 
 
+async def test_without_the_reading_date_the_cycle_still_settles_the_bracket(detect) -> None:
+    """The case of a meter replaced in March 2026 (MT174 → OTUS3), set up anew.
+
+    Without an enea_prices entry there are no reading date entities, so the
+    latest reading known was the portal's 5 August — and the year up to it,
+    short of its start, held only 2200 kWh, settling nothing.  The reading the
+    2-month cycle brings on 5 October holds 3190 kWh: past the top limit.
+    """
+    detected = await detect(
+        {
+            date(2025, 12, 1): 10.0,
+            READING: 2200.0,
+            date(2026, 10, 5): 3190.0,
+            date(2026, 10, 8): 3207.0,
+        },
+        _dashboard(PERIODS, assembled=date(2026, 3, 20), replaced=True),
+    )
+
+    assert detected.annual_kwh == pytest.approx(3190.0)
+    assert detected.annual_kwh_until == date(2026, 10, 5)
+    assert detected.annual_kwh_partial
+
+
 async def test_statistics_short_of_the_reading_settle_nothing(detect) -> None:
     detected = await detect(
         {date(2025, 8, 5): 1000.0, date(2026, 7, 30): 4000.0},
-        _dashboard([date(2026, 6, 6), date(2026, 8, 6)]),
+        _dashboard(PERIODS),
     )
 
     assert detected.annual_kwh is None
+

@@ -29,7 +29,7 @@ body:
     attributes:
       label: Wersja integracji Enea Licznik
       description: HACS → Enea Licznik
-      placeholder: "np. 1.6.1"
+      placeholder: "np. 1.7.0"
     validations:
       required: true
 

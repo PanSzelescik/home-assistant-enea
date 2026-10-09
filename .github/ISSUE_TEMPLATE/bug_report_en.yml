@@ -29,7 +29,7 @@ body:
     attributes:
       label: Enea Licznik Version
       description: HACS → Enea Licznik
-      placeholder: "e.g. 1.6.1"
+      placeholder: "e.g. 1.7.0"
     validations:
       required: true
 

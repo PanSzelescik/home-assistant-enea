@@ -26,12 +26,15 @@ from homeassistant.components.recorder.models import (
     StatisticMeanType,
     StatisticMetaData,
 )
-from homeassistant.components.recorder.statistics import get_last_statistics
+from homeassistant.components.recorder.statistics import (
+    get_last_statistics,
+    statistics_during_period,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
-from .connector import mask_ppe
+from .connector import agreement_tariffs, mask_ppe
 from .const import (
     COST_ZONE_DISPLAY,
     DOMAIN,
@@ -144,6 +147,72 @@ def find_tariff_group(hass: HomeAssistant, tariff_name: str | None) -> Any | Non
     return None
 
 
+class TariffHistory:
+    """The tariffs a meter's days are costed at: the group of the agreement in force.
+
+    Stands in for an enea_prices TariffGroup (name, periods,
+    get_period_for_date), so the costs and their price fingerprints follow a
+    change of tariff group.  A day under an agreement for another group gets
+    that group's prices from its own enea_prices entry, or none at all when
+    there is no such entry — G11 consumption costed at G12w zones and prices
+    is worse than no cost.  A day no agreement covers, and every day of a
+    meter whose dashboard lists no agreements, gets the current group's.
+    """
+
+    def __init__(
+        self, current: Any, spans: list[tuple[date, date | None, Any | None, str]]
+    ) -> None:
+        """Keep the current group's tariff and each agreement's (start, end, tariff, group)."""
+        self.current = current
+        self.name: str = getattr(current, "name", "?")
+        self._spans = spans
+        tariffs: list[Any] = [current]
+        for _start, _end, tariff, _group in spans:
+            if tariff is not None and all(tariff is not known for known in tariffs):
+                tariffs.append(tariff)
+        self.periods = [period for tariff in tariffs for period in tariff.periods]
+
+    def group_for_date(self, day: date) -> str:
+        """Return the name of the tariff group the day is billed under."""
+        return self._tariff_for_date(day)[1]
+
+    def get_period_for_date(self, day: date) -> Any | None:
+        """Return the price period of the day's tariff group, None when it has no prices."""
+        tariff = self._tariff_for_date(day)[0]
+        return tariff.get_period_for_date(day) if tariff is not None else None
+
+    def _tariff_for_date(self, day: date) -> tuple[Any | None, str]:
+        """Return the tariff and the group name of the agreement in force on the day."""
+        for start, end, tariff, group in self._spans:
+            if start <= day and (end is None or day < end):
+                return tariff, group
+        return self.current, self.name
+
+
+def find_tariff_history(
+    hass: HomeAssistant, tariff_name: str | None, data: dict[str, Any] | None
+) -> TariffHistory | None:
+    """Return the tariffs to cost the meter's days at, None without the current group's.
+
+    data is the dashboard response, whose agreements tell which tariff group
+    applied when.
+    """
+    current = find_tariff_group(hass, tariff_name)
+    if current is None:
+        return None
+    wanted = (tariff_name or "").casefold()
+    spans = [
+        (
+            start,
+            end,
+            current if group.casefold() == wanted else find_tariff_group(hass, group),
+            group,
+        )
+        for start, end, group in agreement_tariffs(data or {})
+    ]
+    return TariffHistory(current, spans)
+
+
 async def async_insert_cost_statistics(
     hass: HomeAssistant,
     meter_code: str,
@@ -152,6 +221,7 @@ async def async_insert_cost_statistics(
     fetch_consumption: bool = True,
     fetch_generation: bool = True,
     returned_ratio: float = 1.0,
+    rewrite: bool = False,
 ) -> None:
     """Inject hourly cumulative cost statistics (PLN) per zone.
 
@@ -173,15 +243,19 @@ async def async_insert_cost_statistics(
         fetch_generation: Whether to inject costs for returned energy.
         returned_ratio: Share of each returned kWh's price it is worth — the
                   prosumer's net-metering ratio (0.8 or 0.7), 1.0 without one.
+        rewrite: Whether the days were costed before, possibly in other zones
+                  or at all: an hour whose stored cost sits in a series of a
+                  zone it no longer belongs to, or that is no longer priced,
+                  is written there as costing nothing.
     """
     if not all_days:
         return
 
     akcyza = _akcyza()
 
-    # Days the tariff table does not reach; reported once at the end, because a
-    # multi-year backfill would otherwise log a line per day.
-    days_without_period: set[date] = set()
+    # Days the tariff table does not reach, by tariff group; reported once at
+    # the end, because a multi-year backfill would otherwise log a line per day.
+    days_without_period: dict[str, set[date]] = {}
 
     for key, direction in (
         (STAT_KEY_ENERGY_CONSUMED, "pobrana"),
@@ -194,6 +268,8 @@ async def async_insert_cost_statistics(
 
         # {zone_str: [(dt, cost_pln)]} — each hour belongs to exactly one zone.
         series_by_zone: dict[str, list[tuple[datetime, float]]] = {}
+        # Every hour with data, priced or not — what a rewrite has to cover.
+        hours: list[datetime] = []
         # Under net metering a returned kWh takes back only part of a consumed one.
         ratio = returned_ratio if key == STAT_KEY_ENERGY_RETURNED else 1.0
 
@@ -204,11 +280,13 @@ async def async_insert_cost_statistics(
 
             period = tariff.get_period_for_date(day)
             if period is None:
-                days_without_period.add(day)
+                days_without_period.setdefault(_group_for_date(tariff, day), set()).add(day)
+                hours.extend(slot_start_dt(entry) for entry in api.get("values", []))
                 continue
 
             for entry in api.get("values", []):
                 dt = slot_start_dt(entry)
+                hours.append(dt)
                 zone = period.get_zone_at_hour(dt.hour, day=dt.date())
                 if zone not in period.zones:
                     continue
@@ -220,6 +298,9 @@ async def async_insert_cost_statistics(
                 pricing = period.zones[zone]
                 cost = total_kwh * _kwh_price(pricing, akcyza) * ratio
                 series_by_zone.setdefault(zone_str, []).append((dt, cost))
+
+        if rewrite and hours:
+            await _clear_moved_hours(hass, meter_code, direction, tariff, hours, series_by_zone)
 
         # An all-zero batch must not start a series.  A meter with no solar
         # panels reports zeroes for energy returned rather than nulls, and
@@ -246,15 +327,60 @@ async def async_insert_cost_statistics(
             name = get_cost_statistic_name(direction, zone_str)
             await _inject_cost_series(hass, meter_code, name, series)
 
-    if days_without_period:
+    for group, days in days_without_period.items():
         _LOGGER.warning(
             "No %s tariff period covers %d day(s) between %s and %s; their energy "
             "statistics were stored but no cost was computed for them",
-            getattr(tariff, "name", "?"),
-            len(days_without_period),
-            min(days_without_period),
-            max(days_without_period),
+            group,
+            len(days),
+            min(days),
+            max(days),
         )
+
+
+def _group_for_date(tariff: Any, day: date) -> str:
+    """Return the name of the tariff group a day is billed under."""
+    if isinstance(tariff, TariffHistory):
+        return tariff.group_for_date(day)
+    return getattr(tariff, "name", "?")
+
+
+async def _clear_moved_hours(
+    hass: HomeAssistant,
+    meter_code: str,
+    direction: str,
+    tariff: Any,
+    hours: list[datetime],
+    series_by_zone: dict[str, list[tuple[datetime, float]]],
+) -> None:
+    """Add a zero cost for every hour stored in a zone series it no longer belongs to.
+
+    A zone series holds only the hours of its zone.  When costs are written
+    again — new prices, another tariff group for those days — an hour can move
+    to another zone or lose its price, and its old cost would stay in the old
+    series and be counted twice, or wrongly.  Overwriting it with zero takes it
+    out of that series' total.  Only hours the series actually holds are
+    touched, so it keeps holding nothing but its own zone's hours.
+    """
+    start, end = min(hours), max(hours) + timedelta(hours=1)
+    zones = {str(zone) for period in tariff.periods for zone in period.zones}
+    for zone_str in sorted(zones | set(series_by_zone)):
+        sid = get_statistic_id(meter_code, get_cost_statistic_name(direction, zone_str))
+        stored = await get_instance(hass).async_add_executor_job(
+            statistics_during_period, hass, start, end, {sid}, "hour", None, {"sum"}
+        )
+        stored_starts = {row["start"] for row in stored.get(sid, [])}
+        if not stored_starts:
+            continue
+        own = series_by_zone.get(zone_str, [])
+        own_starts = {dt.timestamp() for dt, _cost in own}
+        moved = [
+            (dt, 0.0)
+            for dt in hours
+            if dt.timestamp() in stored_starts and dt.timestamp() not in own_starts
+        ]
+        if moved:
+            series_by_zone[zone_str] = sorted([*own, *moved])
 
 
 async def _has_stored_costs(

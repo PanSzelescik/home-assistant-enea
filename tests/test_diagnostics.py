@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from homeassistant.util import dt as dt_util
 
 from custom_components.enea import diagnostics as diagnostics_module
 from custom_components.enea.installation import DetectedInstallation
@@ -245,6 +246,17 @@ async def test_coordinator_state_reports_failures() -> None:
     coord._fetch_power_generation = False
     coord._prosumer = False
     coord._tariff_name = "G12"
+    coord.hass = FakeHass()
+    coord._dashboard_data = {
+        "agreements": [
+            {"from": _local_ms(date(2025, 12, 13)), "to": None, "tariffGroupName": "G12"},
+            {
+                "from": _local_ms(date(2022, 1, 8)),
+                "to": _local_ms(date(2025, 12, 13)),
+                "tariffGroupName": "G11",
+            },
+        ]
+    }
     coord._assembly_datetime = None
     coord._cost_checked_until = None
     coord._costs_repriced_from = None
@@ -267,3 +279,12 @@ async def test_coordinator_state_reports_failures() -> None:
     assert state["statistics_last_run"] == "2026-10-09T13:00:00"
     assert state["statistics_error"] == "EneaApiError: Unexpected response from range endpoint: 500"
     assert state["zero_filled_days"] == ["2026-10-01", "2026-10-03"]
+    assert state["tariff_groups"] == [
+        {"from": "2022-01-08", "until": "2025-12-13", "group": "G11", "priced": False},
+        {"from": "2025-12-13", "until": None, "group": "G12", "priced": False},
+    ]
+
+
+def _local_ms(day: date) -> int:
+    """Local midnight of a day as the portal's millisecond timestamp."""
+    return int(dt_util.start_of_local_day(day).timestamp() * 1000)

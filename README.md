@@ -85,6 +85,8 @@ Gdy obie integracje są skonfigurowane i taryfy się zgadzają, Enea Licznik aut
 - Wstrzykuje godzinowe **statystyki zewnętrzne** kosztów w PLN (`enea:{numer_PPE}_koszt_...`), obliczone na podstawie danych energetycznych i cennika z `enea_prices` — to ich używasz w panelu Energia (tak jak statystyk energii)
 - Tworzy **sensory szacowania rachunku** i **encje daty odczytu** (szczegóły niżej)
 
+**Zmiana grupy taryfowej.** Koszt każdego dnia liczony jest cennikiem grupy taryfowej z umowy, która obowiązywała tego dnia (lista umów z Portalu Odbiorcy Enea). Jeśli np. licznik był do grudnia 2025 w G11, a potem w G12w, dni G11 dostaną ceny G11 — o ile w `enea_prices` dodasz też wpis dla G11. Bez takiego wpisu te dni zostają bez kosztów (lepiej niż wycenione stawkami i strefami G12w). Dodanie lub usunięcie wpisu przelicza historię kosztów automatycznie.
+
 ### Konfiguracja Energy Dashboard z kosztami
 
 Aby śledzić koszty w panelu Energia:

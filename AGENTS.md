@@ -28,7 +28,7 @@ Niniejszy projekt to custom component dla Home Assistant integrujący liczniki z
 ```
 custom_components/enea/
 ├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, _matching_coordinators, serwisy refresh/backfill
-├── connector.py     — klient HTTP (EneaApiClient, _request helper; każde żądanie logowane na poziomie debug: ścieżka z ukrytym ID licznika, status, rozmiar, czas), wyjątki, get_active_meter(), infer_phases(), billing_period_starts(), mask_ppe(), hide_meter_id() (ukrywa ID licznika w ścieżce i w tekście błędów), format_address()
+├── connector.py     — klient HTTP (EneaApiClient, _request helper; każde żądanie logowane na poziomie debug: ścieżka z ukrytym ID licznika, status, rozmiar, czas), wyjątki, get_active_meter(), infer_phases(), billing_period_starts(), agreement_tariffs() (grupy taryfowe umów z datami), mask_ppe(), hide_meter_id() (ukrywa ID licznika w ścieżce i w tekście błędów), format_address()
 ├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill, _async_reprice_costs (przeliczanie kosztów po zmianie cen); klient API jako self.client; diagnostics_state() dla raportu diagnostycznego
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", "configure", reconfigure, reauth; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
 ├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date, _han_port_state, _switch_state_attrs, EneaStatisticsDateSensor
@@ -39,7 +39,7 @@ custom_components/enea/
 ├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill, async_query_zone_kwh; szacowanie rachunku z long-term statistics
 ├── installation.py  — DetectedInstallation, async_detect_installation, detect_billing_months, latest_reading_day, capacity_bracket: ustawienia enea_prices (fazy, okres rozliczeniowy, roczne zużycie) wyliczone z danych licznika
 ├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + _shift_later_totals (wspólny zapis serii skumulowanej dla energii i kosztów), async_statistics_overview (przegląd serii licznika do raportu diagnostycznego)
-├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, async_cost_days_missing, price_signatures + first_repriced_day (skróty cen dni), _inject_cost_series, get_cost_statistic_name, find_tariff_group
+├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, async_cost_days_missing, price_signatures + first_repriced_day (skróty cen dni), _inject_cost_series, _clear_moved_hours, get_cost_statistic_name, find_tariff_group, TariffHistory + find_tariff_history (cennik grupy z umowy obowiązującej danego dnia)
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem): stan koordynatora (`diagnostics_state()`: m.in. ostatnie uruchomienie i błąd kroku statystyk, dni wypełnione zerami od restartu), stany encji (`_entity_states`, kluczowane kluczem encji, nie `entity_id` — ten zawiera PPE; bez `friendly_name`; stan i atrybuty sensora adresu ukryte), instalacja (`installation`: wartości wykryte przez `DetectedInstallation` ze źródłami vs ustawione w enea_prices), konfiguracja enea_prices z zasięgiem tabeli taryf (`_prices_coverage`: `covered_until`, okresy), przegląd statystyk (`async_statistics_overview`, ID zamaskowane) i dane z dashboardu (`billingWeekData` tylko z energią czynną, `measurementId` 1/2); TO_REDACT + _redact_meter_data ukrywają dane logowania, adres, numer PPE, `meter_id`, `id`/`name` na najwyższym poziomie oraz `id` w `meters[]`/`agreements[]`, `serialNumber`, `agreementNumber` (ID i nazwy stref zostają). HA sam dokłada wersje HA i integracji, strefę czasową i otwarte zgłoszenia z Napraw
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
 ├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk, stałe kosztów (ENEA_PRICES_DOMAIN, UNIT_COST, COST_ZONE_DISPLAY, VAT_RATE, BILL_KEY_*)
@@ -112,6 +112,10 @@ Nazwy stref (`Dzień`, `Noc`, …) są **dynamiczne** — pobierane z pola `zone
 
 Koszty energii są funkcją opcjonalną — integracja współpracuje z zewnętrzną integracją `enea_prices`, jeśli jest zainstalowana. Brak `enea_prices` nie powoduje żadnych błędów ani ograniczeń funkcjonalności.
 
+### Grupa taryfowa z historii umów
+
+Koszty nie używają samego cennika obecnej grupy, tylko `TariffHistory` (`find_tariff_history` w `costs.py`) — obiekt z interfejsem `TariffGroup` (`name`, `periods`, `get_period_for_date`), który dla każdego dnia wybiera cennik grupy z umowy obowiązującej tego dnia (`agreement_tariffs` z `agreements[]` dashboardu: `from`/`to` to lokalne północe w ms, `to` wyłącznie). Grupa inna niż obecna bierze cennik ze swojego wpisu enea_prices (`find_tariff_group`); bez wpisu jej dni nie mają ceny (`None`) — koszty G11 wyliczone strefami i stawkami G12w są gorsze niż brak kosztów (#19: G11 do 2025-12-12, potem G12W). Dni spoza umów i liczniki bez `agreements[]` dostają obecną grupę, więc ich skróty cen są identyczne jak przed zmianą. `periods` to suma okresów wszystkich użytych grup (zbiór stref dla `async_get_cost_latest_date`). Raport diagnostyczny pokazuje `tariff_groups` (zakresy, grupa, czy ma cennik). Szacowany rachunek nadal używa cennika obecnej grupy.
+
 ### Integracja z enea_prices (duck typing)
 
 `find_tariff_group(hass, tariff_name)` w `costs.py` wyszukuje obiekt `TariffGroup` z domeny `enea_prices` przez duck typing — bez importu modułu. Wzorzec:
@@ -149,13 +153,13 @@ Zakres dni do pobrania wyznacza `async_cost_days_missing` w `costs.py` (coordina
 
 ### Zmiana cen dni już policzonych
 
-Uzupełnianie kosztów patrzy tylko za najnowszą statystykę kosztów, a ceny z `enea_prices` mogą zmienić się dla dni dawno policzonych: ceny z umowy z datą wsteczną, wznowiona oferta, poprawiona tabela taryf. Dlatego dla każdego policzonego dnia zapamiętywany jest skrót cen (`price_signatures` w `costs.py`: strefa i cena brutto każdej z 24 godzin, więc łapie zmianę cennika, harmonogramu stref i świąt) w `Store` `.storage/enea.cost_prices.{entry_id}` (usuwany w `async_remove_entry`). Zapis następuje po każdym zapisie kosztów (`_async_inject_days`, uzupełnianie, przeliczanie) dla całego przetworzonego zakresu dni.
+Uzupełnianie kosztów patrzy tylko za najnowszą statystykę kosztów, a ceny z `enea_prices` mogą zmienić się dla dni dawno policzonych: ceny z umowy z datą wsteczną, wznowiona oferta, poprawiona tabela taryf, dodany wpis dla wcześniejszej grupy taryfowej (zob. „Grupa taryfowa z historii umów”). Dlatego dla każdego policzonego dnia zapamiętywany jest skrót cen (`price_signatures` w `costs.py`: strefa i cena brutto każdej z 24 godzin, więc łapie zmianę cennika, harmonogramu stref i świąt) w `Store` `.storage/enea.cost_prices.{entry_id}` (usuwany w `async_remove_entry`). Zapis następuje po każdym zapisie kosztów (`_async_inject_days`, uzupełnianie, przeliczanie) dla całego przetworzonego zakresu dni.
 
 Przy każdym odświeżeniu, przed uzupełnianiem, `_async_reprice_costs` porównuje zapisane skróty ze skrótami bieżącej taryfy w zakresie od `max(początek tabeli, assemblyDate)` do najnowszej statystyki kosztów. Od pierwszego niezgodnego dnia (`first_repriced_day`) koszty do najnowszej statystyki są pobierane z Portalu Odbiorcy Enea i liczone od nowa; `write_cumulative_series` zaczepia sumę o wpis sprzed zakresu, więc seria zostaje ciągła. Skróty zapisywane są dla całego zakresu, także dla dni, których portal nie zwrócił — inaczej ten sam zakres byłby pobierany przy każdym odświeżeniu. Odmowa portalu (`EneaApiError`) nie blokuje uzupełniania; przeliczanie nie jest wtedy ponawiane aż do ponownego setupu wpisu (`_cost_reprice_failed`). Początek ostatniego przeliczenia widać w raporcie diagnostycznym (`costs_repriced_from`).
 
 Koszty zapisane, zanim powstały skróty (pierwsze uruchomienie po aktualizacji), nie mają skrótów, a ich ceny są nie do odtworzenia. Pierwsze sprawdzenie przyjmuje je takimi, jakie są, i zapisuje dla nich ceny bieżącej taryfy, zamiast pobierać całą historię licznika. Starsze rozbieżności poprawia ręcznie akcja `enea.backfill`.
 
-Ograniczenie: przeliczenie zapisuje godziny w serii strefy, do której należą **teraz**. Gdyby zmiana przeniosła godzinę do innej strefy (zmiana harmonogramu wstecz), stary wpis w serii poprzedniej strefy zostałby — ceny z umowy nie zmieniają stref, więc w praktyce to dotyczy tylko poprawek tabeli.
+Przeliczenie zapisuje godziny w serii strefy, do której należą **teraz**. Gdy godzina zmieniła strefę (inna grupa taryfowa, zmiana harmonogramu wstecz) albo straciła cenę, jej stary koszt zostałby w serii poprzedniej strefy i liczył się podwójnie. Dlatego przeliczanie woła `async_insert_cost_statistics(..., rewrite=True)`: `_clear_moved_hours` sprawdza w każdej serii kosztów kierunku (strefy wszystkich okresów `TariffHistory`), które godziny zakresu ma zapisane, i nadpisuje zerem te, które już do niej nie należą. Seria nadal trzyma wyłącznie godziny swojej strefy (zera tylko tam, gdzie był wpis), a `_shift_later_totals` przesuwa późniejsze sumy.
 
 ### Obsługa świąt (G12w)
 
@@ -415,7 +419,7 @@ Zmiana opcji powoduje natychmiastowy reload integracji (`EneaOptionsFlow` dziedz
 Wymusza natychmiastowe pobranie danych dashboardu i uzupełnienie brakujących statystyk (od ostatniej zapisanej daty do wczoraj).
 
 ### `enea.backfill`
-Importuje statystyki historyczne dla dowolnego zakresu dat. Nie aktualizuje stanów sensorów.
+Importuje statystyki historyczne dla dowolnego zakresu dat. Nie aktualizuje stanów sensorów. Koszty zakresu zapisuje od nowa z `rewrite=True` (zob. „Zmiana cen dni już policzonych”), więc poprawia też koszty policzone przed powstaniem skrótów cen.
 
 | Parametr | Wymagany | Opis |
 |----------|----------|------|

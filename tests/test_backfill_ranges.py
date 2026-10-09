@@ -40,6 +40,7 @@ def coord(monkeypatch):
     result._zero_filled_days = set()
     result._meter_code = "590310600000001234"
     result._tariff_name = "G12"
+    result._dashboard_data = {}
     result.meter_id = 12345
     result.client = SimpleNamespace(get_consumption_data_range=AsyncMock())
     result.hass = FakeHass()
@@ -338,3 +339,14 @@ async def test_range_cancellation_propagates(coord):
     with pytest.raises(asyncio.CancelledError):
         await coord.async_backfill(date(2026, 6, 1), date(2026, 6, 1))
     coord.async_update_listeners.assert_not_called()
+
+
+async def test_manual_backfill_writes_the_costs_anew(coord):
+    """The action corrects old costs, so an hour stored in another zone is cleared."""
+    days = [(date(2026, 10, 2), {})]
+    coord._fetch_days_forward = AsyncMock(return_value=days)
+    coord._async_inject_days = AsyncMock()
+
+    await coord.async_backfill(date(2026, 10, 2), date(2026, 10, 2))
+
+    coord._async_inject_days.assert_awaited_once_with(days, rewrite=True)

@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.start import async_at_started
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -26,6 +27,8 @@ from .const import (
     BACKFILL_MAX_CONSECUTIVE_EMPTY,
     BILL_KEY_CURRENT,
     BILL_KEY_PREVIOUS,
+    COST_PRICES_STORAGE_KEY,
+    COST_PRICES_STORAGE_VERSION,
     DOMAIN,
     MISSING_DAY_GRACE_DAYS,
     RANGE_FETCH_CHUNK_DAYS,
@@ -41,8 +44,11 @@ from .billing import BillEstimate, async_estimate_bill, find_prices_config
 from .issues import async_update_issues
 from .costs import (
     async_cost_days_missing,
+    async_get_cost_latest_date,
     async_insert_cost_statistics,
     find_tariff_group,
+    first_repriced_day,
+    price_signatures,
 )
 from .statistics import (
     async_insert_historical_statistics,
@@ -96,6 +102,20 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Last day the cost catch-up got an answer from the portal for; see
         # _async_inject_missing_costs.
         self._cost_checked_until: date | None = None
+        # Fingerprints of the prices each costed day was computed at, by ISO date;
+        # see _async_reprice_costs.  Loaded on first use, None when never stored.
+        self._cost_prices_store: Store[dict[str, Any]] = Store(
+            hass,
+            COST_PRICES_STORAGE_VERSION,
+            f"{COST_PRICES_STORAGE_KEY}.{config_entry.entry_id}",
+        )
+        self._cost_prices: dict[str, str] | None = None
+        self._cost_prices_loaded = False
+        # A refused re-pricing fetch is refused on every refresh, so it is not
+        # tried again before the entry is next set up.
+        self._cost_reprice_failed = False
+        # For the diagnostics report: where the last re-pricing started.
+        self._costs_repriced_from: date | None = None
         # Newest day covered by the energy/power statistics, refreshed every update.
         self.statistics_until: date | None = None
         # The statistics step of a refresh made during startup waits for Home
@@ -329,6 +349,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._fetch_consumption,
                 self._fetch_generation,
             )
+            await self._async_save_cost_prices(tariff, all_days[0][0], all_days[-1][0])
 
     async def _async_do_initial_backfill(self, yesterday: date) -> None:
         """Fetch all historical data and inject statistics.
@@ -391,6 +412,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "zero_filled_days": [iso(day) for day in sorted(self._zero_filled_days)],
             "initial_backfill": backfill,
             "cost_checked_until": iso(self._cost_checked_until),
+            "costs_repriced_from": iso(self._costs_repriced_from),
             "bill_prev_reading": iso(self.bill_prev_reading),
             "bill_last_reading": iso(self.bill_last_reading),
             "bill_estimates": {
@@ -437,6 +459,19 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if tariff is None:
             return
 
+        if not self._cost_reprice_failed:
+            try:
+                await self._async_reprice_costs(tariff)
+            except EneaApiError as err:
+                # Best effort, like the catch-up below: it must not keep the
+                # missing days from being costed.
+                self._cost_reprice_failed = True
+                _LOGGER.warning(
+                    "Recomputing costs at changed prices failed; it is tried "
+                    "again once the entry is reloaded: %s",
+                    err,
+                )
+
         missing = await async_cost_days_missing(
             self.hass, self._meter_code, tariff,
             self._fetch_consumption, self._fetch_generation, up_to,
@@ -472,6 +507,95 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         answered = max((day for day, _ in days), default=None)
         if answered is not None:
             self._cost_checked_until = answered
+            await self._async_save_cost_prices(tariff, start, answered)
+
+    async def _async_reprice_costs(self, tariff: Any) -> None:
+        """Compute again the costs of days already costed at prices the tariff no longer has.
+
+        The prices enea_prices hands out can change for days costed long ago: a
+        contract entered with a start in the past, a renewed offer dated back, a
+        corrected tariff table.  The catch-up only ever looks past the newest
+        cost, so those days would keep the old prices for good.
+
+        Every costed day's prices are remembered as a fingerprint (see
+        price_signatures).  From the first day whose fingerprint no longer
+        matches the tariff, the costs up to the newest one are computed again.
+        write_cumulative_series counts a rewritten range on from the total
+        before it, so the series stays continuous across the boundary.
+
+        Costs stored before fingerprints were kept have none.  Their prices
+        cannot be known, so the first check takes them as they are and records
+        the tariff's prices for them, rather than downloading the meter's whole
+        history to recompute costs that are most likely right.
+        """
+        latest = await async_get_cost_latest_date(
+            self.hass, self._meter_code, tariff,
+            self._fetch_consumption, self._fetch_generation,
+        )
+        first = min((period.valid_from for period in tariff.periods), default=None)
+        if latest is None or first is None:
+            return
+        if self._assembly_datetime is not None:
+            first = max(first, self._assembly_datetime.date())
+        if first > latest:
+            return
+
+        stored = await self._async_load_cost_prices()
+        if stored is None:
+            await self._async_save_cost_prices(tariff, first, latest)
+            return
+        start = first_repriced_day(
+            stored, price_signatures(tariff, first, latest), first, latest
+        )
+        if start is None:
+            return
+
+        _LOGGER.info(
+            "Prices changed for days already costed; recomputing the costs of "
+            "meter %s from %s to %s",
+            mask_ppe(self._meter_code),
+            start,
+            latest,
+        )
+        days = await self._fetch_days_forward(
+            start, latest, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
+        )
+        if days:
+            await async_insert_cost_statistics(
+                self.hass,
+                self._meter_code,
+                days,
+                tariff,
+                self._fetch_consumption,
+                self._fetch_generation,
+            )
+            # The catch-up that follows counts on from the newest cost total,
+            # which the rewrite above may have moved, so it has to be committed
+            # before that total is read back.
+            await get_instance(self.hass).async_block_till_done()
+        # Recorded for the whole range, days the portal left out included: they
+        # have nothing to cost, and asking again would only repeat the fetch.
+        await self._async_save_cost_prices(tariff, start, latest)
+        self._costs_repriced_from = start
+
+    async def _async_load_cost_prices(self) -> dict[str, str] | None:
+        """Return the stored price fingerprints, None when none were ever stored."""
+        if not self._cost_prices_loaded:
+            data = await self._cost_prices_store.async_load()
+            self._cost_prices = dict(data["days"]) if data else None
+            self._cost_prices_loaded = True
+        return self._cost_prices
+
+    async def _async_save_cost_prices(self, tariff: Any, first: date, last: date) -> None:
+        """Remember the prices the costs from first to last have just been computed at."""
+        prices = dict(await self._async_load_cost_prices() or {})
+        day = first
+        while day <= last:
+            prices.pop(day.isoformat(), None)
+            day += timedelta(days=1)
+        prices.update(price_signatures(tariff, first, last))
+        self._cost_prices = prices
+        await self._cost_prices_store.async_save({"days": prices})
 
     def _strip_pre_assembly_slots(
         self, day: date, day_data: dict[str, Any]

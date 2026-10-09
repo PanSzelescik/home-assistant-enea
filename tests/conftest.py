@@ -72,6 +72,23 @@ class FakeHass:
         self.config_entries = _FakeConfigEntries(entries or [])
 
 
+class FakeStore:
+    """Stand-in for homeassistant.helpers.storage.Store, kept in memory."""
+
+    def __init__(self, data: dict[str, Any] | None = None) -> None:
+        self.data = data
+        self.saves = 0
+
+    async def async_load(self) -> dict[str, Any] | None:
+        """Return what was last saved, None when nothing ever was."""
+        return self.data
+
+    async def async_save(self, data: dict[str, Any]) -> None:
+        """Keep the data and count the write."""
+        self.data = data
+        self.saves += 1
+
+
 class FakeRecorder:
     """Answers recorder queries from an in-memory series.
 

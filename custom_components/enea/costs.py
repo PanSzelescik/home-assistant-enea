@@ -16,6 +16,7 @@ under "entity tracking total costs" (it is listed by its PLN unit).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import sys
 from datetime import date, datetime, timedelta
@@ -58,6 +59,61 @@ def get_cost_statistic_name(direction: str, zone_str: str) -> str:
     """
     zone_display = COST_ZONE_DISPLAY.get(zone_str, zone_str)
     return f"Koszt energii {direction} – {zone_display}"
+
+
+def _akcyza() -> float:
+    """Return the excise duty from the already-loaded enea_prices.const module."""
+    return getattr(sys.modules.get("custom_components.enea_prices.const"), "AKCYZA", 0.0)
+
+
+def _kwh_price(pricing: Any, akcyza: float) -> float:
+    """Return the brutto price of one kWh in a zone, as the costs are charged."""
+    return round((pricing.energy + akcyza + pricing.total_distribution) * (1 + VAT_RATE), 4)
+
+
+def price_signatures(tariff: Any, first: date, last: date) -> dict[str, str]:
+    """Return a short fingerprint of the prices each day from first to last is costed at.
+
+    Keyed by ISO date.  A day the tariff does not price has no entry.  The
+    fingerprint covers what the cost of every hour depends on — the zone the
+    hour falls in and that zone's price — so it changes with the price list,
+    with the zone schedule and with a holiday, and with nothing else.
+    """
+    akcyza = _akcyza()
+    signatures: dict[str, str] = {}
+    day = first
+    while day <= last:
+        period = tariff.get_period_for_date(day)
+        if period is not None:
+            hours = []
+            for hour in range(24):
+                zone = period.get_zone_at_hour(hour, day=day)
+                pricing = period.zones.get(zone)
+                price = _kwh_price(pricing, akcyza) if pricing is not None else None
+                hours.append(f"{zone}={price}")
+            signatures[day.isoformat()] = hashlib.blake2s(
+                "|".join(hours).encode(), digest_size=8
+            ).hexdigest()
+        day += timedelta(days=1)
+    return signatures
+
+
+def first_repriced_day(
+    stored: dict[str, str], current: dict[str, str], first: date, last: date
+) -> date | None:
+    """Return the first day from first to last whose costs were computed at other prices.
+
+    stored holds the fingerprints the costs were computed with, current those
+    of the tariff now.  A day stored without a fingerprint counts as costed at
+    other prices, and so does a day the tariff no longer prices.
+    """
+    day = first
+    while day <= last:
+        key = day.isoformat()
+        if stored.get(key) != current.get(key):
+            return day
+        day += timedelta(days=1)
+    return None
 
 
 def find_tariff_group(hass: HomeAssistant, tariff_name: str | None) -> Any | None:
@@ -111,8 +167,7 @@ async def async_insert_cost_statistics(
     if not all_days:
         return
 
-    _enea_prices_const = sys.modules.get("custom_components.enea_prices.const")
-    akcyza: float = getattr(_enea_prices_const, "AKCYZA", 0.0)
+    akcyza = _akcyza()
 
     # Days the tariff table does not reach; reported once at the end, because a
     # multi-year backfill would otherwise log a line per day.
@@ -151,9 +206,7 @@ async def async_insert_cost_statistics(
                     for item in entry.get("items", [])
                 )
                 pricing = period.zones[zone]
-                cost = total_kwh * round(
-                    (pricing.energy + akcyza + pricing.total_distribution) * (1 + VAT_RATE), 4
-                )
+                cost = total_kwh * _kwh_price(pricing, akcyza)
                 series_by_zone.setdefault(zone_str, []).append((dt, cost))
 
         # An all-zero batch must not start a series.  A meter with no solar

@@ -950,7 +950,7 @@ wheels = [
 
 [[package]]
 name = "home-assistant-enea"
-version = "1.6.0"
+version = "1.6.1b1"
 source = { virtual = "." }
 
 [package.dev-dependencies]

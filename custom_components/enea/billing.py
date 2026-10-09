@@ -20,6 +20,7 @@ Requires the enea_prices integration to be configured with a matching tariff.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 from dataclasses import dataclass, field
@@ -241,9 +242,13 @@ def _add_hours(
     prices.  Returns the kWh of hours the tariff has no price for.
     """
     unpriced = 0.0
+    # Looked up once a day: a TariffHistory searches the agreements on every call.
+    periods: dict[date, Any] = {}
     for start, kwh in hours:
         day = start.date()
-        period = tariff.get_period_for_date(day)
+        if day not in periods:
+            periods[day] = tariff.get_period_for_date(day)
+        period = periods[day]
         zone = period.get_zone_at_hour(start.hour, day=day) if period is not None else None
         pricing = period.zones.get(zone) if period is not None else None
         if pricing is None:
@@ -309,9 +314,15 @@ async def async_estimate_bill(
         _zone_display(zone): _ZoneUsage(variable_rate=pricing.variable_network)
         for zone, pricing in period.zones.items()
     }
-    consumed = await async_hourly_kwh(
-        hass, get_statistic_id(meter_code, STAT_NAME_BY_KEY[STAT_KEY_ENERGY_CONSUMED]), start, end
-    )
+    consumed_sid = get_statistic_id(meter_code, STAT_NAME_BY_KEY[STAT_KEY_ENERGY_CONSUMED])
+    returned_sid = get_statistic_id(meter_code, STAT_NAME_BY_KEY[STAT_KEY_ENERGY_RETURNED])
+    if net_metering_ratio is None:
+        consumed, returned = await async_hourly_kwh(hass, consumed_sid, start, end), []
+    else:
+        consumed, returned = await asyncio.gather(
+            async_hourly_kwh(hass, consumed_sid, start, end),
+            async_hourly_kwh(hass, returned_sid, start, end),
+        )
     unpriced_kwh = _add_hours(usage, cfg.tariff, consumed, cfg.akcyza)
     kwh_by_zone = {zone: round(zone_usage.kwh, 3) for zone, zone_usage in usage.items()}
 
@@ -320,12 +331,6 @@ async def async_estimate_bill(
     net_metering_left_kwh: float | None = None
     if net_metering_ratio is not None:
         returned_usage = {zone: _ZoneUsage() for zone in usage}
-        returned = await async_hourly_kwh(
-            hass,
-            get_statistic_id(meter_code, STAT_NAME_BY_KEY[STAT_KEY_ENERGY_RETURNED]),
-            start,
-            end,
-        )
         _add_hours(returned_usage, cfg.tariff, returned, cfg.akcyza)
         returned_kwh_by_zone = {
             zone: round(zone_usage.kwh, 3) for zone, zone_usage in returned_usage.items()

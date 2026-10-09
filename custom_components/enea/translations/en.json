@@ -8,14 +8,16 @@
           "fetch_consumption": "Fetch consumption statistics",
           "fetch_generation": "Fetch generation statistics",
           "fetch_power_consumption": "Fetch power consumed statistics",
-          "fetch_power_generation": "Fetch power returned statistics"
+          "fetch_power_generation": "Fetch power returned statistics",
+          "net_metering": "Net metering (system opustów)"
         },
         "data_description": {
           "update_interval": "How often to fetch data from the Portal Odbiorcy Enea. Minimum 30 minutes, default 3h 30min.",
           "fetch_consumption": "Enable to show energy consumed sensors and import hourly statistics for the Energy Dashboard.",
           "fetch_generation": "Enable to show energy returned (exported) sensors and import hourly statistics. Disable if you have no solar panels or other generation source.",
           "fetch_power_consumption": "Enable to import hourly power consumed statistics (kW).",
-          "fetch_power_generation": "Enable to import hourly power returned statistics (kW). Disable if you have no solar panels or other generation source."
+          "fetch_power_generation": "Enable to import hourly power returned statistics (kW). Disable if you have no solar panels or other generation source.",
+          "net_metering": "A prosumer connected by 31 March 2022 settles returned energy by net metering: each kWh returned is taken back free of charge as 0.8 kWh (installation up to 10 kW) or 0.7 kWh (above 10 kW). The ratio lowers the estimated bill and the value of returned energy in the Energy dashboard. Choose “None” under net-billing."
         }
       }
     },
@@ -48,14 +50,16 @@
           "fetch_consumption": "Fetch consumption statistics",
           "fetch_generation": "Fetch generation statistics",
           "fetch_power_consumption": "Fetch power consumed statistics",
-          "fetch_power_generation": "Fetch power returned statistics"
+          "fetch_power_generation": "Fetch power returned statistics",
+          "net_metering": "Net metering (system opustów)"
         },
         "data_description": {
           "update_interval": "How often to fetch data from the Portal Odbiorcy Enea. Minimum 30 minutes, default 3h 30min.",
           "fetch_consumption": "Enable to show energy consumed sensors and import hourly statistics for the Energy Dashboard.",
           "fetch_generation": "Enable to show energy returned (exported) sensors and import hourly statistics. Disable if you have no solar panels or other generation source.",
           "fetch_power_consumption": "Enable to import hourly power consumed statistics (kW).",
-          "fetch_power_generation": "Enable to import hourly power returned statistics (kW). Disable if you have no solar panels or other generation source."
+          "fetch_power_generation": "Enable to import hourly power returned statistics (kW). Disable if you have no solar panels or other generation source.",
+          "net_metering": "A prosumer connected by 31 March 2022 settles returned energy by net metering: each kWh returned is taken back free of charge as 0.8 kWh (installation up to 10 kW) or 0.7 kWh (above 10 kW). The ratio lowers the estimated bill and the value of returned energy in the Energy dashboard. Choose “None” under net-billing."
         }
       },
       "reauth": {
@@ -228,19 +232,35 @@
           "months": { "name": "Months" },
           "kwh_dzien": { "name": "Day consumption (kWh)" },
           "energy_dzien_netto": { "name": "Active electrical energy Day (net)" },
+          "returned_kwh_dzien": { "name": "Day returned (kWh)" },
+          "billed_kwh_dzien": { "name": "Day consumption after net metering (kWh)" },
           "kwh_noc": { "name": "Night consumption (kWh)" },
           "energy_noc_netto": { "name": "Active electrical energy Night (net)" },
+          "returned_kwh_noc": { "name": "Night returned (kWh)" },
+          "billed_kwh_noc": { "name": "Night consumption after net metering (kWh)" },
           "kwh_szczyt": { "name": "Peak consumption (kWh)" },
           "energy_szczyt_netto": { "name": "Active electrical energy Peak (net)" },
+          "returned_kwh_szczyt": { "name": "Peak returned (kWh)" },
+          "billed_kwh_szczyt": { "name": "Peak consumption after net metering (kWh)" },
           "kwh_poza_szczytem": { "name": "Off-peak consumption (kWh)" },
           "energy_poza_szczytem_netto": { "name": "Active electrical energy Off-peak (net)" },
+          "returned_kwh_poza_szczytem": { "name": "Off-peak returned (kWh)" },
+          "billed_kwh_poza_szczytem": { "name": "Off-peak consumption after net metering (kWh)" },
           "kwh_zalecany_pobor": { "name": "Recommended use consumption (kWh)" },
           "energy_zalecany_pobor_netto": { "name": "Active electrical energy Recommended use (net)" },
+          "returned_kwh_zalecany_pobor": { "name": "Recommended use returned (kWh)" },
+          "billed_kwh_zalecany_pobor": { "name": "Recommended use consumption after net metering (kWh)" },
           "kwh_pozostale_godziny": { "name": "Remaining hours consumption (kWh)" },
           "energy_pozostale_godziny_netto": { "name": "Active electrical energy Remaining hours (net)" },
+          "returned_kwh_pozostale_godziny": { "name": "Remaining hours returned (kWh)" },
+          "billed_kwh_pozostale_godziny": { "name": "Remaining hours consumption after net metering (kWh)" },
           "kwh_zalecane_ograniczenie": { "name": "Recommended limitation consumption (kWh)" },
           "energy_zalecane_ograniczenie_netto": { "name": "Active electrical energy Recommended limitation (net)" },
+          "returned_kwh_zalecane_ograniczenie": { "name": "Recommended limitation returned (kWh)" },
+          "billed_kwh_zalecane_ograniczenie": { "name": "Recommended limitation consumption after net metering (kWh)" },
           "trade_fee_netto": { "name": "Trade fee (net)" },
+          "net_metering_left_kwh": { "name": "Unused net-metering credit (kWh)" },
+          "unpriced_kwh": { "name": "Consumption without prices (kWh)" },
           "energy_netto": { "name": "Total – energy sale (net)" },
           "fixed_network_netto": { "name": "Fixed network fee (net)" },
           "fixed_capacity_netto": { "name": "Capacity fee (net)" },
@@ -285,19 +305,35 @@
           "months": { "name": "Months" },
           "kwh_dzien": { "name": "Day consumption (kWh)" },
           "energy_dzien_netto": { "name": "Active electrical energy Day (net)" },
+          "returned_kwh_dzien": { "name": "Day returned (kWh)" },
+          "billed_kwh_dzien": { "name": "Day consumption after net metering (kWh)" },
           "kwh_noc": { "name": "Night consumption (kWh)" },
           "energy_noc_netto": { "name": "Active electrical energy Night (net)" },
+          "returned_kwh_noc": { "name": "Night returned (kWh)" },
+          "billed_kwh_noc": { "name": "Night consumption after net metering (kWh)" },
           "kwh_szczyt": { "name": "Peak consumption (kWh)" },
           "energy_szczyt_netto": { "name": "Active electrical energy Peak (net)" },
+          "returned_kwh_szczyt": { "name": "Peak returned (kWh)" },
+          "billed_kwh_szczyt": { "name": "Peak consumption after net metering (kWh)" },
           "kwh_poza_szczytem": { "name": "Off-peak consumption (kWh)" },
           "energy_poza_szczytem_netto": { "name": "Active electrical energy Off-peak (net)" },
+          "returned_kwh_poza_szczytem": { "name": "Off-peak returned (kWh)" },
+          "billed_kwh_poza_szczytem": { "name": "Off-peak consumption after net metering (kWh)" },
           "kwh_zalecany_pobor": { "name": "Recommended use consumption (kWh)" },
           "energy_zalecany_pobor_netto": { "name": "Active electrical energy Recommended use (net)" },
+          "returned_kwh_zalecany_pobor": { "name": "Recommended use returned (kWh)" },
+          "billed_kwh_zalecany_pobor": { "name": "Recommended use consumption after net metering (kWh)" },
           "kwh_pozostale_godziny": { "name": "Remaining hours consumption (kWh)" },
           "energy_pozostale_godziny_netto": { "name": "Active electrical energy Remaining hours (net)" },
+          "returned_kwh_pozostale_godziny": { "name": "Remaining hours returned (kWh)" },
+          "billed_kwh_pozostale_godziny": { "name": "Remaining hours consumption after net metering (kWh)" },
           "kwh_zalecane_ograniczenie": { "name": "Recommended limitation consumption (kWh)" },
           "energy_zalecane_ograniczenie_netto": { "name": "Active electrical energy Recommended limitation (net)" },
+          "returned_kwh_zalecane_ograniczenie": { "name": "Recommended limitation returned (kWh)" },
+          "billed_kwh_zalecane_ograniczenie": { "name": "Recommended limitation consumption after net metering (kWh)" },
           "trade_fee_netto": { "name": "Trade fee (net)" },
+          "net_metering_left_kwh": { "name": "Unused net-metering credit (kWh)" },
+          "unpriced_kwh": { "name": "Consumption without prices (kWh)" },
           "energy_netto": { "name": "Total – energy sale (net)" },
           "fixed_network_netto": { "name": "Fixed network fee (net)" },
           "fixed_capacity_netto": { "name": "Capacity fee (net)" },
@@ -333,6 +369,15 @@
           "distribution_netto": { "name": "Total – distribution service (net)" },
           "total_netto": { "name": "Grand total (net)" }
         }
+      }
+    }
+  },
+  "selector": {
+    "net_metering": {
+      "options": {
+        "none": "None (net-billing)",
+        "0_8": "0.8 – installation up to 10 kW",
+        "0_7": "0.7 – installation above 10 kW"
       }
     }
   },

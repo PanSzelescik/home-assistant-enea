@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -20,6 +21,7 @@ from .connector import (
     EneaApiClient,
     EneaApiError,
     EneaAuthError,
+    agreement_tariffs,
     get_active_meter,
     mask_ppe,
 )
@@ -56,6 +58,7 @@ from .costs import (
     async_get_cost_latest_date,
     async_insert_cost_statistics,
     find_tariff_group,
+    find_tariff_history,
     first_repriced_day,
     price_signatures,
 )
@@ -84,6 +87,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         fetch_generation: bool = True,
         fetch_power_consumption: bool = False,
         fetch_power_generation: bool = False,
+        net_metering_ratio: float | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -105,6 +109,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._tariff_name: str | None = None
         # A prosumer's energy is fetched after balancing, as the invoice settles it.
         self._prosumer = False
+        # The prosumer's net-metering ratio (0.8/0.7) from the options; None without.
+        self._net_metering_ratio = net_metering_ratio
         self._assembly_datetime: datetime | None = None
         self._backfill_task: asyncio.Task[None] | None = None
         # The task swallows its own failure (it only logs it), so the error is kept
@@ -176,6 +182,21 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._prosumer and mtype in BALANCED_MEASUREMENT_TYPES:
             return DataSource.AFTER_BALANCING
         return None
+
+    @property
+    def prosumer(self) -> bool:
+        """Return True when the dashboard reports a prosumer's meter."""
+        return self._prosumer
+
+    @property
+    def _net_metering(self) -> float | None:
+        """Return the net-metering ratio in force: only a prosumer's meter has one."""
+        return self._net_metering_ratio if self._prosumer else None
+
+    @property
+    def _returned_cost_ratio(self) -> float:
+        """Return the share of its price a returned kWh is costed at."""
+        return self._net_metering if self._net_metering is not None else 1.0
 
     def _uses_balanced_data(self) -> bool:
         """Return True when at least one fetched series comes from balanced data."""
@@ -418,6 +439,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_inject_days(
         self,
         all_days: list[tuple[date, dict[str, Any]]],
+        rewrite: bool = False,
     ) -> None:
         """Inject energy statistics and, if a matching tariff exists, cost statistics.
 
@@ -427,11 +449,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         Args:
             all_days: Chronologically sorted list of (date, data_dict) tuples.
+            rewrite: Whether the days may have been costed before in other
+                zones — see async_insert_cost_statistics.
         """
         if not all_days:
             return
         await async_insert_historical_statistics(self.hass, self._meter_code, all_days)
-        tariff = find_tariff_group(self.hass, self._tariff_name)
+        tariff = find_tariff_history(self.hass, self._tariff_name, self._dashboard_data)
         if tariff is not None:
             await async_insert_cost_statistics(
                 self.hass,
@@ -440,6 +464,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 tariff,
                 self._fetch_consumption,
                 self._fetch_generation,
+                self._returned_cost_ratio,
+                rewrite=rewrite,
             )
             await self._async_save_cost_prices(tariff, all_days[0][0], all_days[-1][0])
 
@@ -507,7 +533,19 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {
             "fetch_types": [key for key, _ in self._get_measurement_types()],
             "balanced_data": self._uses_balanced_data(),
+            "net_metering_ratio": self._net_metering,
             "tariff": self._tariff_name,
+            # Which group the costs of each agreement's days use, and whether
+            # enea_prices has an entry to price them with.
+            "tariff_groups": [
+                {
+                    "from": iso(start),
+                    "until": iso(end),
+                    "group": group,
+                    "priced": find_tariff_group(self.hass, group) is not None,
+                }
+                for start, end, group in agreement_tariffs(self._dashboard_data)
+            ],
             "assembly_datetime": iso(self._assembly_datetime),
             "statistics_until": iso(self.statistics_until),
             "statistics_last_run": iso(self._statistics_last_run),
@@ -558,7 +596,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._backfill_task is not None and not self._backfill_task.done():
             # Initial backfill still running; it injects costs (energy + cost) itself.
             return
-        tariff = find_tariff_group(self.hass, self._tariff_name)
+        tariff = find_tariff_history(self.hass, self._tariff_name, self._dashboard_data)
         if tariff is None:
             return
 
@@ -597,6 +635,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 tariff,
                 self._fetch_consumption,
                 self._fetch_generation,
+                self._returned_cost_ratio,
             )
             _LOGGER.debug("Injected cost statistics for %d day(s)", len(days))
         # Remember the last day the portal answered.  A meter whose every
@@ -617,7 +656,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         The prices enea_prices hands out can change for days costed long ago: a
         contract entered with a start in the past, a renewed offer dated back, a
-        corrected tariff table.  The catch-up only ever looks past the newest
+        corrected tariff table, an earlier tariff group's entry added (or the
+        agreements first taken into account).  The catch-up only ever looks past the newest
         cost, so those days would keep the old prices for good.
 
         Every costed day's prices are remembered as a fingerprint (see
@@ -648,7 +688,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self._async_save_cost_prices(tariff, first, latest)
             return
         start = first_repriced_day(
-            stored, price_signatures(tariff, first, latest), first, latest
+            stored,
+            price_signatures(tariff, first, latest, self._returned_cost_ratio),
+            first,
+            latest,
         )
         if start is None:
             return
@@ -671,6 +714,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 tariff,
                 self._fetch_consumption,
                 self._fetch_generation,
+                self._returned_cost_ratio,
+                rewrite=True,
             )
             # The catch-up that follows counts on from the newest cost total,
             # which the rewrite above may have moved, so it has to be committed
@@ -696,7 +741,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         while day <= last:
             prices.pop(day.isoformat(), None)
             day += timedelta(days=1)
-        prices.update(price_signatures(tariff, first, last))
+        prices.update(price_signatures(tariff, first, last, self._returned_cost_ratio))
         self._cost_prices = prices
         await self._cost_prices_store.async_save({"days": prices})
 
@@ -793,6 +838,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         end_date: date,
         zero_fill_stale: bool = False,
         grace_days: int = 0,
+        skip_leading_gaps: bool = False,
     ) -> list[tuple[date, dict[str, Any]]]:
         """Fetch all measurement types for a date range in parallel.
 
@@ -812,12 +858,18 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
           being silently dropped, so it does not leave a hole that corrupts
           the cumulative sum of later days (see MISSING_DAY_GRACE_DAYS).
 
+        With ``skip_leading_gaps`` the days before the first one with data are
+        dropped whatever ``zero_fill_stale`` says: there the meter's history in
+        the Portal Odbiorcy Enea has not begun yet (a prosumer's balanced data
+        starts long after the meter's assembly), so no day of it is missing.
+
         Args:
             start_date: First date to fetch (inclusive); clamped to assembly date.
             end_date: Last date to fetch (inclusive).
             zero_fill_stale: Whether to zero-fill days confirmed missing.
             grace_days: How many days a day may stay missing before it is
                 considered permanently absent (only used when zero_fill_stale).
+            skip_leading_gaps: Whether the range may start before the history.
 
         Returns:
             Chronologically sorted list of (date, day_data) tuples where day_data
@@ -878,27 +930,42 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         today = dt_util.now().date()
         all_days: list[tuple[date, dict[str, Any]]] = []
+        history_started = not skip_leading_gaps
+        zero_filled: list[date] = []
         for day in sorted(all_dates):
             day_data: dict[str, Any] = {
                 key: days_map[day]
                 for key, days_map in per_key_days.items()
                 if day in days_map
             }
-            if not any(has_data(v) for v in day_data.values()):
-                if not zero_fill_stale or (today - day).days < grace_days:
+            if any(has_data(v) for v in day_data.values()):
+                history_started = True
+            else:
+                if (
+                    not history_started
+                    or not zero_fill_stale
+                    or (today - day).days < grace_days
+                ):
                     continue
-                _LOGGER.info(
-                    "Portal Odbiorcy Enea published no data for %s (meter %s) within "
-                    "%d day(s); storing the day as zero consumption. The enea.backfill "
-                    "action re-fetches it if the data appears later",
-                    day,
-                    mask_ppe(self._meter_code),
-                    grace_days,
-                )
                 day_data = self._zero_fill_missing_day(day_data)
-                self._zero_filled_days.add(day)
+                zero_filled.append(day)
             day_data = self._strip_pre_assembly_slots(day, day_data)
             all_days.append((day, day_data))
+
+        if zero_filled:
+            # One line per fetch: a portal outage or a long backfill would
+            # otherwise log every day separately.
+            _LOGGER.info(
+                "Portal Odbiorcy Enea published no data for %d day(s) from %s to %s "
+                "(meter %s) within %d day(s); storing them as zero consumption. The "
+                "enea.backfill action re-fetches them if the data appears later",
+                len(zero_filled),
+                zero_filled[0],
+                zero_filled[-1],
+                mask_ppe(self._meter_code),
+                grace_days,
+            )
+            self._zero_filled_days.update(zero_filled)
 
         return all_days
 
@@ -908,6 +975,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         end_date: date,
         zero_fill_stale: bool = False,
         grace_days: int = 0,
+        skip_leading_gaps: bool = False,
     ) -> list[tuple[date, dict[str, Any]]]:
         """Fetch days chronologically from start_date to end_date (inclusive).
 
@@ -919,7 +987,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         day itself, early-hour slots (before the assembly hour) are stripped by
         _strip_pre_assembly_slots so only new-meter data is imported.
 
-        zero_fill_stale/grace_days are forwarded to _fetch_range — see there.
+        zero_fill_stale/grace_days/skip_leading_gaps are forwarded to
+        _fetch_range — see there.  Leading gaps are skipped only until a chunk
+        brings the first day with data.
         """
         # Assembly-date clamp is also applied inside _fetch_range; repeating it
         # here avoids allocating empty chunks before the assembly date.
@@ -934,8 +1004,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 end_date,
             )
             chunk_days = await self._fetch_range(
-                chunk_start, chunk_end, zero_fill_stale, grace_days
+                chunk_start, chunk_end, zero_fill_stale, grace_days, skip_leading_gaps
             )
+            if chunk_days:
+                skip_leading_gaps = False
             all_days.extend(chunk_days)
             chunk_start = chunk_end + timedelta(days=1)
 
@@ -947,7 +1019,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch days backward from end_date; stop when data runs out.
 
         When the assembly date is known, delegates to _fetch_days_forward because
-        the exact start is known. When the assembly date is unknown, fetches
+        the exact start is known — though not where the portal's data begins,
+        so the days before the first one with data are skipped, not zero-filled. When the assembly date is unknown, fetches
         RANGE_FETCH_CHUNK_DAYS-sized chunks going backward and stops after
         BACKFILL_MAX_CONSECUTIVE_EMPTY consecutive days with no data at the
         start (oldest end) of a chunk.
@@ -964,6 +1037,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 end_date,
                 zero_fill_stale=True,
                 grace_days=MISSING_DAY_GRACE_DAYS,
+                skip_leading_gaps=True,
             )
 
         # Collect chunks newest-first, flatten in reverse at the end — avoids
@@ -1016,13 +1090,17 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         same range later always re-fetches from the API and overwrites any
         zero-filled day if real data has since appeared.
 
+        Costs of the range are written anew, taking an hour's old cost out of a
+        zone it no longer belongs to, so this also corrects costs computed
+        before the price fingerprints existed.
+
         Returns the number of days for which data was found and injected.
         """
         all_days = await self._fetch_days_forward(
             start_date, end_date, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
         )
         if all_days:
-            await self._async_inject_days(all_days)
+            await self._async_inject_days(all_days, rewrite=True)
             self.async_update_listeners()
             _LOGGER.info(
                 "Backfill injected %d day(s) for meter %s (%s – %s)",
@@ -1040,11 +1118,16 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Current period:  (bill_last_reading, yesterday].
 
         Sets the corresponding entry in bill_estimates to None when a period
-        is empty, dates are missing, or statistics are unavailable.
+        is empty, dates are missing, or statistics are unavailable.  Prices
+        follow the agreements, like the costs: a period under an earlier tariff
+        group is priced by that group's enea_prices entry.
         """
         cfg = find_prices_config(self.hass, self._tariff_name)
         if cfg is None:
             return
+        history = find_tariff_history(self.hass, self._tariff_name, self._dashboard_data)
+        if history is not None:
+            cfg = replace(cfg, tariff=history)
 
         today = dt_util.now().date()
         yesterday = today - timedelta(days=1)
@@ -1055,7 +1138,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         prev: BillEstimate | None = None
         if d1 is not None and d2 is not None and d1 < d2:
             try:
-                prev = await async_estimate_bill(self.hass, self._meter_code, cfg, d1, d2)
+                prev = await async_estimate_bill(
+                    self.hass, self._meter_code, cfg, d1, d2, self._net_metering
+                )
             except Exception as err:
                 _LOGGER.warning("Failed to estimate previous bill: %s", err, exc_info=True)
 
@@ -1063,7 +1148,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if d2 is not None and d2 < yesterday:
             try:
                 current = await async_estimate_bill(
-                    self.hass, self._meter_code, cfg, d2, yesterday
+                    self.hass, self._meter_code, cfg, d2, yesterday, self._net_metering
                 )
             except Exception as err:
                 _LOGGER.warning("Failed to estimate current bill: %s", err, exc_info=True)

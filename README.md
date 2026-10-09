@@ -85,6 +85,8 @@ Gdy obie integracje są skonfigurowane i taryfy się zgadzają, Enea Licznik aut
 - Wstrzykuje godzinowe **statystyki zewnętrzne** kosztów w PLN (`enea:{numer_PPE}_koszt_...`), obliczone na podstawie danych energetycznych i cennika z `enea_prices` — to ich używasz w panelu Energia (tak jak statystyk energii)
 - Tworzy **sensory szacowania rachunku** i **encje daty odczytu** (szczegóły niżej)
 
+**Zmiana grupy taryfowej.** Koszt każdego dnia liczony jest cennikiem grupy taryfowej z umowy, która obowiązywała tego dnia (lista umów z Portalu Odbiorcy Enea). Jeśli np. licznik był do grudnia 2025 w G11, a potem w G12w, dni G11 dostaną ceny G11 — o ile w `enea_prices` dodasz też wpis dla G11. Bez takiego wpisu te dni zostają bez kosztów (lepiej niż wycenione stawkami i strefami G12w). Dodanie lub usunięcie wpisu przelicza historię kosztów automatycznie.
+
 ### Konfiguracja Energy Dashboard z kosztami
 
 Aby śledzić koszty w panelu Energia:
@@ -106,9 +108,20 @@ Gdy `enea_prices` jest skonfigurowane, dla każdego licznika tworzone są dwie e
 | Szacowany rachunek – poprzedni okres | Szacunkowy koszt za okres `(d1, d2]` — ostatni rozliczony rachunek |
 | Szacowany rachunek – bieżący okres | Szacunkowy koszt za okres `(d2, wczoraj]` — narastający bieżący rachunek |
 
-Kwota brutto w PLN obliczana metodą zbliżoną do faktury Enea: kWh pobrane precyzyjnie ze statystyk długoterminowych (bez zaokrąglania do całości), każda pozycja kosztowa zaokrąglana do 2 miejsc po przecinku po cenach netto, VAT 23% doliczany raz do sumy końcowej.
+Kwota brutto w PLN obliczana metodą zbliżoną do faktury Enea: zużycie z każdej godziny przypisane do strefy według harmonogramu taryfy i wycenione cennikiem obowiązującym tego dnia (także cennikiem wcześniejszej grupy taryfowej, jeśli okres obejmuje zmianę grupy), każda pozycja kosztowa zaokrąglana do 2 miejsc po przecinku po cenach netto, VAT 23% doliczany raz do sumy końcowej. Gdy część okresu przypada na grupę taryfową bez wpisu w `enea_prices`, jej zużycie nie jest wyceniane i pokazuje je atrybut `unpriced_kwh`.
 
 Sensory rachunku mają dodatkowe atrybuty: `start`, `end`, `months`, `total_netto`, `energy_netto`, `trade_fee_netto` (opłata handlowa, tylko przy cenach z umowy w Enea Ceny), `distribution_netto`, `fixed_network_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `kwh_{strefa}`, `energy_{strefa}_netto`, `variable_network_{strefa}_netto`, `quality_{strefa}_netto`, `oze_{strefa}_netto`, `cogeneration_{strefa}_netto`.
+
+#### Prosumenci w systemie opustów
+
+Prosument przyłączony do 31.03.2022 rozlicza energię oddaną w systemie opustów: z każdej kWh oddanej do sieci odbiera bez opłat 0,8 kWh (instalacja do 10 kW) albo 0,7 kWh (powyżej 10 kW). Za tak odebraną energię nie płaci ani ceny energii, ani zmiennych opłat dystrybucyjnych (sieciowej zmiennej, jakościowej, OZE, kogeneracyjnej); opłaty stałe zostają.
+
+Po wybraniu współczynnika w opcji **System opustów**:
+
+- **szacowany rachunek** liczy energię i opłaty zmienne tylko od nadwyżki poboru. Energia oddana (× współczynnik) rozlicza najpierw pobór w tej samej strefie, a nadwyżka przechodzi na pozostałe strefy — od strefy z najwyższą stawką sieciową zmienną. Dochodzą atrybuty `returned_kwh_{strefa}` (energia oddana), `billed_kwh_{strefa}` (zużycie po opuście) i `net_metering_left_kwh` (niewykorzystany opust w okresie);
+- **koszt energii oddanej** w panelu Energia (`enea:…_koszt_energii_oddana_…`) jest liczony jako współczynnik × cena energii pobranej. Zmiana opcji przelicza historię kosztów.
+
+Szacunek nie uwzględnia nadwyżki przeniesionej z wcześniejszych okresów (energia oddana jest ważna 12 miesięcy). Przy net-billingu (przyłączenie od 1.04.2022) zostaw opcję **Brak**.
 
 ### Automatyczne przeładowanie
 
@@ -152,12 +165,14 @@ Tworzone gdy integracja `enea_prices` jest skonfigurowana z pasującą taryfą.
 | Model licznika | Model aktualnie zamontowanego licznika | OTUS3                       |
 | Typ instalacji | Jednofazowa / Trójfazowa — wnioskowany z modelu licznika lub mocy umownej (≥ 12 kW); gdy nie da się ustalić: nieznany | Trójfazowa                  |
 | Transmisja z licznikiem | Czy licznik przesyła dane do Enei | Połączono                   |
-| Port HAN dostępny | Czy licznik obsługuje port HAN | Włączony                    |
-| Port HAN – Wireless M-Bus | Stan portu HAN Wireless M-Bus: Nieaktywny / Aktywny / Wniosek w realizacji / Oczekiwanie na licznik / Niedostępny dla licznika | Nieaktywny                  |
-| Port HAN – P1 | Stan portu HAN P1 (stany jak wyżej) | Nieaktywny                  |
-| Przekaźnik licznika | Stan przekaźnika do zdalnego odłączania zasilania: Załączony / Wyłączony / Ostrzeżenie / Brak przekaźnika | Załączony                   |
+| Port HAN dostępny ¹ | Czy licznik obsługuje port HAN | Włączony                    |
+| Port HAN – Wireless M-Bus ¹ | Stan portu HAN Wireless M-Bus: Nieaktywny / Aktywny / Wniosek w realizacji / Oczekiwanie na licznik / Niedostępny dla licznika | Nieaktywny                  |
+| Port HAN – P1 ¹ | Stan portu HAN P1 (stany jak wyżej) | Nieaktywny                  |
+| Przekaźnik licznika ¹ | Stan przekaźnika do zdalnego odłączania zasilania: Załączony / Wyłączony / Ostrzeżenie / Brak przekaźnika | Załączony                   |
 | Początek okresu rozliczeniowego | Pierwszy dzień bieżącego okresu na fakturze, wykryty z Portalu Odbiorcy Enea (eksperymentalne) | 6 sierpnia 2026             |
 | Statystyki aktualne do | Ostatni dzień zaimportowany do statystyk Energy Dashboard — pozwala zauważyć opóźnienia lub luki w danych Portalu Odbiorcy Enea | 7 października 2026         |
+
+¹ Domyślnie wyłączone — włączysz je w ustawieniach encji urządzenia. Dotyczy nowo dodanych liczników; u istniejących zostają tak, jak były.
 
 ## Opcje
 
@@ -170,6 +185,7 @@ Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**
 | Pobieraj statystyki energii oddanej | Tak | Wyłącz jeśli nie masz fotowoltaiki ani innego źródła generacji |
 | Pobieraj statystyki mocy pobranej | Nie | Godzinowe dane mocy czynnej pobranej (kW) |
 | Pobieraj statystyki mocy oddanej | Nie | Godzinowe dane mocy czynnej oddanej (kW); wyłącz jeśli nie masz fotowoltaiki |
+| System opustów | Brak | Tylko licznik prosumenta: współczynnik 0,8 (instalacja do 10 kW) lub 0,7 (powyżej 10 kW) dla prosumentów przyłączonych do 31.03.2022 — patrz [Prosumenci w systemie opustów](#prosumenci-w-systemie-opustów) |
 
 Zmiana opcji powoduje natychmiastowe przeładowanie integracji. Wyłączenie danego kierunku ukrywa też odpowiednie sensory energii i kosztów.
 

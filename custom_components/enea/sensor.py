@@ -233,6 +233,8 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=HAN_STATES,
         entity_category=EntityCategory.DIAGNOSTIC,
+        # Niszowa — domyślnie wyłączona, użytkownik włącza w razie potrzeby.
+        entity_registry_enabled_default=False,
         value_fn=lambda data: _han_port_state(data, "wmbusStatus"),
     ),
     EneaSensorEntityDescription(
@@ -242,6 +244,8 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=HAN_STATES,
         entity_category=EntityCategory.DIAGNOSTIC,
+        # Niszowa — domyślnie wyłączona, użytkownik włącza w razie potrzeby.
+        entity_registry_enabled_default=False,
         value_fn=lambda data: _han_port_state(data, "p1Status"),
     ),
     EneaSensorEntityDescription(
@@ -251,6 +255,8 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=list(SWITCH_STATE_BY_CODE.values()),
         entity_category=EntityCategory.DIAGNOSTIC,
+        # Niszowa — domyślnie wyłączona, użytkownik włącza w razie potrzeby.
+        entity_registry_enabled_default=False,
         value_fn=lambda data: SWITCH_STATE_BY_CODE.get(data.get("switchState")),  # pyright: ignore[reportArgumentType]
         attr_fn=_switch_state_attrs,
     ),
@@ -530,7 +536,11 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
 
         Top-level keys: start, end, months, total_netto, total (brutto = state).
         Section 'Sprzedaż energii': energy_netto + per-zone kwh_<zone> and
-        energy_<zone>_netto + trade_fee_netto (opłata handlowa, 0 on the tariff).
+        energy_<zone>_netto + trade_fee_netto (opłata handlowa, 0 on the tariff);
+        under net metering also returned_kwh_<zone>, billed_kwh_<zone> (what
+        energy and variable fees are charged on) and net_metering_left_kwh;
+        unpriced_kwh when part of the period has no prices (a tariff group
+        without an enea_prices entry).
         Section 'Usługa dystrybucji': distribution_netto (sum) + fixed fees
         (fixed_network_netto, fixed_capacity_netto, fixed_subscription_netto) +
         per-zone components: variable_network_<zone>_netto, quality_<zone>_netto,
@@ -554,8 +564,15 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
         for zone_display, kwh in est.kwh_by_zone.items():
             safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
             attrs[f"kwh_{safe}"] = kwh
+            if est.returned_kwh_by_zone:
+                attrs[f"returned_kwh_{safe}"] = est.returned_kwh_by_zone.get(zone_display, 0.0)
+                attrs[f"billed_kwh_{safe}"] = est.billed_kwh_by_zone.get(zone_display, 0.0)
             attrs[f"energy_{safe}_netto"] = est.energy_by_zone_netto.get(zone_display, 0.0)
         attrs["trade_fee_netto"] = est.trade_fee_netto
+        if est.net_metering_left_kwh is not None:
+            attrs["net_metering_left_kwh"] = est.net_metering_left_kwh
+        if est.unpriced_kwh:
+            attrs["unpriced_kwh"] = est.unpriced_kwh
         attrs["energy_netto"] = est.energy_netto
         # Usługa dystrybucji — kolejność jak na fakturze Enea
         attrs["fixed_network_netto"] = est.fixed_network_netto

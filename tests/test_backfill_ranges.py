@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date, datetime, time, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -39,6 +40,7 @@ def coord(monkeypatch):
     result._zero_filled_days = set()
     result._meter_code = "590310600000001234"
     result._tariff_name = "G12"
+    result._dashboard_data = {}
     result.meter_id = 12345
     result.client = SimpleNamespace(get_consumption_data_range=AsyncMock())
     result.hass = FakeHass()
@@ -126,7 +128,7 @@ async def test_forward_chunks_cover_inclusive_range_once(coord, length, offsets)
     """Chunk boundaries neither skip nor duplicate a day and preserve zero-fill policy."""
     start = date(2025, 1, 1)
 
-    async def fetch(first, last, zero_fill, grace):
+    async def fetch(first, last, zero_fill, grace, skip_leading):
         """Represent every fetched day without building hundreds of hourly responses."""
         return [(first + timedelta(days=i), {}) for i in range((last - first).days + 1)]
 
@@ -135,7 +137,8 @@ async def test_forward_chunks_cover_inclusive_range_once(coord, length, offsets)
     result = await coord._fetch_days_forward(start, start + timedelta(days=length - 1), True, 14)
 
     assert [call.args for call in coord._fetch_range.await_args_list] == [
-        (start + timedelta(days=first), start + timedelta(days=last), True, 14) for first, last in offsets
+        (start + timedelta(days=first), start + timedelta(days=last), True, 14, False)
+        for first, last in offsets
     ]
     assert [day for day, _ in result] == [start + timedelta(days=i) for i in range(length)]
 
@@ -229,7 +232,54 @@ async def test_known_assembly_backfills_forward_with_zero_fill(coord):
     assert await coord._fetch_days_backward(date(2026, 10, 31)) == days
     coord._fetch_days_forward.assert_awaited_once_with(
         date(2026, 10, 1), date(2026, 10, 31), zero_fill_stale=True, grace_days=3,
+        skip_leading_gaps=True,
     )
+
+
+async def test_days_before_the_portals_history_are_skipped_not_zeroed(coord):
+    """A prosumer's balanced data starts long after the meter's assembly.
+
+    The backfill zero-filled every day from the assembly up to the first one
+    with data, which showed as months of zero consumption.  A gap after the
+    history has begun is still zero-filled.
+    """
+    days = [date(2026, 9, 1) + timedelta(days=i) for i in range(4)]
+    values = [_slots(days[0], None), _slots(days[1], 2.0), _slots(days[2], None), _slots(days[3], 1.0)]
+    coord.client.get_consumption_data_range.return_value = {
+        "values": [slot for day_slots in values for slot in day_slots]
+    }
+
+    result = await coord._fetch_range(days[0], days[3], True, 3, skip_leading_gaps=True)
+
+    assert [d for d, _ in result] == days[1:]
+    assert coord._zero_filled_days == {days[2]}
+
+
+async def test_zero_filled_days_are_logged_once_per_fetch(coord, caplog):
+    """A long gap logs one summary line, not a line per day."""
+    days = [date(2026, 9, 1) + timedelta(days=i) for i in range(30)]
+    coord.client.get_consumption_data_range.return_value = {
+        "values": [slot for day in days for slot in _slots(day, None)]
+    }
+    caplog.set_level(logging.INFO, logger=module.__name__)
+
+    result = await coord._fetch_range(days[0], days[-1], True, 3)
+
+    assert len(result) == 30
+    assert len(caplog.records) == 1
+    message = caplog.records[0].getMessage()
+    assert "30 day(s) from 2026-09-01 to 2026-09-30" in message
+    assert "590310600000001234" not in message
+
+
+async def test_leading_gaps_are_skipped_only_until_the_history_begins(coord):
+    """Chunks after the first one with data zero-fill their gaps again."""
+    start = date(2025, 1, 1)
+    coord._fetch_range = AsyncMock(side_effect=[[], [(start + timedelta(days=200), {})], []])
+
+    await coord._fetch_days_forward(start, start + timedelta(days=539), True, 3, skip_leading_gaps=True)
+
+    assert [call.args[4] for call in coord._fetch_range.await_args_list] == [True, True, False]
 
 
 async def test_empty_manual_backfill_does_not_write_or_notify(coord):
@@ -289,3 +339,14 @@ async def test_range_cancellation_propagates(coord):
     with pytest.raises(asyncio.CancelledError):
         await coord.async_backfill(date(2026, 6, 1), date(2026, 6, 1))
     coord.async_update_listeners.assert_not_called()
+
+
+async def test_manual_backfill_writes_the_costs_anew(coord):
+    """The action corrects old costs, so an hour stored in another zone is cleared."""
+    days = [(date(2026, 10, 2), {})]
+    coord._fetch_days_forward = AsyncMock(return_value=days)
+    coord._async_inject_days = AsyncMock()
+
+    await coord.async_backfill(date(2026, 10, 2), date(2026, 10, 2))
+
+    coord._async_inject_days.assert_awaited_once_with(days, rewrite=True)

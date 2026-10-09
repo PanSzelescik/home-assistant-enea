@@ -259,6 +259,32 @@ def get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:
     )
 
 
+def agreement_tariffs(data: dict[str, Any]) -> list[tuple[date, date | None, str]]:
+    """Return the tariff group of each agreement in the dashboard, oldest first.
+
+    Each entry is (first day, day after the last one or None while in force,
+    tariff group name).  An agreement's "from" and "to" are local midnights in
+    milliseconds, the next agreement starting where the previous one ends.
+    Agreements without a start or a group name are left out.
+    """
+    spans: list[tuple[date, date | None, str]] = []
+    for agreement in data.get("agreements") or []:
+        start, end = agreement.get("from"), agreement.get("to")
+        group = (agreement.get("tariffGroupName") or "").strip()
+        if start is None or not group:
+            continue
+        spans.append(
+            (
+                dt_util.as_local(dt_util.utc_from_timestamp(start / 1000)).date(),
+                dt_util.as_local(dt_util.utc_from_timestamp(end / 1000)).date()
+                if end is not None
+                else None,
+                group,
+            )
+        )
+    return sorted(spans, key=lambda span: span[0])
+
+
 def billing_period_starts(data: dict[str, Any]) -> list[date]:
     """Return billing period start dates found in the dashboard's billingWeekData.
 

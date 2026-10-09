@@ -23,9 +23,12 @@ from .const import (
     CONF_FETCH_POWER_GENERATION,
     CONF_METER_ID,
     CONF_METER_NAME,
+    CONF_NET_METERING,
     CONF_UPDATE_INTERVAL,
+    DEFAULT_NET_METERING,
     DEFAULT_UPDATE_INTERVAL_DICT,
     DOMAIN,
+    NET_METERING_RATIOS,
     PLATFORMS,
     SERVICE_BACKFILL,
     SERVICE_REFRESH,
@@ -98,6 +101,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
         fetch_generation=entry.options.get(CONF_FETCH_GENERATION, True),
         fetch_power_consumption=entry.options.get(CONF_FETCH_POWER_CONSUMPTION, False),
         fetch_power_generation=entry.options.get(CONF_FETCH_POWER_GENERATION, False),
+        net_metering_ratio=NET_METERING_RATIOS.get(
+            entry.options.get(CONF_NET_METERING, DEFAULT_NET_METERING)
+        ),
     )
     entry.runtime_data = EneaRuntimeData(coordinator=update_coordinator)
     entry.async_on_unload(update_coordinator.cancel_backfill)

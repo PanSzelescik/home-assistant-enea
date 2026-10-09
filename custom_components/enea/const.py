@@ -45,6 +45,8 @@ CONF_FETCH_CONSUMPTION = "fetch_consumption"
 CONF_FETCH_GENERATION = "fetch_generation"
 CONF_FETCH_POWER_CONSUMPTION = "fetch_power_consumption"
 CONF_FETCH_POWER_GENERATION = "fetch_power_generation"
+# Współczynnik systemu opustów prosumenta: DEFAULT_NET_METERING („none”) albo klucz NET_METERING_RATIOS.
+CONF_NET_METERING = "net_metering"
 # Set once a prosumer's energy history has been imported from balanced data.
 CONF_BALANCED_HISTORY = "balanced_history"
 
@@ -148,6 +150,7 @@ SERVICE_BACKFILL = "backfill"
 
 DEFAULT_UPDATE_INTERVAL_DICT: dict[str, int] = {"hours": 3, "minutes": 30, "seconds": 0}
 MIN_UPDATE_INTERVAL_MINUTES = 30
+DEFAULT_NET_METERING = "none"
 METERS_CACHE_TTL = timedelta(minutes=5)
 
 # ---------------------------------------------------------------------------
@@ -222,22 +225,26 @@ VAT_RATE = 0.23
 COST_PRICES_STORAGE_KEY = f"{DOMAIN}.cost_prices"
 COST_PRICES_STORAGE_VERSION = 1
 
-# Strefa z enea_prices → nazwa strefy.  Służy do nazw statystyk kosztów, a w billing.py
-# także do odnalezienia statystyki „Energia pobrana – {nazwa}”, której nazwę nadaje
-# Portal Odbiorcy Enea – dlatego musi się z nią zgadzać co do znaku.  Nazwa jest częścią
-# statistic_id kosztów: zmiana odcięłaby zapisaną historię kosztów.
+# Strefa z enea_prices → nazwa strefy w statystykach kosztów i atrybutach rachunku.
+# Nazwa jest częścią statistic_id kosztów: zmiana odcięłaby zapisaną historię kosztów.
 COST_ZONE_DISPLAY: dict[str, str] = {
     "day": "Dzień",
     "night": "Noc",
     "peak": "Szczyt",
     "off_peak": "Poza szczytem",
-    # G12sezON i G13active (od 2026), skrócone nazwy stref z enea.pl.  Nie wiemy jeszcze,
-    # jak nazywa je Portal Odbiorcy Enea (issue #6 w enea_prices); niezgodność zgłasza
-    # ostrzeżenie w billing.py.  Wtedy rachunek dostanie osobne mapowanie, a te nazwy
-    # zostają ze względu na statistic_id kosztów.
+    # G12sezON i G13active (od 2026), skrócone nazwy stref z enea.pl.
     "recommended_use": "Zalecany pobór",
     "remaining": "Pozostałe godziny",
     "recommended_limit": "Zalecane ograniczenie",
+}
+
+# System opustów (prosumenci przyłączeni do 31.03.2022, art. 4 ustawy o OZE): z każdej kWh
+# oddanej do sieci można odebrać bez opłat za energię i zmiennych opłat dystrybucyjnych
+# 0,8 kWh (mikroinstalacja do 10 kW) albo 0,7 kWh (powyżej 10 kW).  Opcja licznika
+# prosumenta; DEFAULT_NET_METERING („none”) to brak opustów, np. net-billing.
+NET_METERING_RATIOS: dict[str, float] = {
+    "0_8": 0.8,
+    "0_7": 0.7,
 }
 
 # Bill estimate entity keys
@@ -258,6 +265,11 @@ BILLING_PERIOD_MIN_SEGMENT = timedelta(days=2)
 # Długości okresu rozliczeniowego, dla których taryfa ma stawkę abonamentową (miesiące).
 BILLING_PERIOD_MONTHS = (1, 2, 6, 12)
 AVERAGE_MONTH_DAYS = 30.44
+# O ile dni odstęp dwóch granic może odbiegać od pełnej liczby miesięcy, żeby uznać go za
+# okres rozliczeniowy — odczyt bywa przesunięty o kilka dni.  Granice z billingWeekData
+# wyznacza też np. zmiana umowy albo grupy taryfowej: u prosumenta zmiana G11 → G12W
+# i początek roku dały odstęp 20 dni, który zaokrąglony wyglądał na okres miesięczny.
+BILLING_PERIOD_TOLERANCE_DAYS = 7
 # Przedziały rocznego zużycia opłaty mocowej (pkt 3.1.29 taryfy Enea Operator, art. 89b
 # ust. 3 ustawy o rynku mocy): poniżej 500, od 500 do 1200, powyżej 1200 do 2800,
 # powyżej 2800 kWh.  Tu górne granice trzech pierwszych (druga i trzecia włącznie).

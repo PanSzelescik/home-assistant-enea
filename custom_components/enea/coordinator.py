@@ -25,17 +25,22 @@ from .connector import (
 )
 from .const import (
     BACKFILL_MAX_CONSECUTIVE_EMPTY,
+    BALANCED_MEASUREMENT_TYPES,
     BILL_KEY_CURRENT,
     BILL_KEY_PREVIOUS,
+    CONF_BALANCED_HISTORY,
     COST_PRICES_STORAGE_KEY,
     COST_PRICES_STORAGE_VERSION,
     DOMAIN,
     MISSING_DAY_GRACE_DAYS,
+    MISSING_DAY_GRACE_DAYS_BALANCED,
+    PPE_TYPE_PROSUMER,
     RANGE_FETCH_CHUNK_DAYS,
     STAT_KEY_ENERGY_CONSUMED,
     STAT_KEY_ENERGY_RETURNED,
     STAT_KEY_POWER_CONSUMED,
     STAT_KEY_POWER_RETURNED,
+    DataSource,
     MeasurementType,
     Resolution,
     STAT_NAME_BY_KEY,
@@ -99,6 +104,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._fetch_power_consumption = fetch_power_consumption
         self._fetch_power_generation = fetch_power_generation
         self._tariff_name: str | None = None
+        # A prosumer's energy is fetched after balancing, as the invoice settles it.
+        self._prosumer = False
         self._assembly_datetime: datetime | None = None
         self._backfill_task: asyncio.Task[None] | None = None
         # The task swallows its own failure (it only logs it), so the error is kept
@@ -160,6 +167,28 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ]
         return [(key, mtype) for enabled, key, mtype in candidates if enabled]
 
+    def _data_source(self, mtype: MeasurementType) -> DataSource | None:
+        """Return the data source to ask for, None for the portal's default.
+
+        A prosumer's invoice is settled from the balanced data, which Portal
+        Odbiorcy Enea has for energy only.  Without a data source it serves the
+        data before balancing.
+        """
+        if self._prosumer and mtype in BALANCED_MEASUREMENT_TYPES:
+            return DataSource.AFTER_BALANCING
+        return None
+
+    def _uses_balanced_data(self) -> bool:
+        """Return True when at least one fetched series comes from balanced data."""
+        return any(self._data_source(mtype) for _, mtype in self._get_measurement_types())
+
+    @property
+    def _grace_days(self) -> int:
+        """Return how long a missing day is waited for before it is zero-filled."""
+        if self._uses_balanced_data():
+            return MISSING_DAY_GRACE_DAYS_BALANCED
+        return MISSING_DAY_GRACE_DAYS
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch meter data from the API."""
         try:
@@ -170,6 +199,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"Error fetching Enea data: {err}") from err
 
         self._tariff_name = data.get("tariffGroupName")
+        self._prosumer = data.get("type") == PPE_TYPE_PROSUMER
         self._dashboard_data = data
 
         # Determine assembly date of the currently active meter (no disassemblyDate).
@@ -269,15 +299,20 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # Statistics helpers
     # ------------------------------------------------------------------
 
-    async def _async_latest_statistics_date(self) -> date | None:
+    async def _async_latest_statistics_date(
+        self, keys: list[str] | None = None
+    ) -> date | None:
         """Return the local date of the newest hour across the active statistic series.
 
-        All series are queried in parallel to avoid sequential executor
+        keys narrows the series looked at; by default all active ones.  All
+        series are queried in parallel to avoid sequential executor
         round-trips.  None when no series has any statistics yet.
         """
+        if keys is None:
+            keys = [key for key, _ in self._get_measurement_types()]
         stat_ids = [
             get_statistic_id(self._meter_code, STAT_NAME_BY_KEY[key])
-            for key, _ in self._get_measurement_types()
+            for key in keys
             if STAT_NAME_BY_KEY.get(key)
         ]
         last_stats_list = await asyncio.gather(*(
@@ -304,67 +339,89 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         keys_and_types = self._get_measurement_types()
         if not keys_and_types:
             return
+        if self._backfill_task is not None and not self._backfill_task.done():
+            # The backfill writes every day up to yesterday itself, energy and costs.
+            return
 
         today = dt_util.now().date()
         yesterday = today - timedelta(days=1)
 
-        latest_date = await self._async_latest_statistics_date()
-        if latest_date is not None and latest_date >= yesterday:
+        # Balanced data may be published later than the data before balancing,
+        # which a prosumer's power series still comes from — the newest power
+        # hour must not pass for the energy being up to date.
+        latest_date = await self._async_latest_statistics_date(
+            [key for key, mtype in keys_and_types if self._data_source(mtype)] or None
+        )
+
+        reimport = (
+            latest_date is not None
+            and self._uses_balanced_data()
+            and self.config_entry is not None
+            and not self.config_entry.data.get(CONF_BALANCED_HISTORY)
+        )
+        if latest_date is None or reimport:
+            # Initial backfill — potentially years of data (slow).  Also run for a
+            # prosumer whose history was imported before balanced data was used:
+            # re-imported over the old history, every day agrees with the invoice.
+            # Scheduled as a background task so the first coordinator refresh
+            # returns quickly and sensors become available immediately.
+            if reimport:
+                _LOGGER.info(
+                    "Re-importing the history of meter %s from the balanced data",
+                    mask_ppe(self._meter_code),
+                )
+            self._backfill_task = self.hass.async_create_task(
+                self._async_do_initial_backfill(yesterday),
+                name=f"enea_backfill_{self._meter_code}",
+            )
+            return
+
+        if latest_date >= yesterday:
             _LOGGER.debug("Statistics already up to date (last: %s)", latest_date)
             # Energy is current — check costs independently.
             await self._async_inject_missing_costs(yesterday)
             return
 
-        if latest_date is not None:
-            # Costs for the days energy already covers are settled first, and
-            # before anything new is written.  Injecting a new day writes its
-            # costs too, which alone makes the newest cost statistic reach
-            # yesterday — and a meter whose whole history has no costs would
-            # look complete from then on.
-            try:
-                await self._async_inject_missing_costs(latest_date)
-            except EneaApiError as err:
-                # The catch-up can reach ranges the portal no longer serves,
-                # and a refused range is refused on every refresh — so it is
-                # best effort and must never veto the energy update below.
-                _LOGGER.warning(
-                    "Cost catch-up failed, continuing with the energy update: %s",
-                    err,
-                )
-
-            # Incremental update: small range — run inline (fast).
-            all_days = await self._fetch_days_forward(
-                latest_date + timedelta(days=1),
-                yesterday,
-                zero_fill_stale=True,
-                grace_days=MISSING_DAY_GRACE_DAYS,
+        # Costs for the days energy already covers are settled first, and
+        # before anything new is written.  Injecting a new day writes its
+        # costs too, which alone makes the newest cost statistic reach
+        # yesterday — and a meter whose whole history has no costs would
+        # look complete from then on.
+        try:
+            await self._async_inject_missing_costs(latest_date)
+        except EneaApiError as err:
+            # The catch-up can reach ranges the portal no longer serves,
+            # and a refused range is refused on every refresh — so it is
+            # best effort and must never veto the energy update below.
+            _LOGGER.warning(
+                "Cost catch-up failed, continuing with the energy update: %s",
+                err,
             )
-            if all_days:
-                # The catch-up above only queued its writes, and the new day
-                # chains its totals from what a database read returns.  Both
-                # touch the same cost statistics, so the queue has to be
-                # committed first or the new day starts from a stale total and
-                # the series steps down where the two writes meet.  Waiting
-                # here, after the fetch, lets the recorder drain while the
-                # portal round-trip is in flight.
-                await get_instance(self.hass).async_block_till_done()
-                await self._async_inject_days(all_days)
-                _LOGGER.debug("Injected statistics for %d day(s)", len(all_days))
-            else:
-                _LOGGER.debug(
-                    "No new statistics available yet (last: %s, waiting for: %s)",
-                    latest_date,
-                    yesterday,
-                )
+
+        # Incremental update: small range — run inline (fast).
+        all_days = await self._fetch_days_forward(
+            latest_date + timedelta(days=1),
+            yesterday,
+            zero_fill_stale=True,
+            grace_days=self._grace_days,
+        )
+        if all_days:
+            # The catch-up above only queued its writes, and the new day
+            # chains its totals from what a database read returns.  Both
+            # touch the same cost statistics, so the queue has to be
+            # committed first or the new day starts from a stale total and
+            # the series steps down where the two writes meet.  Waiting
+            # here, after the fetch, lets the recorder drain while the
+            # portal round-trip is in flight.
+            await get_instance(self.hass).async_block_till_done()
+            await self._async_inject_days(all_days)
+            _LOGGER.debug("Injected statistics for %d day(s)", len(all_days))
         else:
-            # Initial backfill — potentially years of data (slow).
-            # Schedule as a background task so the first coordinator refresh
-            # returns quickly and sensors become available immediately.
-            if self._backfill_task is None or self._backfill_task.done():
-                self._backfill_task = self.hass.async_create_task(
-                    self._async_do_initial_backfill(yesterday),
-                    name=f"enea_backfill_{self._meter_code}",
-                )
+            _LOGGER.debug(
+                "No new statistics available yet (last: %s, waiting for: %s)",
+                latest_date,
+                yesterday,
+            )
 
     async def _async_inject_days(
         self,
@@ -400,6 +457,11 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Runs as a background task (started from _async_fetch_and_inject_stats)
         so that the first coordinator refresh does not block while years of data
         are being downloaded.
+
+        For a prosumer it records in the config entry that the history now comes
+        from balanced data, so the re-import runs only once.  Options changes
+        reload the entry through the options flow, not an update listener, so
+        this write does not reload it.
         """
         try:
             all_days = await self._fetch_days_backward(yesterday)
@@ -410,6 +472,11 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "Initial backfill complete for meter %s: injected %d day(s)",
                     mask_ppe(self._meter_code),
                     len(all_days),
+                )
+            if self._uses_balanced_data() and self.config_entry is not None:
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data={**self.config_entry.data, CONF_BALANCED_HISTORY: True},
                 )
         except asyncio.CancelledError:
             _LOGGER.debug("Initial backfill cancelled for meter %s", mask_ppe(self._meter_code))
@@ -447,6 +514,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return {
             "fetch_types": [key for key, _ in self._get_measurement_types()],
+            "balanced_data": self._uses_balanced_data(),
             "tariff": self._tariff_name,
             "assembly_datetime": iso(self._assembly_datetime),
             "statistics_until": iso(self.statistics_until),
@@ -527,7 +595,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         start, end = missing
         days = await self._fetch_days_forward(
-            start, end, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
+            start, end, zero_fill_stale=True, grace_days=self._grace_days
         )
         if days:
             await async_insert_cost_statistics(
@@ -601,7 +669,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             latest,
         )
         days = await self._fetch_days_forward(
-            start, latest, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
+            start, latest, zero_fill_stale=True, grace_days=self._grace_days
         )
         if days:
             await async_insert_cost_statistics(
@@ -776,7 +844,12 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         results = await asyncio.gather(
             *(
                 self.client.get_consumption_data_range(
-                    self.meter_id, start_date, end_date, mtype, Resolution.MIN_60
+                    self.meter_id,
+                    start_date,
+                    end_date,
+                    mtype,
+                    Resolution.MIN_60,
+                    self._data_source(mtype),
                 )
                 for _, mtype in keys_and_types
             ),
@@ -898,7 +971,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._assembly_datetime.date(),
                 end_date,
                 zero_fill_stale=True,
-                grace_days=MISSING_DAY_GRACE_DAYS,
+                grace_days=self._grace_days,
             )
 
         # Collect chunks newest-first, flatten in reverse at the end — avoids
@@ -954,7 +1027,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Returns the number of days for which data was found and injected.
         """
         all_days = await self._fetch_days_forward(
-            start_date, end_date, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
+            start_date, end_date, zero_fill_stale=True, grace_days=self._grace_days
         )
         if all_days:
             await self._async_inject_days(all_days)

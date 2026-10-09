@@ -226,6 +226,7 @@ def _cost_coordinator(monkeypatch, insert_costs, fetch_raises=None):
     coord._prosumer = False
     coord._backfill_task = None
     coord._tariff_name = "G12w"
+    coord._dashboard_data = {}
     coord._assembly_datetime = datetime.datetime.combine(
         yesterday - datetime.timedelta(days=30),
         datetime.time(12),
@@ -239,7 +240,7 @@ def _cost_coordinator(monkeypatch, insert_costs, fetch_raises=None):
     coord._costs_repriced_from = None
     coord.tariff = _Tariff()
     monkeypatch.setattr(
-        coordinator_module, "find_tariff_group", lambda hass, name: coord.tariff
+        coordinator_module, "find_tariff_history", lambda hass, name, data: coord.tariff
     )
     monkeypatch.setattr(
         coordinator_module, "async_insert_cost_statistics", insert_costs
@@ -309,7 +310,7 @@ def _costed_coordinator(monkeypatch, wire_recorder, **kwargs):
     """A meter costed up to yesterday, every day at the prices of coord.tariff."""
     inserted: list[tuple[datetime.date, datetime.date]] = []
 
-    async def insert_costs(hass, meter_code, days, tariff, *args):
+    async def insert_costs(hass, meter_code, days, tariff, *args, **kwargs):
         inserted.append((days[0][0], days[-1][0]))
 
     coord, yesterday, fetches = _cost_coordinator(monkeypatch, insert_costs, **kwargs)

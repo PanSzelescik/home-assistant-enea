@@ -20,6 +20,7 @@ from .connector import (
     EneaApiClient,
     EneaApiError,
     EneaAuthError,
+    agreement_tariffs,
     get_active_meter,
     mask_ppe,
 )
@@ -56,6 +57,7 @@ from .costs import (
     async_get_cost_latest_date,
     async_insert_cost_statistics,
     find_tariff_group,
+    find_tariff_history,
     first_repriced_day,
     price_signatures,
 )
@@ -436,6 +438,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_inject_days(
         self,
         all_days: list[tuple[date, dict[str, Any]]],
+        rewrite: bool = False,
     ) -> None:
         """Inject energy statistics and, if a matching tariff exists, cost statistics.
 
@@ -445,11 +448,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         Args:
             all_days: Chronologically sorted list of (date, data_dict) tuples.
+            rewrite: Whether the days may have been costed before in other
+                zones — see async_insert_cost_statistics.
         """
         if not all_days:
             return
         await async_insert_historical_statistics(self.hass, self._meter_code, all_days)
-        tariff = find_tariff_group(self.hass, self._tariff_name)
+        tariff = find_tariff_history(self.hass, self._tariff_name, self._dashboard_data)
         if tariff is not None:
             await async_insert_cost_statistics(
                 self.hass,
@@ -459,6 +464,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._fetch_consumption,
                 self._fetch_generation,
                 self._returned_cost_ratio,
+                rewrite=rewrite,
             )
             await self._async_save_cost_prices(tariff, all_days[0][0], all_days[-1][0])
 
@@ -528,6 +534,17 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "balanced_data": self._uses_balanced_data(),
             "net_metering_ratio": self._net_metering,
             "tariff": self._tariff_name,
+            # Which group the costs of each agreement's days use, and whether
+            # enea_prices has an entry to price them with.
+            "tariff_groups": [
+                {
+                    "from": iso(start),
+                    "until": iso(end),
+                    "group": group,
+                    "priced": find_tariff_group(self.hass, group) is not None,
+                }
+                for start, end, group in agreement_tariffs(self._dashboard_data)
+            ],
             "assembly_datetime": iso(self._assembly_datetime),
             "statistics_until": iso(self.statistics_until),
             "statistics_last_run": iso(self._statistics_last_run),
@@ -578,7 +595,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._backfill_task is not None and not self._backfill_task.done():
             # Initial backfill still running; it injects costs (energy + cost) itself.
             return
-        tariff = find_tariff_group(self.hass, self._tariff_name)
+        tariff = find_tariff_history(self.hass, self._tariff_name, self._dashboard_data)
         if tariff is None:
             return
 
@@ -638,7 +655,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         The prices enea_prices hands out can change for days costed long ago: a
         contract entered with a start in the past, a renewed offer dated back, a
-        corrected tariff table.  The catch-up only ever looks past the newest
+        corrected tariff table, an earlier tariff group's entry added (or the
+        agreements first taken into account).  The catch-up only ever looks past the newest
         cost, so those days would keep the old prices for good.
 
         Every costed day's prices are remembered as a fingerprint (see
@@ -696,6 +714,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._fetch_consumption,
                 self._fetch_generation,
                 self._returned_cost_ratio,
+                rewrite=True,
             )
             # The catch-up that follows counts on from the newest cost total,
             # which the rewrite above may have moved, so it has to be committed
@@ -1070,13 +1089,17 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         same range later always re-fetches from the API and overwrites any
         zero-filled day if real data has since appeared.
 
+        Costs of the range are written anew, taking an hour's old cost out of a
+        zone it no longer belongs to, so this also corrects costs computed
+        before the price fingerprints existed.
+
         Returns the number of days for which data was found and injected.
         """
         all_days = await self._fetch_days_forward(
             start_date, end_date, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
         )
         if all_days:
-            await self._async_inject_days(all_days)
+            await self._async_inject_days(all_days, rewrite=True)
             self.async_update_listeners()
             _LOGGER.info(
                 "Backfill injected %d day(s) for meter %s (%s – %s)",

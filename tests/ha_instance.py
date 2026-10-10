@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import importlib
+import os
 import sys
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
@@ -53,9 +55,13 @@ class StatisticsDatabase:
         self.metadata: dict[str, dict[str, Any]] = {}
         self.rows: dict[str, dict[float, dict[str, Any]]] = defaultdict(dict)
 
-    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Point every module of the integration that reaches the recorder at this."""
-        for module in (billing, coordinator, costs, installation, statistics):
+    def install(self, monkeypatch: pytest.MonkeyPatch, *modules: Any) -> None:
+        """Point every module of the integration that reaches the recorder at this.
+
+        modules adds others, such as the real enea_prices' statistics module,
+        which imports its statistics (async_import_statistics) the same way.
+        """
+        for module in (billing, coordinator, costs, installation, statistics, *modules):
             monkeypatch.setattr(module, "get_instance", lambda hass: self, raising=False)
             monkeypatch.setattr(module, "get_last_statistics", self.last, raising=False)
             monkeypatch.setattr(module, "statistics_during_period", self.during, raising=False)
@@ -63,6 +69,7 @@ class StatisticsDatabase:
             monkeypatch.setattr(
                 module, "async_add_external_statistics", self.add_external, raising=False
             )
+            monkeypatch.setattr(module, "async_import_statistics", self.add_external, raising=False)
 
     async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
         """Run a recorder query at once instead of in the recorder's thread."""
@@ -462,5 +469,43 @@ def enea_prices_installed(monkeypatch: pytest.MonkeyPatch):
     """
     monkeypatch.syspath_prepend(str(FAKE_INTEGRATIONS))
     yield
+    for name in [name for name in sys.modules if name.startswith("custom_components.enea_prices")]:
+        del sys.modules[name]
+
+
+def find_enea_prices_repository() -> Path | None:
+    """Return a checkout of home-assistant-enea-prices, None when there is none.
+
+    ENEA_PRICES_PATH names it (CI checks it out there); otherwise a checkout
+    next to this repository is used.
+    """
+    configured = os.environ.get("ENEA_PRICES_PATH")
+    candidate = (
+        Path(configured) if configured
+        else Path(__file__).resolve().parents[2] / "home-assistant-enea-prices"
+    )
+    if (candidate / "custom_components" / "enea_prices" / "manifest.json").is_file():
+        return candidate
+    return None
+
+
+@pytest.fixture
+def real_enea_prices(monkeypatch: pytest.MonkeyPatch, database: StatisticsDatabase):
+    """Make the real enea_prices a custom integration Home Assistant can find.
+
+    Its price statistics go to the same in-memory database.  Skipped when no
+    checkout is found, failed when ENEA_PRICES_PATH names one that is not
+    there — CI sets it, so the contract is never skipped there.
+    """
+    repository = find_enea_prices_repository()
+    if repository is None:
+        if os.environ.get("ENEA_PRICES_PATH"):
+            pytest.fail(f"ENEA_PRICES_PATH={os.environ['ENEA_PRICES_PATH']} has no enea_prices")
+        pytest.skip("enea_prices not found: set ENEA_PRICES_PATH or check it out next to this repository")
+    pytest.importorskip("holidays")
+    monkeypatch.syspath_prepend(str(repository))
+    package = importlib.import_module("custom_components.enea_prices")
+    database.install(monkeypatch, importlib.import_module("custom_components.enea_prices.statistics"))
+    yield package
     for name in [name for name in sys.modules if name.startswith("custom_components.enea_prices")]:
         del sys.modules[name]

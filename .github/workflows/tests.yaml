@@ -10,6 +10,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The real enea_prices, for the contract tests (tests/test_enea_prices_contract.py).
+      - uses: actions/checkout@v7
+        with:
+          repository: PanSzelescik/home-assistant-enea-prices
+          path: enea-prices
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -17,6 +23,8 @@ jobs:
 
       - name: Run pytest with coverage
         id: tests
+        env:
+          ENEA_PRICES_PATH: ${{ github.workspace }}/enea-prices
         run: uv run --locked --group dev coverage run -m pytest -q
 
       - name: Generate coverage reports

@@ -13,6 +13,7 @@ from custom_components.enea import coordinator as coordinator_module
 from custom_components.enea.connector import EneaApiClient
 from custom_components.enea.const import (
     CONF_BALANCED_HISTORY,
+    CONF_IMPORTED_STATISTICS,
     DataSource,
     MeasurementType,
     Resolution,
@@ -153,7 +154,7 @@ def _record_fetches(coord: EneaUpdateCoordinator) -> dict[str, list[Any]]:
         calls["forward"].append((start, end))
         return []
 
-    async def backward(end):
+    async def backward(end, keys=None):
         calls["backward"].append(end)
         return [(end, {})]
 
@@ -204,7 +205,9 @@ async def test_a_prosumers_old_history_is_reimported_once(
 async def test_a_consumer_is_not_reimported(monkeypatch: pytest.MonkeyPatch) -> None:
     """A meter without balanced data keeps its history and its entry untouched."""
     _wire_statistics(monkeypatch, {"Energia pobrana": _days_ago(3)})
-    coord = _coordinator(prosumer=False)
+    # Energy returned was imported too, and the portal had nothing for it.
+    imported = {CONF_IMPORTED_STATISTICS: ["energy_consumed", "energy_returned"]}
+    coord = _coordinator(prosumer=False, entry_data=imported)
     calls = _record_fetches(coord)
 
     await coord._async_fetch_and_inject_stats()

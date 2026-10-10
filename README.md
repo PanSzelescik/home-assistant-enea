@@ -37,6 +37,8 @@ Integracja jest dostępna w domyślnym katalogu HACS — nie trzeba dodawać wł
 4. Ustaw interwał odświeżania i wybierz, które typy statystyk pobierać (domyślnie: energia pobrana i oddana; moc domyślnie wyłączona)
 5. Gotowe! Historia energii pobiera się automatycznie w tle — sensory są dostępne od razu
 
+Typ statystyk włączony później w opcjach integracji (np. moc) też dostaje swoją historię — integracja pobiera ją jednorazowo w tle, bez ponownego pobierania pozostałych.
+
 ## Statystyki historyczne godzinowe
 
 Po dodaniu integracji automatycznie pobierane są historyczne dane energii i mocy z granularnością **godzinową**. Dane są wstrzykiwane jako **statystyki zewnętrzne** Home Assistant, co pozwala wyświetlić pełną historię w panelu Energia z prawidłowymi timestampami.

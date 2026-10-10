@@ -79,3 +79,41 @@ async def test_disabling_generation_drops_its_sensors_and_requests(hass, portal)
     assert (returned.state, returned.attributes.get("restored")) == ("unavailable", True)
     assert _state(hass, "consumption_total") is not None
     assert all(r[4] != 5 for r in portal.requests if r[0] == "range")
+
+
+async def test_enabling_power_later_imports_its_history_alone(hass, portal, database):
+    """Power turned on after the energy history was imported gets its own history, once.
+
+    Only power is fetched; the energy already stored is not downloaded again.
+    """
+    entry = await _set_up(hass)
+    assert entry.data["imported_statistics"] == ["energy_consumed", "energy_returned"]
+    portal.requests.clear()
+
+    await _change_options(hass, entry, fetch_power_consumption=True)
+
+    assert {r[4] for r in portal.requests if r[0] == "range"} == {4}
+    assert len(database.series(f"enea:{FAKE_PPE}_moc_pobrana")) == 7 * 24 - 1
+    assert entry.data["imported_statistics"] == [
+        "energy_consumed", "energy_returned", "power_consumed",
+    ]
+
+    portal.requests.clear()
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert [r for r in portal.requests if r[0] == "range"] == []  # everything is up to date
+
+
+async def test_measurement_without_data_is_not_imported_again(hass, portal, database):
+    """A measurement the portal has nothing for is tried once, not on every refresh."""
+    entry = await _set_up(hass)
+    portal.ranges[9] = []  # no power returned at all
+    await _change_options(hass, entry, fetch_power_generation=True)
+    assert "power_returned" in entry.data["imported_statistics"]
+    assert not database.series(f"enea:{FAKE_PPE}_moc_oddana")
+    portal.requests.clear()
+
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert [r for r in portal.requests if r[0] == "range" and r[4] == 9] == []

@@ -5,6 +5,7 @@ import asyncio
 import logging
 from dataclasses import replace
 from datetime import date, datetime, timedelta
+from collections.abc import Collection
 from typing import Any
 
 from homeassistant.helpers.recorder import get_instance
@@ -32,6 +33,7 @@ from .const import (
     BILL_KEY_CURRENT,
     BILL_KEY_PREVIOUS,
     CONF_BALANCED_HISTORY,
+    CONF_IMPORTED_STATISTICS,
     COST_PRICES_STORAGE_KEY,
     COST_PRICES_STORAGE_VERSION,
     DOMAIN,
@@ -314,17 +316,25 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> date | None:
         """Return the local date of the newest hour across the active statistic series.
 
+        keys narrows the series looked at; by default all active ones.  None
+        when no series has any statistics yet.
+        """
+        latest = await self._async_latest_statistics_dates(keys)
+        return max((day for day in latest.values() if day is not None), default=None)
+
+    async def _async_latest_statistics_dates(
+        self, keys: list[str] | None = None
+    ) -> dict[str, date | None]:
+        """Return the local date of the newest hour of each statistic series, by key.
+
         keys narrows the series looked at; by default all active ones.  All
         series are queried in parallel to avoid sequential executor
-        round-trips.  None when no series has any statistics yet.
+        round-trips.  A series with no statistics at all maps to None.
         """
         if keys is None:
             keys = [key for key, _ in self._get_measurement_types()]
-        stat_ids = [
-            get_statistic_id(self._meter_code, STAT_NAME_BY_KEY[key])
-            for key in keys
-            if STAT_NAME_BY_KEY.get(key)
-        ]
+        keys = [key for key in keys if STAT_NAME_BY_KEY.get(key)]
+        stat_ids = [get_statistic_id(self._meter_code, STAT_NAME_BY_KEY[key]) for key in keys]
         last_stats_list = await asyncio.gather(*(
             get_instance(self.hass).async_add_executor_job(
                 get_last_statistics, self.hass, 1, sid, True, {"sum", "mean"}
@@ -332,17 +342,15 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for sid in stat_ids
         ))
 
-        latest_date: date | None = None
-        for sid, last in zip(stat_ids, last_stats_list):
-            if last.get(sid) and (ts := last[sid][0].get("start")) is not None:
-                d = (
-                    dt_util.utc_from_timestamp(ts)
-                    .astimezone(dt_util.DEFAULT_TIME_ZONE)
-                    .date()
-                )
-                if latest_date is None or d > latest_date:
-                    latest_date = d
-        return latest_date
+        latest: dict[str, date | None] = {}
+        for key, sid, last in zip(keys, stat_ids, last_stats_list):
+            ts = last[sid][0].get("start") if last.get(sid) else None
+            latest[key] = (
+                dt_util.utc_from_timestamp(ts).astimezone(dt_util.DEFAULT_TIME_ZONE).date()
+                if ts is not None
+                else None
+            )
+        return latest
 
     async def _async_fetch_and_inject_stats(self) -> None:
         """Determine which days are missing and inject historical statistics."""
@@ -356,11 +364,18 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         today = dt_util.now().date()
         yesterday = today - timedelta(days=1)
 
+        latest_by_key = await self._async_latest_statistics_dates()
         # Balanced data may be published later than the data before balancing,
         # which a prosumer's power series still comes from — the newest power
         # hour must not pass for the energy being up to date.
-        latest_date = await self._async_latest_statistics_date(
-            [key for key, mtype in keys_and_types if self._data_source(mtype)] or None
+        balanced = {key for key, mtype in keys_and_types if self._data_source(mtype)}
+        latest_date = max(
+            (
+                day
+                for key, day in latest_by_key.items()
+                if day is not None and (not balanced or key in balanced)
+            ),
+            default=None,
         )
 
         reimport = (
@@ -382,6 +397,30 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
             self._backfill_task = self.hass.async_create_task(
                 self._async_do_initial_backfill(yesterday),
+                name=f"enea_backfill_{self._meter_code}",
+            )
+            return
+
+        # A measurement enabled in the options after the history was imported has
+        # no statistics at all: its history is imported in the background like the
+        # initial one, for it alone.  The keys already imported are kept in the
+        # config entry, so one the portal has nothing for is not tried again on
+        # every refresh.  Until the import is done refreshes skip the incremental
+        # update below — it would write the same series at the same time.
+        imported = set(
+            self.config_entry.data.get(CONF_IMPORTED_STATISTICS, ())
+            if self.config_entry is not None
+            else ()
+        )
+        missing = [key for key, day in latest_by_key.items() if day is None and key not in imported]
+        if missing:
+            _LOGGER.info(
+                "Importing the history of %s for meter %s",
+                ", ".join(missing),
+                mask_ppe(self._meter_code),
+            )
+            self._backfill_task = self.hass.async_create_task(
+                self._async_do_initial_backfill(yesterday, missing),
                 name=f"enea_backfill_{self._meter_code}",
             )
             return
@@ -466,20 +505,24 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             await self._async_save_cost_prices(tariff, all_days[0][0], all_days[-1][0])
 
-    async def _async_do_initial_backfill(self, yesterday: date) -> None:
+    async def _async_do_initial_backfill(
+        self, yesterday: date, keys: list[str] | None = None
+    ) -> None:
         """Fetch all historical data and inject statistics.
 
         Runs as a background task (started from _async_fetch_and_inject_stats)
         so that the first coordinator refresh does not block while years of data
-        are being downloaded.
+        are being downloaded.  keys narrows it to some statistics — measurements
+        enabled after the history was imported; by default all active ones.
 
-        For a prosumer it records in the config entry that the history now comes
-        from balanced data, so the re-import runs only once.  Options changes
-        reload the entry through the options flow, not an update listener, so
-        this write does not reload it.
+        It records in the config entry which statistics have had their history
+        imported, and for a prosumer that the history now comes from balanced
+        data, so neither import runs again.  Options changes reload the entry
+        through the options flow, not an update listener, so this write does not
+        reload it.
         """
         try:
-            all_days = await self._fetch_days_backward(yesterday)
+            all_days = await self._fetch_days_backward(yesterday, keys)
             if all_days:
                 await self._async_inject_days(all_days)
                 self.async_update_listeners()
@@ -488,11 +531,15 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     mask_ppe(self._meter_code),
                     len(all_days),
                 )
-            if self._uses_balanced_data() and self.config_entry is not None:
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry,
-                    data={**self.config_entry.data, CONF_BALANCED_HISTORY: True},
+            if self.config_entry is not None:
+                done = keys if keys is not None else [k for k, _ in self._get_measurement_types()]
+                data = dict(self.config_entry.data)
+                data[CONF_IMPORTED_STATISTICS] = sorted(
+                    set(data.get(CONF_IMPORTED_STATISTICS, ())) | set(done)
                 )
+                if self._uses_balanced_data():
+                    data[CONF_BALANCED_HISTORY] = True
+                self.hass.config_entries.async_update_entry(self.config_entry, data=data)
         except asyncio.CancelledError:
             _LOGGER.debug("Initial backfill cancelled for meter %s", mask_ppe(self._meter_code))
             raise
@@ -749,6 +796,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         zero_fill_stale: bool = False,
         grace_days: int = 0,
         skip_leading_gaps: bool = False,
+        keys: Collection[str] | None = None,
     ) -> list[tuple[date, dict[str, Any]]]:
         """Fetch all measurement types for a date range in parallel.
 
@@ -767,12 +815,17 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             grace_days: How many days a day may stay missing before it is
                 considered permanently absent (only used when zero_fill_stale).
             skip_leading_gaps: Whether the range may start before the history.
+            keys: The statistic keys to fetch; by default every active one.
 
         Returns:
             Chronologically sorted list of (date, day_data) tuples where day_data
             maps stat key → single-day API response dict.
         """
-        keys_and_types = self._get_measurement_types()
+        keys_and_types = [
+            (key, mtype)
+            for key, mtype in self._get_measurement_types()
+            if keys is None or key in keys
+        ]
         if not keys_and_types:
             return []
 
@@ -852,6 +905,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         zero_fill_stale: bool = False,
         grace_days: int = 0,
         skip_leading_gaps: bool = False,
+        keys: Collection[str] | None = None,
     ) -> list[tuple[date, dict[str, Any]]]:
         """Fetch days chronologically from start_date to end_date (inclusive).
 
@@ -863,7 +917,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         day itself, early-hour slots (before the assembly hour) are stripped by
         strip_pre_assembly_slots (parsing.py) so only new-meter data is imported.
 
-        zero_fill_stale/grace_days/skip_leading_gaps are forwarded to
+        zero_fill_stale/grace_days/skip_leading_gaps/keys are forwarded to
         _fetch_range — see there.  Leading gaps are skipped only until a chunk
         brings the first day with data.
         """
@@ -880,7 +934,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 end_date,
             )
             chunk_days = await self._fetch_range(
-                chunk_start, chunk_end, zero_fill_stale, grace_days, skip_leading_gaps
+                chunk_start, chunk_end, zero_fill_stale, grace_days, skip_leading_gaps, keys=keys
             )
             if chunk_days:
                 skip_leading_gaps = False
@@ -890,7 +944,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return all_days
 
     async def _fetch_days_backward(
-        self, end_date: date
+        self, end_date: date, keys: Collection[str] | None = None
     ) -> list[tuple[date, dict[str, Any]]]:
         """Fetch days backward from end_date; stop when data runs out.
 
@@ -900,6 +954,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         RANGE_FETCH_CHUNK_DAYS-sized chunks going backward and stops after
         BACKFILL_MAX_CONSECUTIVE_EMPTY consecutive days with no data at the
         start (oldest end) of a chunk.
+
+        keys narrows the fetch to some statistics; by default all active ones.
 
         Returns days in chronological (ascending) order.
         """
@@ -914,6 +970,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 zero_fill_stale=True,
                 grace_days=MISSING_DAY_GRACE_DAYS,
                 skip_leading_gaps=True,
+                keys=keys,
             )
 
         # Collect chunks newest-first, flatten in reverse at the end — avoids
@@ -922,7 +979,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         chunk_end = end_date
         while True:
             chunk_start = chunk_end - timedelta(days=RANGE_FETCH_CHUNK_DAYS - 1)
-            chunk_days = await self._fetch_range(chunk_start, chunk_end)
+            chunk_days = await self._fetch_range(chunk_start, chunk_end, keys=keys)
 
             if chunk_days:
                 chunks.append(chunk_days)

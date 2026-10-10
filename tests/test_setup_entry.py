@@ -10,12 +10,18 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
+import asyncio
+import contextlib
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import pytest
 from homeassistant.config_entries import ConfigEntryState, SOURCE_REAUTH
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
+import custom_components.enea as integration
 from custom_components.enea import diagnostics
 from custom_components.enea.connector import EneaApiError, EneaAuthError
 from custom_components.enea.parsing import slot_start_dt
@@ -45,6 +51,15 @@ async def _set_up(hass, **options) -> Any:
     entry = make_entry(**options)
     await hass.config_entries.async_add(entry)
     await hass.async_block_till_done()
+    return entry
+
+
+async def _set_up_without_waiting(hass, **options) -> Any:
+    """Add the meter's entry; return as soon as it is set up, its import still running."""
+    entry = make_entry(**options)
+    await hass.config_entries.async_add(entry)
+    for _ in range(20):  # let the import reach its first, held, request
+        await asyncio.sleep(0)
     return entry
 
 
@@ -287,3 +302,122 @@ async def test_diagnostics_report_of_a_loaded_entry(hass):
     assert overview["enea:…1234_energia_pobrana"]["last_hour"].startswith(f"{YESTERDAY}T23:00")
     assert report["entities"]["tariff"]["state"] == "G12"
     assert report["entities"]["address"]["state"] == "**REDACTED**"
+
+
+async def test_meters_of_one_account_share_the_client(hass, portal, monkeypatch):
+    """A second meter reuses the account's client; the actions stay until the last unload."""
+    factory = Mock(return_value=portal)
+    monkeypatch.setattr(integration, "EneaApiClient", factory)
+    first = await _set_up(hass)
+    second = make_entry(meter_name="590310600000005678")
+    await hass.config_entries.async_add(second)
+    await hass.async_block_till_done()
+
+    assert second.state is ConfigEntryState.LOADED
+    assert factory.call_count == 1
+    assert first.runtime_data.coordinator.client is second.runtime_data.coordinator.client
+
+    assert await hass.config_entries.async_unload(first.entry_id)
+    assert hass.services.has_service("enea", "refresh")
+    assert "test@example.invalid" in hass.data["enea"]
+
+    assert await hass.config_entries.async_unload(second.entry_id)
+    assert not hass.services.has_service("enea", "refresh")
+    assert hass.data["enea"] == {}
+
+
+async def test_closed_session_gets_a_new_client(hass, portal, monkeypatch):
+    """After the account's session was closed the next setup builds a new client."""
+    factory = Mock(return_value=portal)
+    monkeypatch.setattr(integration, "EneaApiClient", factory)
+    entry = await _set_up(hass)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    hass.data["enea"]["test@example.invalid"] = SimpleNamespace(session_closed=True)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert factory.call_count == 2
+    assert hass.data["enea"]["test@example.invalid"] is portal
+
+
+async def test_failed_import_keeps_the_sensors_and_is_reported(hass, portal):
+    """A portal refusing the history leaves the dashboard working and says why."""
+    portal.fail_ranges_with = EneaApiError("Unexpected response from range endpoint: 503")
+
+    entry = await _set_up(hass)
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert _state(hass, "tariff") == "G12"
+    backfill = entry.runtime_data.coordinator.diagnostics_state()["initial_backfill"]
+    assert backfill == "failed: Unexpected response from range endpoint: 503"
+
+
+async def test_failed_statistics_step_keeps_the_refresh(hass, portal, clock):
+    """A refresh whose statistics fail still updates the dashboard and records the error."""
+    entry = await _set_up(hass)
+    coordinator = entry.runtime_data.coordinator
+    clock.now = NOW + timedelta(days=1)
+    portal.fail_ranges_with = EneaApiError("offline")
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert coordinator.last_update_success
+    assert coordinator.diagnostics_state()["statistics_error"] == "EneaApiError: offline"
+    assert _state(hass, "tariff") == "G12"
+
+
+async def test_refresh_during_the_import_leaves_the_days_to_it(hass, portal):
+    """While the background import runs, a refresh fetches no days of its own."""
+    portal.gate = asyncio.Event()
+    entry = await _set_up_without_waiting(hass)
+    coordinator = entry.runtime_data.coordinator
+    assert coordinator.diagnostics_state()["initial_backfill"] == "running"
+    requests = len(_ranges(portal))
+
+    await coordinator.async_refresh()
+
+    assert len(_ranges(portal)) == requests
+    portal.gate.set()
+    await hass.async_block_till_done()
+    assert coordinator.diagnostics_state()["initial_backfill"] == "done"
+
+
+async def test_unload_cancels_the_import(hass, portal):
+    """Unloading the entry while the history is being imported stops the import."""
+    portal.gate = asyncio.Event()
+    entry = await _set_up_without_waiting(hass)
+    coordinator = entry.runtime_data.coordinator
+
+    task = coordinator._backfill_task
+    assert task is not None
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert coordinator.diagnostics_state()["initial_backfill"] == "cancelled"
+
+
+async def test_power_only_meter_stores_power_and_no_costs(hass, database):
+    """With only power enabled the hours are stored as means and no energy is fetched."""
+    entry = await _set_up(
+        hass, fetch_consumption=False, fetch_generation=False, fetch_power_consumption=True
+    )
+
+    power = database.series(f"enea:{FAKE_PPE}_moc_pobrana")
+    assert len(power) == 7 * 24 - 1  # the one week the fixtures have power for
+    assert all("mean" in row and "sum" not in row for row in power)
+    assert not database.series(CONSUMED)
+    coordinator = entry.runtime_data.coordinator
+    await coordinator.async_refresh()
+    assert coordinator.statistics_until == date(2026, 4, 2)
+
+
+async def test_meter_with_nothing_to_fetch_asks_for_no_history(hass, portal):
+    """With every measurement turned off only the dashboard is read."""
+    await _set_up(hass, fetch_consumption=False, fetch_generation=False)
+
+    assert _ranges(portal) == []
+    assert _state(hass, "statistics_until") == "unknown"

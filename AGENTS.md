@@ -478,6 +478,8 @@ Przy zmianie struktury danych w `ConfigEntry` (klucze w `entry.data`):
 
 `make_prices_entry` + `register_prices_entry` udają wpis enea_prices dla G12 (`FakeG12Tariff`: noc 22–6 i 13–15 jak w Portalu Odbiorcy Enea). Fixture'y `clock`, `portal`, `database`, `hass` importuje się z `ha_instance` do modułu testów.
 
+**Klient HTTP** (`tests/test_portal_http.py`): lokalny serwer aiohttp z tymi samymi ścieżkami co Portal Odbiorcy Enea, logowaniem i sesją w ciasteczku `PER_JSESSIONID` (wygasa na żądanie), stroną przerwy technicznej (HTML z kodem 200) i odpowiedziami z fixture'ów. Adresy `URL_*` w `connector.py` są na czas testu przestawiane na serwer.
+
 Nowy zrzut: zapisz odpowiedź w `data/`, uruchom `uv run python scripts/anonymize_fixtures.py` i dopisz test w `tests/test_real_data.py`. Brakuje doby 25 h (zmiana czasu na zimowy) — do dopisania po 2026-10-25.
 
 ## CI/CD

@@ -160,3 +160,18 @@ async def test_diagnostics_show_the_price_table_reach(hass):
 
     assert report["enea_prices"]["covered_until"] == "2026-12-31"
     assert report["installation"]["enea_prices"]["phases"] == 3
+
+
+async def test_removing_the_meter_drops_its_repairs_and_stored_prices(hass, tmp_path):
+    """Deleting the entry deletes what it left in Repairs and in .storage."""
+    entry = await _set_up(hass, phases=1)
+    stored_prices = tmp_path / ".storage" / f"enea.cost_prices.{entry.entry_id}"
+    await hass.async_block_till_done()
+    assert stored_prices.exists()
+    assert ir.async_get(hass).async_get_issue("enea", f"phases_mismatch_{entry.entry_id}")
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert ir.async_get(hass).async_get_issue("enea", f"phases_mismatch_{entry.entry_id}") is None
+    assert not stored_prices.exists()

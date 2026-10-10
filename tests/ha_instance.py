@@ -10,6 +10,7 @@ Odbiorcy Enea is FakePortal, which answers from tests/fixtures/portal.
 """
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from types import MappingProxyType, SimpleNamespace
@@ -158,6 +159,11 @@ class FakePortal:
         }
         self.requests: list[tuple[Any, ...]] = []
         self.fail_with: Exception | None = None
+        # Only the range requests fail with this; the dashboard still answers.
+        self.fail_ranges_with: Exception | None = None
+        # Range requests wait for this event when it is set, to catch a refresh
+        # or an unload while the background import is under way.
+        self.gate: asyncio.Event | None = None
 
     def _check(self, *request: Any) -> None:
         """Record a request and raise the failure a test asked for, if any."""
@@ -193,6 +199,10 @@ class FakePortal:
     ) -> dict[str, Any]:
         """Return the saved hours of first..last for one measurement type."""
         self._check("range", meter_id, first, last, int(mtype), data_source)
+        if self.gate is not None:
+            await self.gate.wait()
+        if self.fail_ranges_with is not None:
+            raise self.fail_ranges_with
         for response in self.ranges.get(int(mtype), []):
             hours = [
                 entry for entry in response["valuesToTable"]
@@ -313,14 +323,18 @@ async def async_start_hass(config_dir: str) -> HomeAssistant:
     return hass
 
 
-def make_entry(**options: Any) -> config_entries.ConfigEntry:
-    """Return a config entry for the fixture account's meter."""
+def make_entry(meter_name: str = FAKE_PPE, **options: Any) -> config_entries.ConfigEntry:
+    """Return a config entry for a meter of the fixture account.
+
+    Every meter answers with the fixture meter's data; meter_name tells the
+    entries of a second meter on the same account apart.
+    """
     return config_entries.ConfigEntry(
         data={
             "username": "test@example.invalid",
             "password": "test-password",
             "meter_id": FAKE_METER_ID,
-            "meter_name": FAKE_PPE,
+            "meter_name": meter_name,
             "tariff": "G12",
             "balanced_history": True,
         },
@@ -337,8 +351,8 @@ def make_entry(**options: Any) -> config_entries.ConfigEntry:
         },
         source="user",
         subentries_data=None,
-        title=f"Enea {FAKE_PPE}",
-        unique_id=FAKE_PPE,
+        title=f"Enea {meter_name}",
+        unique_id=meter_name,
         version=1,
     )
 

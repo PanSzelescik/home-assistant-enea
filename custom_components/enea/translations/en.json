@@ -161,6 +161,9 @@
       "meter_model": {
         "name": "Meter Model"
       },
+      "meter_assembly": {
+        "name": "Meter Installation Date"
+      },
       "phases": {
         "name": "Installation Type",
         "state": {

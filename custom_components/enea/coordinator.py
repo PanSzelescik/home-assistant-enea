@@ -63,12 +63,8 @@ from .costs import (
     first_repriced_day,
     price_signatures,
 )
-from .statistics import (
-    async_insert_historical_statistics,
-    get_statistic_id,
-    has_data,
-    slot_start_dt,
-)
+from .parsing import assemble_days
+from .statistics import async_insert_historical_statistics, get_statistic_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -746,93 +742,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._cost_prices = prices
         await self._cost_prices_store.async_save({"days": prices})
 
-    def _strip_pre_assembly_slots(
-        self, day: date, day_data: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Remove hourly slots that predate the meter assembly on the assembly day.
-
-        Keeps slots whose hour starts at or after the assembly hour, so the slot
-        containing the assembly moment is included (it carries new-meter readings
-        from the assembly minute onwards).  Compares each slot's actual start time
-        (slot_start_dt, derived from integrationEnd) rather than timeId, so it
-        stays correct even if the meter was assembled on a DST transition day.
-        Example: assembly at 12:13 → keep slots starting 12:00 onwards.
-        """
-        if self._assembly_datetime is None or day != self._assembly_datetime.date():
-            return day_data
-        cutoff = self._assembly_datetime.replace(minute=0, second=0, microsecond=0)
-        result: dict[str, Any] = {}
-        for key, api_response in day_data.items():
-            filtered_values = [
-                entry for entry in api_response.get("values", [])
-                if slot_start_dt(entry) >= cutoff
-            ]
-            result[key] = {**api_response, "values": filtered_values}
-        return result
-
-    @staticmethod
-    def _split_range_response(
-        api_response: dict[str, Any],
-    ) -> dict[date, dict[str, Any]]:
-        """Split a flat range API response into per-day response dicts.
-
-        Groups the hourly slots by each slot's actual local date (derived from
-        ``integrationEnd``) rather than by fixed 24-slot blocks, so DST transition
-        days — which carry 23 or 25 slots, not 24 — are split correctly.  Each
-        per-day dict has the same {'values', 'zones'} shape as a single-day
-        response, so has_data, _collect_series and cost statistics need no changes.
-
-        For very large ranges the API may return the per-hour data in
-        'valuesToTable' instead of 'values', and can even leave a short partial
-        slice in 'values'; whichever holds more entries is used so a partial
-        'values' never shadows a complete 'valuesToTable'.
-
-        Args:
-            api_response: Raw API response from the range endpoint.
-
-        Returns:
-            Mapping of date → single-day response dict with 'values' and 'zones'.
-        """
-        values: list[dict[str, Any]] = api_response.get("values") or []
-        values_to_table: list[dict[str, Any]] = api_response.get("valuesToTable") or []
-        entries = values_to_table if len(values_to_table) > len(values) else values
-        zones = api_response.get("zones", [])
-
-        result: dict[date, dict[str, Any]] = {}
-        for entry in entries:
-            if entry.get("integrationEnd") is None:
-                continue
-            day = slot_start_dt(entry).date()
-            result.setdefault(day, {"values": [], "zones": zones})["values"].append(entry)
-        return result
-
-    @staticmethod
-    def _zero_fill_missing_day(day_data: dict[str, Any]) -> dict[str, Any]:
-        """Replace null slot values with 0.0 for a day confirmed permanently missing.
-
-        The Enea API still returns hourly slot entries for a missing day, just
-        with ``value: null`` for every item — this only rewrites those values,
-        it does not fabricate slots. Called once a day has been missing for
-        longer than MISSING_DAY_GRACE_DAYS, so it is injected as a legitimate
-        zero-consumption day instead of leaving a hole that resets the
-        cumulative sum of later statistics to 0 (see _inject_energy_series /
-        _inject_cost_series).
-        """
-        result: dict[str, Any] = {}
-        for key, api_response in day_data.items():
-            zeroed_values = [
-                {
-                    **entry,
-                    "items": [
-                        {**item, "value": item.get("value") or 0.0}
-                        for item in entry.get("items", [])
-                    ],
-                }
-                for entry in api_response.get("values", [])
-            ]
-            result[key] = {**api_response, "values": zeroed_values}
-        return result
-
     async def _fetch_range(
         self,
         start_date: date,
@@ -843,26 +752,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> list[tuple[date, dict[str, Any]]]:
         """Fetch all measurement types for a date range in parallel.
 
-        Issues one request per active measurement type simultaneously, splits
-        each flat response into per-day dicts, merges them, and applies
-        assembly-date slot stripping.
-
-        Days with no data (the Enea API returned only null values) are handled
-        depending on ``zero_fill_stale``:
-        - ``False`` (default): the day is dropped, as before. Used by the
-          backward historical-boundary scan in ``_fetch_days_backward``, which
-          relies on "no data" to detect where real history starts/ends.
-        - ``True``: a day still within ``grace_days`` of today is dropped (it
-          may simply not be published yet — Enea usually publishes a day's
-          data by ~11:00 the next day); an older day is treated as
-          permanently missing and injected with zeroed values instead of
-          being silently dropped, so it does not leave a hole that corrupts
-          the cumulative sum of later days (see MISSING_DAY_GRACE_DAYS).
-
-        With ``skip_leading_gaps`` the days before the first one with data are
-        dropped whatever ``zero_fill_stale`` says: there the meter's history in
-        the Portal Odbiorcy Enea has not begun yet (a prosumer's balanced data
-        starts long after the meter's assembly), so no day of it is missing.
+        Issues one request per active measurement type simultaneously and hands
+        the responses to assemble_days (parsing.py), which splits them into
+        days, merges the measurement types and decides what happens to days
+        without data and to hours before the meter's assembly — see there for
+        zero_fill_stale, grace_days and skip_leading_gaps.  A day still missing
+        within grace_days may simply not be published yet; the meter usually
+        sends the previous day between midnight and 06:00.
 
         Args:
             start_date: First date to fetch (inclusive); clamped to assembly date.
@@ -901,8 +797,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return_exceptions=True,
         )
 
-        # Split each measurement-type response into per-day dicts.
-        per_key_days: dict[str, dict[date, dict[str, Any]]] = {}
+        responses: dict[str, dict[str, Any]] = {}
         first_exc: BaseException | None = None
         for (key, mtype), result in zip(keys_and_types, results):
             if isinstance(result, BaseException):
@@ -916,42 +811,22 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if first_exc is None:
                     first_exc = result
             else:
-                per_key_days[key] = self._split_range_response(result)
+                responses[key] = result
 
-        if not per_key_days:
+        if not responses:
             # All measurement-type requests failed — propagate to the caller.
             if first_exc is not None:
                 raise first_exc
             raise EneaApiError("All range requests failed")
 
-        # Merge: for each date present in any key, build unified day_data dict.
-        all_dates: set[date] = set()
-        for days_map in per_key_days.values():
-            all_dates.update(days_map.keys())
-
-        today = dt_util.now().date()
-        all_days: list[tuple[date, dict[str, Any]]] = []
-        history_started = not skip_leading_gaps
-        zero_filled: list[date] = []
-        for day in sorted(all_dates):
-            day_data: dict[str, Any] = {
-                key: days_map[day]
-                for key, days_map in per_key_days.items()
-                if day in days_map
-            }
-            if any(has_data(v) for v in day_data.values()):
-                history_started = True
-            else:
-                if (
-                    not history_started
-                    or not zero_fill_stale
-                    or (today - day).days < grace_days
-                ):
-                    continue
-                day_data = self._zero_fill_missing_day(day_data)
-                zero_filled.append(day)
-            day_data = self._strip_pre_assembly_slots(day, day_data)
-            all_days.append((day, day_data))
+        all_days, zero_filled = assemble_days(
+            responses,
+            today=dt_util.now().date(),
+            assembly=self._assembly_datetime,
+            zero_fill_stale=zero_fill_stale,
+            grace_days=grace_days,
+            skip_leading_gaps=skip_leading_gaps,
+        )
 
         if zero_filled:
             # One line per fetch: a portal outage or a long backfill would
@@ -986,7 +861,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         Skips days before the assembly date of the current meter.  On the assembly
         day itself, early-hour slots (before the assembly hour) are stripped by
-        _strip_pre_assembly_slots so only new-meter data is imported.
+        strip_pre_assembly_slots (parsing.py) so only new-meter data is imported.
 
         zero_fill_stale/grace_days/skip_leading_gaps are forwarded to
         _fetch_range — see there.  Leading gaps are skipped only until a chunk

@@ -20,7 +20,7 @@ import hashlib
 import logging
 import sys
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 
 from homeassistant.components.recorder.models import (
     StatisticMeanType,
@@ -44,12 +44,8 @@ from .const import (
     UNIT_COST,
     VAT_RATE,
 )
-from .statistics import (
-    get_statistic_id,
-    has_data,
-    slot_start_dt,
-    write_cumulative_series,
-)
+from .parsing import has_data, slot_start_dt
+from .statistics import get_statistic_id, write_cumulative_series
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -213,6 +209,67 @@ def find_tariff_history(
     return TariffHistory(current, spans)
 
 
+class CostSeries(NamedTuple):
+    """The cost of one direction's hours, as cost_series works it out."""
+
+    by_zone: dict[str, list[tuple[datetime, float]]]
+    """Zone → (hour, cost in PLN), oldest first; each hour is in exactly one zone."""
+    hours: list[datetime]
+    """Every hour with data, priced or not — what a rewrite has to cover."""
+    days_without_period: dict[str, set[date]]
+    """Tariff group → the days with data its tariff table gives no prices for."""
+
+
+def cost_series(
+    all_days: list[tuple[date, dict[str, Any]]],
+    key: str,
+    tariff: Any,
+    akcyza: float,
+    ratio: float = 1.0,
+) -> CostSeries:
+    """Price every hour of one direction's energy in the zone it falls in.
+
+    Each hour's total kWh (all zones the portal reports) is multiplied by the
+    brutto price of the zone the tariff schedule puts the hour in on its own
+    day, and by ratio — the share of a kWh's price a returned kWh is worth
+    under net metering.  An hour in a zone the period does not price is left
+    out; a day without a price period is left out whole and reported.
+
+    Args:
+        all_days: Chronologically sorted (date, day_data) tuples.
+        key: The statistic key of the direction (energy consumed or returned).
+        tariff: A TariffGroup or TariffHistory (duck-typed).
+        akcyza: The excise duty per kWh.
+        ratio: The share of the price each kWh is worth.
+    """
+    by_zone: dict[str, list[tuple[datetime, float]]] = {}
+    hours: list[datetime] = []
+    days_without_period: dict[str, set[date]] = {}
+
+    for day, data in all_days:
+        api = data.get(key)
+        if not api or not has_data(api):
+            continue
+
+        period = tariff.get_period_for_date(day)
+        if period is None:
+            days_without_period.setdefault(_group_for_date(tariff, day), set()).add(day)
+            hours.extend(slot_start_dt(entry) for entry in api.get("values", []))
+            continue
+
+        for entry in api.get("values", []):
+            dt = slot_start_dt(entry)
+            hours.append(dt)
+            zone = period.get_zone_at_hour(dt.hour, day=dt.date())
+            if zone not in period.zones:
+                continue
+            total_kwh = sum(item.get("value") or 0.0 for item in entry.get("items", []))
+            cost = total_kwh * _kwh_price(period.zones[zone], akcyza) * ratio
+            by_zone.setdefault(str(zone), []).append((dt, cost))
+
+    return CostSeries(by_zone, hours, days_without_period)
+
+
 async def async_insert_cost_statistics(
     hass: HomeAssistant,
     meter_code: str,
@@ -225,12 +282,10 @@ async def async_insert_cost_statistics(
 ) -> None:
     """Inject hourly cumulative cost statistics (PLN) per zone.
 
-    For each hour in all_days, determines the active tariff zone using the
-    tariff schedule, multiplies the total kWh by the zone's brutto price
-    (computed inline as `(energy + AKCYZA + total_distribution) × 1.23`)
-    and accumulates the result into per-zone cost series.  Each series is then
-    injected as an external statistic ("enea:..._koszt_...") mirroring the
-    energy statistics.
+    cost_series prices each hour of all_days in its tariff zone at the zone's
+    brutto price (`(energy + AKCYZA + total_distribution) × 1.23`); each zone's
+    series is then injected as an external statistic ("enea:..._koszt_...")
+    mirroring the energy statistics.
 
     Args:
         hass: The Home Assistant instance.
@@ -266,38 +321,11 @@ async def async_insert_cost_statistics(
         if key == STAT_KEY_ENERGY_RETURNED and not fetch_generation:
             continue
 
-        # {zone_str: [(dt, cost_pln)]} — each hour belongs to exactly one zone.
-        series_by_zone: dict[str, list[tuple[datetime, float]]] = {}
-        # Every hour with data, priced or not — what a rewrite has to cover.
-        hours: list[datetime] = []
         # Under net metering a returned kWh takes back only part of a consumed one.
         ratio = returned_ratio if key == STAT_KEY_ENERGY_RETURNED else 1.0
-
-        for day, data in all_days:
-            api = data.get(key)
-            if not api or not has_data(api):
-                continue
-
-            period = tariff.get_period_for_date(day)
-            if period is None:
-                days_without_period.setdefault(_group_for_date(tariff, day), set()).add(day)
-                hours.extend(slot_start_dt(entry) for entry in api.get("values", []))
-                continue
-
-            for entry in api.get("values", []):
-                dt = slot_start_dt(entry)
-                hours.append(dt)
-                zone = period.get_zone_at_hour(dt.hour, day=dt.date())
-                if zone not in period.zones:
-                    continue
-                zone_str = str(zone)
-                total_kwh = sum(
-                    item.get("value") or 0.0
-                    for item in entry.get("items", [])
-                )
-                pricing = period.zones[zone]
-                cost = total_kwh * _kwh_price(pricing, akcyza) * ratio
-                series_by_zone.setdefault(zone_str, []).append((dt, cost))
+        series_by_zone, hours, unpriced = cost_series(all_days, key, tariff, akcyza, ratio)
+        for group, days in unpriced.items():
+            days_without_period.setdefault(group, set()).update(days)
 
         if rewrite and hours:
             await _clear_moved_hours(hass, meter_code, direction, tariff, hours, series_by_zone)

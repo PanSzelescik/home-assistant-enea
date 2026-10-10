@@ -164,6 +164,9 @@ class FakePortal:
         # Range requests wait for this event when it is set, to catch a refresh
         # or an unload while the background import is under way.
         self.gate: asyncio.Event | None = None
+        # Report the meter as a prosumer's (type 2), as the portal does after a
+        # PV installation is connected.
+        self.prosumer = False
 
     def _check(self, *request: Any) -> None:
         """Record a request and raise the failure a test asked for, if any."""
@@ -181,12 +184,13 @@ class FakePortal:
     async def get_meters(self) -> list[dict[str, Any]]:
         """Return /user/ppes."""
         self._check("ppes")
-        return load_portal_fixture("user_ppes")
+        return [{**ppe, "type": 2 if self.prosumer else ppe["type"]} for ppe in load_portal_fixture("user_ppes")]
 
     async def get_ppe_dashboard(self, meter_id: int) -> dict[str, Any]:
         """Return /consumptionDashboard/ppe/{id}."""
         self._check("dashboard", meter_id)
-        return load_portal_fixture("dashboard")
+        dashboard = load_portal_fixture("dashboard")
+        return {**dashboard, "type": 2} if self.prosumer else dashboard
 
     async def get_consumption_data_range(
         self,
@@ -319,7 +323,9 @@ async def async_start_hass(config_dir: str) -> HomeAssistant:
     hass.config_entries = config_entries.ConfigEntries(hass, {})
     assert await bootstrap.async_load_base_functionality(hass)
     hass.config.components.add("recorder")
-    hass.set_state(CoreState.running)
+    # The real start: what waits for it — the restore-state dump among them — runs.
+    await hass.async_start()
+    assert hass.state is CoreState.running
     return hass
 
 
@@ -336,7 +342,6 @@ def make_entry(meter_name: str = FAKE_PPE, **options: Any) -> config_entries.Con
             "meter_id": FAKE_METER_ID,
             "meter_name": meter_name,
             "tariff": "G12",
-            "balanced_history": True,
         },
         discovery_keys=MappingProxyType({}),
         domain="enea",

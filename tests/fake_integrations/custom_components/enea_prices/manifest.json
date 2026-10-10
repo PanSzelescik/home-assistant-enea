@@ -1,0 +1,10 @@
+{
+  "domain": "enea_prices",
+  "name": "Enea Ceny (test double)",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://example.invalid",
+  "iot_class": "calculated",
+  "requirements": [],
+  "version": "0.0.0"
+}

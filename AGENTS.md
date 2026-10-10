@@ -477,7 +477,7 @@ Przy zmianie struktury danych w `ConfigEntry` (klucze w `entry.data`):
 - recorder — `StatisticsDatabase` trzyma statystyki w pamięci per `statistic_id` i obsługuje `get_last_statistics`, `statistics_during_period` (z `change`), `get_metadata`, `async_add_external_statistics`; recorder jest tylko oznaczony jako załadowany,
 - zegar — `Clock` (`dt_util.now`), przesuwany między odświeżeniami.
 
-`make_prices_entry` + `register_prices_entry` udają wpis enea_prices dla G12 (`FakeG12Tariff`: noc 22–6 i 13–15 jak w Portalu Odbiorcy Enea). Fixture'y `clock`, `portal`, `database`, `hass` importuje się z `ha_instance` do modułu testów.
+`tests/fake_integrations/custom_components/enea_prices` to mała, prawdziwa integracja-zastępnik (fixture `enea_prices_installed` dokłada ją do `sys.path`, więc loader HA ją znajduje): `tariffs.TARIFFS`, `const.AKCYZA` (reeksport z `tariffs`, importowany w `__init__` jak w oryginale), config flow z czterema ustawieniami i przeładowanie wpisów Enea swojej grupy po setupie — do testów `prices_not_configured`, przycisku „Napraw” z prawdziwym przeładowaniem i akcyzy. Prostsze testy: `make_prices_entry` + `register_prices_entry` udają wpis enea_prices dla G12 (`FakeG12Tariff`: noc 22–6 i 13–15 jak w Portalu Odbiorcy Enea). Fixture'y `clock`, `portal`, `database`, `hass` importuje się z `ha_instance` do modułu testów.
 
 **Klient HTTP** (`tests/test_portal_http.py`): lokalny serwer aiohttp z tymi samymi ścieżkami co Portal Odbiorcy Enea, logowaniem i sesją w ciasteczku `PER_JSESSIONID` (wygasa na żądanie), stroną przerwy technicznej (HTML z kodem 200) i odpowiedziami z fixture'ów. Adresy `URL_*` w `connector.py` są na czas testu przestawiane na serwer.
 

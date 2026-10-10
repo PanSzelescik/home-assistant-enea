@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import asyncio
 import contextlib
@@ -19,7 +20,7 @@ import pytest
 from homeassistant.config_entries import ConfigEntryState, SOURCE_REAUTH
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er, issue_registry as ir
 
 import custom_components.enea as integration
 from custom_components.enea import diagnostics
@@ -421,3 +422,31 @@ async def test_meter_with_nothing_to_fetch_asks_for_no_history(hass, portal):
 
     assert _ranges(portal) == []
     assert _state(hass, "statistics_until") == "unknown"
+
+
+@pytest.mark.parametrize("language,template", [("pl", "new_meter_model_pl.yml"), ("en", "new_meter_model_en.yml")])
+async def test_unknown_meter_model_is_reported_without_the_ppe(hass, portal, language, template):
+    """An unlisted model raises a repair linking to the form, filled with model and capacity only.
+
+    Once the model is known — the portal reports a listed one — the issue goes.
+    """
+    hass.config.language = language
+    active = next(m for m in portal.dashboard["meters"] if m["disassemblyDate"] is None)
+    active["typeName"] = "ZXF100"
+
+    entry = await _set_up(hass)
+
+    issue_id = f"unknown_meter_model_{entry.entry_id}"
+    issue = ir.async_get(hass).async_get_issue("enea", issue_id)
+    assert issue is not None and not issue.is_fixable
+    query = parse_qs(urlsplit(issue.learn_more_url).query)
+    assert query["template"] == [template]
+    assert (query["model"], query["capacity"]) == (["ZXF100"], ["14"])
+    assert FAKE_PPE not in issue.learn_more_url
+    assert (_state(hass, "phases"), hass.states.get(
+        er.async_get(hass).async_get_entity_id("sensor", "enea", f"enea-{FAKE_PPE}-phases")
+    ).attributes["source"]) == ("three_phase", "contractual_capacity")
+
+    active["typeName"] = "OTUS3"
+    await entry.runtime_data.coordinator.async_refresh()
+    assert ir.async_get(hass).async_get_issue("enea", issue_id) is None

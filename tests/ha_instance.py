@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import sys
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
@@ -445,3 +447,20 @@ async def hass(tmp_path, clock, portal, database):
     instance = await async_start_hass(str(tmp_path))
     yield instance
     await instance.async_stop(force=True)
+
+
+FAKE_INTEGRATIONS = Path(__file__).parent / "fake_integrations"
+"""Holds custom_components/enea_prices, a stand-in for the real integration."""
+
+
+@pytest.fixture
+def enea_prices_installed(monkeypatch: pytest.MonkeyPatch):
+    """Make the stand-in enea_prices a custom integration Home Assistant can find.
+
+    Its modules are dropped afterwards, so no other test sees its AKCYZA or
+    tariff table.
+    """
+    monkeypatch.syspath_prepend(str(FAKE_INTEGRATIONS))
+    yield
+    for name in [name for name in sys.modules if name.startswith("custom_components.enea_prices")]:
+        del sys.modules[name]

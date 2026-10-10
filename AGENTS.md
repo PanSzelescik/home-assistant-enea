@@ -38,8 +38,9 @@ custom_components/enea/
 ├── date.py          — EneaBillDateEntity (Platform.DATE): edytowalne daty odczytu z RestoreEntity
 ├── billing.py       — PricesConfig, BillEstimate, find_prices_config, async_estimate_bill, async_hourly_kwh, _add_hours, settle_net_metering; szacowanie rachunku z godzinowych statystyk energii
 ├── installation.py  — DetectedInstallation, async_detect_installation, detect_billing_months, latest_reading_day, capacity_bracket: ustawienia enea_prices (fazy, okres rozliczeniowy, roczne zużycie) wyliczone z danych licznika
+├── parsing.py       — czyste funkcje bez zegara, sieci i stanu HA: has_data, slot_start_dt, split_range_response, zero_fill_missing_day, strip_pre_assembly_slots, assemble_days (odpowiedzi zakresowe wszystkich typów pomiaru → doby do importu + lista dni wyzerowanych); `_fetch_range` koordynatora tylko pobiera odpowiedzi i je tu przekazuje
 ├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + _shift_later_totals (wspólny zapis serii skumulowanej dla energii i kosztów), async_statistics_overview (przegląd serii licznika do raportu diagnostycznego)
-├── costs.py         — async_insert_cost_statistics, async_get_cost_latest_date, async_cost_days_missing, price_signatures + first_repriced_day (skróty cen dni), _inject_cost_series, _clear_moved_hours, get_cost_statistic_name, find_tariff_group, TariffHistory + find_tariff_history (cennik grupy z umowy obowiązującej danego dnia)
+├── costs.py         — cost_series + CostSeries (czysta wycena godzin jednego kierunku w strefach taryfy), async_insert_cost_statistics, async_get_cost_latest_date, async_cost_days_missing, price_signatures + first_repriced_day (skróty cen dni), _inject_cost_series, _clear_moved_hours, get_cost_statistic_name, find_tariff_group, TariffHistory + find_tariff_history (cennik grupy z umowy obowiązującej danego dnia)
 ├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem): stan koordynatora (`diagnostics_state()`: m.in. ostatnie uruchomienie i błąd kroku statystyk, dni wypełnione zerami od restartu), stany encji (`_entity_states`, kluczowane kluczem encji, nie `entity_id` — ten zawiera PPE; bez `friendly_name`; stan i atrybuty sensora adresu ukryte), instalacja (`installation`: wartości wykryte przez `DetectedInstallation` ze źródłami vs ustawione w enea_prices), konfiguracja enea_prices z zasięgiem tabeli taryf (`_prices_coverage`: `covered_until`, okresy), przegląd statystyk (`async_statistics_overview`, ID zamaskowane) i dane z dashboardu (`billingWeekData` tylko z energią czynną, `measurementId` 1/2); TO_REDACT + _redact_meter_data ukrywają dane logowania, adres, numer PPE, `meter_id`, `id`/`name` na najwyższym poziomie oraz `id` w `meters[]`/`agreements[]`, `serialNumber`, `agreementNumber` (ID i nazwy stref zostają). HA sam dokłada wersje HA i integracji, strefę czasową i otwarte zgłoszenia z Napraw
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
 ├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk, stałe kosztów (ENEA_PRICES_DOMAIN, UNIT_COST, COST_ZONE_DISPLAY, VAT_RATE, BILL_KEY_*)
@@ -63,15 +64,15 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 - Backfill przy pierwszym uruchomieniu: zawsze pobiera maksymalną dostępną historię. Odbywa się jako **background task** (`hass.async_create_task`) — nie blokuje pierwszego odświeżenia koordynatora, sensory stają się dostępne natychmiast. Task jest cancellowany przy unload entry (`entry.async_on_unload`).
 - "Ile się da" = gdy `assemblyDate` jest znane — fetch od daty montażu do wczoraj jednym zakresem; gdy nieznane — cofaj się chunkami 180-dniowymi, zatrzymaj gdy początek chunka zawiera 7 kolejnych dni bez danych.
 - Pobieranie danych odbywa się przez **range endpoint** (`/consumption/{id}/{startDate}/{endDate}/{mtype}/{resolution}`), który zwraca dane za wiele dni naraz. Zakres jest dzielony na chunki `RANGE_FETCH_CHUNK_DAYS = 180` dni przetwarzane sekwencyjnie; w każdym chunku 2–4 żądania HTTP są wysyłane **równolegle** (`asyncio.gather`) — po jednym na typ pomiaru. Wydajność: ~2s na 6 miesięcy, ~5.5s na rok.
-- Odpowiedź range endpoint to płaska lista slotów godzinowych. **Liczba slotów na dobę NIE jest stała** — w dniu zmiany czasu doba ma 23 lub 25 godzin (API nie dopełnia do 24). `_split_range_response` grupuje sloty po **rzeczywistej dacie** wyliczonej z `integrationEnd` (a nie po sztywnych blokach 24) → odporne na DST. Wynik to per-day dicty `{"values": [...], "zones": [...]}` identyczne ze strukturą single-day, więc `has_data`, `_collect_series` i koszty nie wymagają zmian. Dla dużych zakresów dane bywają w `valuesToTable` (a `values` może zawierać krótki, częściowy wycinek) — kod bierze **dłuższe** z pól `values`/`valuesToTable`. Dokładny czas slotu liczy `slot_start_dt(entry)` z `integrationEnd` (nie z `timeId`) — patrz niżej.
+- Odpowiedź range endpoint to płaska lista slotów godzinowych. **Liczba slotów na dobę NIE jest stała** — w dniu zmiany czasu doba ma 23 lub 25 godzin (API nie dopełnia do 24). `split_range_response` (`parsing.py`) grupuje sloty po **rzeczywistej dacie** wyliczonej z `integrationEnd` (a nie po sztywnych blokach 24) → odporne na DST. Wynik to per-day dicty `{"values": [...], "zones": [...]}` identyczne ze strukturą single-day, więc `has_data`, `_collect_series` i koszty nie wymagają zmian. Godziny są w `valuesToTable`; dla zakresu obejmującego kilka miesięcy `values` zawiera sumy miesięczne (zob. „Endpoint statystyk historycznych — zakres dat”) — kod bierze **dłuższe** z pól `values`/`valuesToTable`. Dokładny czas slotu liczy `slot_start_dt(entry)` z `integrationEnd` (nie z `timeId`) — patrz niżej.
 - Manualny backfill dowolnego zakresu dat: akcja `enea.backfill` (patrz Akcje).
 - **Prosumenci — dane po bilansowaniu.** Licznik prosumenta (`type == PPE_TYPE_PROSUMER`, czyli 2, w dashboardzie i `/user/ppes`) ma w Portalu Odbiorcy Enea przełącznik „Dane przed bilansowaniem” / „Dane po bilansowaniu”; fakturę rozlicza się z tych drugich. `_data_source` w koordynatorze prosi o `DataSource.AFTER_BALANCING` dla energii pobranej i oddanej (`BALANCED_MEASUREMENT_TYPES`) — dla mocy portal ich nie ma, więc moc idzie jak dotąd, bez źródła. Szczegóły:
   - Dane po bilansowaniu pojawiają się razem z danymi przed bilansowaniem (potwierdzone przez zgłaszającego w #19), więc brakujący dzień czeka na zera tyle samo — `MISSING_DAY_GRACE_DAYS`.
   - Uzupełnianie przyrostowe startuje od najnowszej godziny serii po bilansowaniu, nie wszystkich serii — moc sprzed bilansowania sięgająca wczoraj nie może udawać aktualnej energii.
   - Historia zaimportowana wcześniej z danych przed bilansowaniem jest **jednorazowo importowana od nowa** (ta sama ścieżka co pierwszy backfill, w tle); po udanym backfillu prosumenta `entry.data[CONF_BALANCED_HISTORY] = True`. Ten zapis nie przeładowuje wpisu, bo opcje przeładowuje `OptionsFlowWithReload`, a nie update listener — nie przywracaj listenera.
   - W czasie backfillu w tle odświeżenia nie robią przyrostowego uzupełniania (backfill sam zapisuje wszystko do wczoraj, z kosztami).
-- `has_data` zwraca `False` gdy odpowiedź API zawiera wyłącznie wartości `null` (`if item.get("value") is not None`). Zera są traktowane jako dane (zerowe zużycie) — dni z zerowym zużyciem są importowane. Filtrowanie danych starego licznika odbywa się przez `_strip_pre_assembly_slots` na poziomie godzin, nie przez `has_data`.
-- **Dni bez danych (`has_data() == False`)** — Portal Odbiorcy Enea czasem w ogóle nie publikuje danych za dany dzień (potwierdzone przypadki trwałych dziur, nie tylko opóźnień). `_fetch_range` w `coordinator.py` obsługuje to przez parametry `zero_fill_stale`/`grace_days`: dzień bez danych młodszy niż `MISSING_DAY_GRACE_DAYS` (`const.py`, domyślnie 3 dni) jest pomijany jak dotychczas (dane zwykle pojawiają się po ok. 11:00 następnego dnia — patrz niżej); dzień starszy jest traktowany jako trwale brakujący i wstrzykiwany z wyzerowanymi wartościami — logowane na poziomie INFO jednym wpisem na pobranie (liczba dni i zakres), bo to trwały zapis zer widoczny w Energy Dashboard (`_zero_fill_missing_day` — nadpisuje `null` na `0.0` w istniejących slotach, nie tworzy sztucznych slotów) zamiast być pomijany. Dzięki temu luka nie zeruje skumulowanej sumy kolejnych dni w `write_cumulative_series` (zob. sekcja Architektura kosztów). Ponowne uruchomienie `enea.backfill` dla tego samego zakresu zawsze odpytuje API na nowo i nadpisuje wyzerowany dzień prawdziwymi danymi, jeśli się później pojawią. Import w tle przy znanym `assemblyDate` (`_fetch_days_backward` → `_fetch_days_forward(..., skip_leading_gaps=True)`) nie zeruje dni sprzed pierwszego dnia z danymi — historia w Portalu Odbiorcy Enea może zaczynać się dużo później niż montaż (dane po bilansowaniu prosumenta z #19: licznik od 2022-09-01, dane od 2024-01-01), a wtedy powstawały miesiące zerowego zużycia. Luki po pierwszym dniu z danymi są zerowane jak zwykle. Skanowanie wsteczne w `_fetch_days_backward` (gdy `assemblyDate` jest nieznane) celowo używa `zero_fill_stale=False` — polega na prawdziwym braku danych, żeby wykryć granicę początku historii licznika.
+- `has_data` zwraca `False` gdy odpowiedź API zawiera wyłącznie wartości `null` (`if item.get("value") is not None`). Zera są traktowane jako dane (zerowe zużycie) — dni z zerowym zużyciem są importowane. Filtrowanie danych starego licznika odbywa się przez `strip_pre_assembly_slots` na poziomie godzin, nie przez `has_data`.
+- **Dni bez danych (`has_data() == False`)** — Portal Odbiorcy Enea czasem w ogóle nie publikuje danych za dany dzień (potwierdzone przypadki trwałych dziur, nie tylko opóźnień). `assemble_days` w `parsing.py` (wołane przez `_fetch_range` w `coordinator.py`) obsługuje to przez parametry `zero_fill_stale`/`grace_days`: dzień bez danych młodszy niż `MISSING_DAY_GRACE_DAYS` (`const.py`, domyślnie 3 dni) jest pomijany jak dotychczas (dane zwykle pojawiają się wcześnie rano następnego dnia — patrz niżej); dzień starszy jest traktowany jako trwale brakujący i wstrzykiwany z wyzerowanymi wartościami — logowane na poziomie INFO jednym wpisem na pobranie (liczba dni i zakres), bo to trwały zapis zer widoczny w Energy Dashboard (`zero_fill_missing_day` — nadpisuje `null` na `0.0` w istniejących slotach, nie tworzy sztucznych slotów) zamiast być pomijany. Dzięki temu luka nie zeruje skumulowanej sumy kolejnych dni w `write_cumulative_series` (zob. sekcja Architektura kosztów). Ponowne uruchomienie `enea.backfill` dla tego samego zakresu zawsze odpytuje API na nowo i nadpisuje wyzerowany dzień prawdziwymi danymi, jeśli się później pojawią. Import w tle przy znanym `assemblyDate` (`_fetch_days_backward` → `_fetch_days_forward(..., skip_leading_gaps=True)`) nie zeruje dni sprzed pierwszego dnia z danymi — historia w Portalu Odbiorcy Enea może zaczynać się dużo później niż montaż (dane po bilansowaniu prosumenta z #19: licznik od 2022-09-01, dane od 2024-01-01), a wtedy powstawały miesiące zerowego zużycia. Luki po pierwszym dniu z danymi są zerowane jak zwykle. Skanowanie wsteczne w `_fetch_days_backward` (gdy `assemblyDate` jest nieznane) celowo używa `zero_fill_stale=False` — polega na prawdziwym braku danych, żeby wykryć granicę początku historii licznika.
 
 ### Dolna granica fetchowania — assemblyDate
 
@@ -81,16 +82,16 @@ Coordinator przechowuje `_assembly_datetime: datetime | None` — pełny timesta
 - `_fetch_days_forward` i `_fetch_range`: `start_date = max(start_date, self._assembly_datetime.date())` — nie fetchuje dni sprzed montażu
 - `_fetch_days_backward` (tryb "ile się da", assembly date znane): deleguje do `_fetch_days_forward(assembly_date, yesterday)` — nie potrzeba cofania
 
-**Filtr godzinowy dla dnia montażu — `_strip_pre_assembly_slots`:**
+**Filtr godzinowy dla dnia montażu — `strip_pre_assembly_slots`:**
 
-Dzień montażu jest fetchowany, ale zawiera dane zarówno starego (godziny przed montażem), jak i nowego licznika (godziny po montażu). Metoda `_strip_pre_assembly_slots(day, day_data)` usuwa timeId `<= assembly_datetime.hour` z odpowiedzi API dla dnia montażu:
+Dzień montażu jest fetchowany, ale zawiera dane zarówno starego (godziny przed montażem), jak i nowego licznika (godziny po montażu). Funkcja `strip_pre_assembly_slots(day, day_data, assembly)` (`parsing.py`) usuwa z odpowiedzi API dla dnia montażu sloty zaczynające się przed pełną godziną montażu (porównuje `slot_start_dt`, nie `timeId`):
 
 ```
 timeId N = godzina (N-1):00–N:00
 montaż o 12:13 → cutoff = 12 → wyrzuca timeId 1–12 (0:00–12:00), zostawia 13+ (12:00 wzwyż)
 ```
 
-Metoda jest aplikowana w `_fetch_days_forward` i `_fetch_days_backward` bezpośrednio przed dołączeniem dnia do listy wyników. Dotyczy wszystkich ścieżek: inicjalny backfill, uzupełnianie luk, koszty (`_async_inject_missing_costs` korzysta z `_fetch_days_forward`).
+Stosuje ją `assemble_days`, które odrzuca też całe doby sprzed dnia montażu (licznik z marca 2026 ma w Portalu Odbiorcy Enea zera dzień przed montażem, a w dniu montażu do jego godziny sloty ze `status: 2`). Dotyczy wszystkich ścieżek: inicjalny backfill, uzupełnianie luk, koszty (`_async_inject_missing_costs` korzysta z `_fetch_days_forward`).
 
 ### Nazwy statystyk
 
@@ -298,17 +299,18 @@ Cookie: PER_JSESSIONID=<wartość>
 Kolejność segmentów wzięta z frontendu Portalu Odbiorcy Enea (`dist/js/app.js`): polyfill `Object.prototype.join` skleja wartości obiektu zapytania (`id, dateFrom, dateTo, measurementId, dayGranulation, dataSourceId`) przez `/`. Dla innych liczników portal nie wysyła szóstego segmentu.
 
 Kluczowe pola odpowiedzi:
-- `values[]` — płaska lista slotów godzinowych, `timeId` powtarzający się per dzień; dla dużych zakresów bywa pusta **albo zawiera krótki częściowy wycinek** (wtedy pełne dane są w `valuesToTable[]`)
-- `valuesToTable[]` — pełne dane godzinowe dla dużych zakresów (identyczna struktura jak `values[]`); kod bierze **dłuższe** z pól `values`/`valuesToTable`
-- `values[].integrationEnd` — znacznik końca godziny slotu (ms epoki); źródło dokładnego czasu slotu (`slot_start_dt`), odporne na DST — używane zamiast wyliczania z `timeId`
+- `valuesToTable[]` — płaska lista slotów godzinowych, `timeId` powtarzający się per dzień (godzina doby)
+- `values[]` — dla krótkiego zakresu te same sloty co `valuesToTable[]`; dla zakresu obejmującego kilka miesięcy **sumy miesięczne**: jeden wpis na miesiąc, `timeId` = numer miesiąca, dodatkowa pozycja `tarifZoneId: -1` z sumą stref, a `integrationEnd` nie jest końcem tego miesiąca (w zrzucie marzec–październik 2026 przesunięty o dwa miesiące, np. marzec → 31.05 23:59:59). Bieżący, niepełny miesiąc nie ma wpisu. Kod bierze **dłuższe** z pól `values`/`valuesToTable`, więc sumy nigdy nie trafiają do statystyk jako godziny
+- `valuesToTable[].integrationEnd` — znacznik końca godziny slotu (ms epoki); źródło dokładnego czasu slotu (`slot_start_dt`), odporne na DST — używane zamiast wyliczania z `timeId`
 - `items[].tarifZoneId` — ID strefy
 - `items[].value` — wartość (kWh lub kW), może być `null` gdy brak odczytu
+- `items[].status` — `0` przy `value: null` (także dla strefy, do której godzina nie należy), `1` przy zwykłej wartości, `2` w dniu montażu licznika do godziny montażu włącznie oraz w sumach miesięcznych
 - `zones[]` — definicje stref wspólne dla całego zakresu: `{id, name}` (np. `{id: 1, name: "Dzień"}`)
 - Zwykle 24 sloty na dobę, ale **23 lub 25 w dniu zmiany czasu** (DST); podział na doby idzie po `integrationEnd`, nie po stałej liczbie slotów
 
 Wydajność (zmierzona): 6 miesięcy ~2s, rok ~5.5s, 3 lata ~26s (5.5 MB).
 
-Dane za poprzedni dzień są dostępne zwykle po godzinie 11:00 następnego dnia.
+Licznik wysyła dane za poprzedni dzień zwykle między północą a 6:00 (obserwacja na OTUS3), więc przy domyślnym interwale 3,5 h trafiają do HA zwykle przed 10:00. Zanim zostaną wysłane, doba ma komplet slotów z `value: null` (`status: 0`).
 
 ## Sensory
 
@@ -321,6 +323,7 @@ Dane za poprzedni dzień są dostępne zwykle po godzinie 11:00 następnego dnia
 | `address` | `address` (przez `format_address()`) |
 | `reading_date` | `currentValues[0].readingDate` |
 | `meter_model` | `meters[].typeName` aktywnego licznika |
+| `meter_assembly` | `meters[].assemblyDate` aktywnego licznika (sensor TIMESTAMP); ta sama data zostaje w atrybucie `assembly_date` sensora `meter_model` |
 | `phases` | wnioskowane przez `infer_phases` (sensor ENUM) + atrybut `source` |
 | `statistics_until` | `coordinator.statistics_until` (sensor DATE, osobna klasa `EneaStatisticsDateSensor`) |
 | `han_wmbus` | `wmbusStatus` + `hanAvailable` (sensor ENUM, `_han_port_state`) |
@@ -459,6 +462,15 @@ Przy zmianie struktury danych w `ConfigEntry` (klucze w `entry.data`):
    gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes
    ```
    Flaga `--generate-notes` automatycznie generuje changelog z commitów od poprzedniego tagu.
+
+## Testy na prawdziwych danych
+
+`tests/fixtures/portal/` zawiera zanonimizowane odpowiedzi Portalu Odbiorcy Enea z prawdziwego konta (G12, OTUS3 zamontowany 2026-03-20 12:12, wcześniej MT174 bez danych AMI). Powstają skryptem `scripts/anonymize_fixtures.py` z surowych zrzutów w `data/` (gitignored; nazwy plików jak ścieżka żądania, np. `consumption_id_2026-03-27_2026-04-02_1_2.json`):
+
+- identyfikatory (ID licznika, PPE, adres, numery seryjne, ID i numery umów) zastępowane zmyślonymi (`12345`, `590310600000001234`); skrypt odmawia zapisu, gdy którykolwiek oryginalny identyfikator zostałby w wyniku,
+- każda wartość energii i mocy (`value`, `consumption`, `consumptionForReport`, `sumConsumption`) mnożona przez `SCALE` (0,83) — repo jest publiczne i należy do właściciela konta, więc profil zużycia byłby mu przypisywalny; kształt danych (luki, `null`, zera, strefy, doby DST) zostaje.
+
+Nowy zrzut: zapisz odpowiedź w `data/`, uruchom `uv run python scripts/anonymize_fixtures.py` i dopisz test w `tests/test_real_data.py`. Brakuje doby 25 h (zmiana czasu na zimowy) — do dopisania po 2026-10-25.
 
 ## CI/CD
 

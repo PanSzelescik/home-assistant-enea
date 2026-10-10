@@ -41,7 +41,7 @@ Integracja jest dostępna w domyślnym katalogu HACS — nie trzeba dodawać wł
 
 Po dodaniu integracji automatycznie pobierane są historyczne dane energii i mocy z granularnością **godzinową**. Dane są wstrzykiwane jako **statystyki zewnętrzne** Home Assistant, co pozwala wyświetlić pełną historię w panelu Energia z prawidłowymi timestampami.
 
-> **Kiedy dostępne:** Dane za poprzedni dzień pojawiają się zwykle po godzinie 11:00. Integracja automatycznie sprawdza dostępność przy każdym odświeżeniu i pobiera brakujące dni. Jeśli Portal Odbiorcy Enea w ogóle nie opublikuje danych za dany dzień (zdarza się sporadycznie), integracja czeka 3 dni, a potem wpisuje dla niego zerowe zużycie — dzięki temu luka nie zaburza statystyk kolejnych dni. Gdy dane później się pojawią, wystarczy ponownie uruchomić **`enea.backfill`** dla tego dnia, żeby je poprawnie zaimportować.
+> **Kiedy dostępne:** Licznik wysyła dane za poprzedni dzień zwykle między północą a 6:00, a w Home Assistant pojawiają się przy najbliższym odświeżeniu (domyślnie co 3,5 godziny). Integracja automatycznie sprawdza dostępność przy każdym odświeżeniu i pobiera brakujące dni. Jeśli Portal Odbiorcy Enea w ogóle nie opublikuje danych za dany dzień (zdarza się sporadycznie), integracja czeka 3 dni, a potem wpisuje dla niego zerowe zużycie — dzięki temu luka nie zaburza statystyk kolejnych dni. Gdy dane później się pojawią, wystarczy ponownie uruchomić **`enea.backfill`** dla tego dnia, żeby je poprawnie zaimportować.
 
 ### Dostępne statystyki
 

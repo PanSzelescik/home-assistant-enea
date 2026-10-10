@@ -470,6 +470,14 @@ Przy zmianie struktury danych w `ConfigEntry` (klucze w `entry.data`):
 - identyfikatory (ID licznika, PPE, adres, numery seryjne, ID i numery umów) zastępowane zmyślonymi (`12345`, `590310600000001234`); skrypt odmawia zapisu, gdy którykolwiek oryginalny identyfikator zostałby w wyniku,
 - każda wartość energii i mocy (`value`, `consumption`, `consumptionForReport`, `sumConsumption`) mnożona przez `SCALE` (0,83) — repo jest publiczne i należy do właściciela konta, więc profil zużycia byłby mu przypisywalny; kształt danych (luki, `null`, zera, strefy, doby DST) zostaje.
 
+**Pełny setup w działającym HA** (`tests/ha_instance.py`, testy `test_setup_entry.py` i `test_setup_with_prices.py`): prawdziwy `HomeAssistant` zbudowany jak w bootstrapie (`bootstrap.async_load_base_functionality`: rejestry, wpisy konfiguracji, tłumaczenia), bez pakietu testowego HA. Podmienione są tylko trzy rzeczy:
+
+- sieć — `FakePortal` odpowiada z fixture'ów i zapisuje żądania,
+- recorder — `StatisticsDatabase` trzyma statystyki w pamięci per `statistic_id` i obsługuje `get_last_statistics`, `statistics_during_period` (z `change`), `get_metadata`, `async_add_external_statistics`; recorder jest tylko oznaczony jako załadowany,
+- zegar — `Clock` (`dt_util.now`), przesuwany między odświeżeniami.
+
+`make_prices_entry` + `register_prices_entry` udają wpis enea_prices dla G12 (`FakeG12Tariff`: noc 22–6 i 13–15 jak w Portalu Odbiorcy Enea). Fixture'y `clock`, `portal`, `database`, `hass` importuje się z `ha_instance` do modułu testów.
+
 Nowy zrzut: zapisz odpowiedź w `data/`, uruchom `uv run python scripts/anonymize_fixtures.py` i dopisz test w `tests/test_real_data.py`. Brakuje doby 25 h (zmiana czasu na zimowy) — do dopisania po 2026-10-25.
 
 ## CI/CD

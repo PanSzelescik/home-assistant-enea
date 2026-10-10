@@ -53,6 +53,9 @@ def _matching_coordinators(
     """Yield coordinators for entries matching the device_id filter in a service call.
 
     When no device_id is provided, yields coordinators for all loaded entries.
+    The devices are looked up by their config entry: device_registry's
+    async_get_device by identifier is deprecated (identifiers are no longer
+    unique across config entries) and stops working in Home Assistant 2027.8.
     """
     device_ids: list[str] = call.data.get("device_id", [])
     if isinstance(device_ids, str):
@@ -61,9 +64,8 @@ def _matching_coordinators(
     for config_entry in hass.config_entries.async_entries(DOMAIN):
         if not hasattr(config_entry, "runtime_data"):
             continue
-        meter_code: str = config_entry.data[CONF_METER_NAME]
-        device = dev_reg.async_get_device(identifiers={(DOMAIN, meter_code)})
-        if device and (not device_ids or device.id in device_ids):
+        devices = dr.async_entries_for_config_entry(dev_reg, config_entry.entry_id)
+        if devices and (not device_ids or any(device.id in device_ids for device in devices)):
             yield config_entry.runtime_data.coordinator
 
 

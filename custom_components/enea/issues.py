@@ -121,15 +121,15 @@ def async_update_issues(
         ir.async_delete_issue(hass, DOMAIN, unknown_id)
 
 
-def _meters_in_tariff(hass: HomeAssistant, tariff_name: str) -> int:
-    """Return how many Enea meters report a tariff group, matched like enea_prices does."""
+def _meters_in_tariff(hass: HomeAssistant, tariff_name: str) -> list[str]:
+    """Return the entry ids of the Enea meters reporting a tariff group, matched like enea_prices does."""
     wanted = tariff_name.casefold()
-    return sum(
-        1
+    return [
+        entry.entry_id
         for entry in hass.config_entries.async_entries(DOMAIN)
         if (getattr(getattr(entry, "runtime_data", None), "coordinator", None) is not None)
         and (entry.runtime_data.coordinator.tariff_name or "").casefold() == wanted
-    )
+    ]
 
 
 def _mismatches(
@@ -211,12 +211,19 @@ def async_update_installation_issues(
 
     Two meters in one tariff group share an enea_prices entry, and their facts
     may well differ — fixing it for one would break it for the other, and
-    the two issues would undo each other.  Then nothing is raised.
+    the two issues would undo each other.  Then nothing is raised, for any of
+    them: a meter set up before the other one found itself alone and raised
+    its issues, which would otherwise stay until its next refresh.
     """
     cfg = find_prices_config(hass, tariff_name)
     found: dict[str, _Mismatch] = {}
-    if cfg is not None and tariff_name and _meters_in_tariff(hass, tariff_name) <= 1:
+    sharing = _meters_in_tariff(hass, tariff_name) if tariff_name else []
+    if cfg is not None and tariff_name and len(sharing) <= 1:
         found = {m.issue: m for m in _mismatches(meter_code, data, detected, cfg)}
+    for other in sharing:
+        if other != entry_id:
+            for key in INSTALLATION_ISSUES:
+                ir.async_delete_issue(hass, DOMAIN, _issue_id(key, other))
 
     for key in INSTALLATION_ISSUES:
         issue_id = _issue_id(key, entry_id)

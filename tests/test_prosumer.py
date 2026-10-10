@@ -7,17 +7,28 @@ once.
 """
 from __future__ import annotations
 
+import copy
+from collections import defaultdict
 from datetime import date, timedelta
 
+import pytest
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.helpers import entity_registry as er
 
+from custom_components.enea.costs import _kwh_price
+from custom_components.enea.parsing import slot_start_dt
 from ha_instance import (  # noqa: F401 - clock, portal, database and hass are fixtures
+    FAKE_PPE,
     SAVED_ON,
+    FakeG12Tariff,
+    at_local,
     clock,
     database,
     hass,
     make_entry,
+    make_prices_entry,
     portal,
+    register_prices_entry,
 )
 
 ASSEMBLY_DAY = date(2026, 3, 20)
@@ -75,3 +86,60 @@ async def test_history_from_before_balancing_is_imported_again_once(hass, portal
     await coordinator.async_refresh()
     await hass.async_block_till_done()
     assert [r for r in portal.requests if r[0] == "range"] == []
+
+
+def _returned_from_consumption(portal, share: float) -> dict[str, float]:
+    """Serve energy returned as a share of every consumed hour; return its kWh by G12 zone.
+
+    The fixture meter has no generation, so its consumption, scaled, stands in
+    for a prosumer's export — same hours, zones and gaps.
+    """
+    consumed = copy.deepcopy(portal.ranges[1][0])
+    zone_names = {zone["id"]: zone["name"] for zone in consumed["zones"]}
+    totals: dict[str, float] = defaultdict(float)
+    start = at_local(ASSEMBLY_DAY, 12)
+    end = at_local(SAVED_ON)
+    for entry in consumed["valuesToTable"]:
+        for item in entry["items"]:
+            if item["value"] is not None:
+                item["value"] = round(item["value"] * share, 6)
+                if start <= slot_start_dt(entry) < end:
+                    totals[zone_names[item["tarifZoneId"]]] += item["value"]
+    portal.ranges[5] = [consumed]
+    return totals
+
+
+async def test_net_metering_credits_returned_energy(hass, portal, database):
+    """Each returned kWh is worth 0.8 of a consumed one, in costs and on the bill."""
+    portal.prosumer = True
+    returned = _returned_from_consumption(portal, 0.4)
+    tariff = FakeG12Tariff()
+    register_prices_entry(hass, make_prices_entry(tariff))
+    entry = make_entry(net_metering="0_8")
+
+    await _set_up(hass, entry)
+
+    period = tariff.periods[0]
+    for zone, name, display in (("day", "Dzień", "dzien"), ("night", "Noc", "noc")):
+        series = database.series(f"enea:{FAKE_PPE}_koszt_energii_oddana_{display}")
+        assert series[-1]["sum"] == pytest.approx(
+            returned[name] * _kwh_price(period.zones[zone], 0.0) * 0.8, abs=1e-6
+        )
+
+    registry = er.async_get(hass)
+    for key, value in (("bill_prev_reading", "2026-06-06"), ("bill_last_reading", "2026-08-05")):
+        entity_id = registry.async_get_entity_id("date", "enea", f"enea-{FAKE_PPE}-{key}")
+        await hass.services.async_call(
+            "date", "set_value", {"entity_id": entity_id, "date": value}, blocking=True
+        )
+    await hass.async_block_till_done()
+    bill = hass.states.get(
+        registry.async_get_entity_id("sensor", "enea", f"enea-{FAKE_PPE}-bill_previous")
+    ).attributes
+
+    for zone in ("dzien", "noc"):
+        assert bill[f"returned_kwh_{zone}"] == pytest.approx(0.4 * bill[f"kwh_{zone}"], abs=1e-2)
+        assert bill[f"billed_kwh_{zone}"] == pytest.approx(
+            bill[f"kwh_{zone}"] - 0.8 * bill[f"returned_kwh_{zone}"], abs=1e-2
+        )
+    assert bill["net_metering_left_kwh"] == 0

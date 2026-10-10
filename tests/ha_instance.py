@@ -11,6 +11,7 @@ Odbiorcy Enea is FakePortal, which answers from tests/fixtures/portal.
 from __future__ import annotations
 
 import asyncio
+import copy
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from types import MappingProxyType, SimpleNamespace
@@ -152,6 +153,9 @@ class FakePortal:
 
     def __init__(self) -> None:
         self.dashboard = load_portal_fixture("dashboard")
+        # Dashboards of other meters on the account, by meter id; any other id
+        # answers with the fixture meter's.
+        self.dashboards: dict[int, dict[str, Any]] = {}
         self.ppes = load_portal_fixture("user_ppes")
         self.ranges = {
             mtype: [load_portal_fixture(name) for name in names]
@@ -189,7 +193,7 @@ class FakePortal:
     async def get_ppe_dashboard(self, meter_id: int) -> dict[str, Any]:
         """Return /consumptionDashboard/ppe/{id}."""
         self._check("dashboard", meter_id)
-        dashboard = load_portal_fixture("dashboard")
+        dashboard = copy.deepcopy(self.dashboards.get(meter_id, self.dashboard))
         return {**dashboard, "type": 2} if self.prosumer else dashboard
 
     async def get_consumption_data_range(
@@ -276,26 +280,48 @@ class FakeG12Tariff:
         )
 
 
+class FakeG11Period(FakeG12Period):
+    """A G11 price period: one zone for every hour."""
+
+    def __init__(self, valid_from: date, valid_until: date) -> None:
+        super().__init__(valid_from, valid_until)
+        self.zones = {"day": FakeZonePricing(0.5, 0.25)}
+
+    def get_zone_at_hour(self, hour: int, day: date | None = None) -> str:
+        """Every hour is in the only zone."""
+        return "day"
+
+
+class FakeG11Tariff(FakeG12Tariff):
+    """The G11 tariff group of enea_prices, priced over one period."""
+
+    name = "G11"
+
+    def __init__(self, valid_from: date = date(2026, 1, 1), valid_until: date = date(2026, 12, 31)) -> None:
+        self.periods = [FakeG11Period(valid_from, valid_until)]
+
+
 def make_prices_entry(tariff: FakeG12Tariff | None = None) -> config_entries.ConfigEntry:
-    """Return a loaded-looking enea_prices entry for G12, as the integration reads it.
+    """Return a loaded-looking enea_prices entry for the tariff's group (G12 by default).
 
     Only the parts the integration reaches for duck-typed are there: the
     entry's data and its runtime_data.
     """
+    tariff = tariff or FakeG12Tariff()
     entry = config_entries.ConfigEntry(
-        data={"tariff": "G12", "phases": 3, "annual_kwh": 2000, "billing_months": 2},
+        data={"tariff": tariff.name, "phases": 3, "annual_kwh": 2000, "billing_months": 2},
         discovery_keys=MappingProxyType({}),
         domain="enea_prices",
         minor_version=1,
         options={},
         source="user",
         subentries_data=None,
-        title="Ceny G12",
-        unique_id="G12",
+        title=f"Ceny {tariff.name}",
+        unique_id=tariff.name,
         version=1,
     )
     entry.runtime_data = SimpleNamespace(
-        tariff=tariff or FakeG12Tariff(), phases=3, annual_kwh=2000, billing_months=2
+        tariff=tariff, phases=3, annual_kwh=2000, billing_months=2
     )
     return entry
 
@@ -329,7 +355,9 @@ async def async_start_hass(config_dir: str) -> HomeAssistant:
     return hass
 
 
-def make_entry(meter_name: str = FAKE_PPE, **options: Any) -> config_entries.ConfigEntry:
+def make_entry(
+    meter_name: str = FAKE_PPE, meter_id: int = FAKE_METER_ID, **options: Any
+) -> config_entries.ConfigEntry:
     """Return a config entry for a meter of the fixture account.
 
     Every meter answers with the fixture meter's data; meter_name tells the
@@ -339,7 +367,7 @@ def make_entry(meter_name: str = FAKE_PPE, **options: Any) -> config_entries.Con
         data={
             "username": "test@example.invalid",
             "password": "test-password",
-            "meter_id": FAKE_METER_ID,
+            "meter_id": meter_id,
             "meter_name": meter_name,
             "tariff": "G12",
         },

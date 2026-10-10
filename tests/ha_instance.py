@@ -110,17 +110,26 @@ class StatisticsDatabase:
         units: Any = None,
         types: set[str] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
-        """Stand in for statistics_during_period, hourly, with 'change' worked out.
+        """Stand in for statistics_during_period, by hour or by local day.
 
         'change' is the difference of a row's sum from the sum before it,
-        reaching back before the window as the recorder does.
+        reaching back before the window as the recorder does.  A day row
+        carries the sum and state of the day's last hour, as the recorder's
+        daily statistics do.
         """
-        assert period == "hour", period
+        assert period in ("hour", "day"), period
         found: dict[str, list[dict[str, Any]]] = {}
         for statistic_id in statistic_ids or []:
+            series = self.series(statistic_id)
+            if period == "day":
+                days: dict[float, dict[str, Any]] = {}
+                for row in series:
+                    local = dt_util.as_local(dt_util.utc_from_timestamp(row["start"]))
+                    days[dt_util.start_of_local_day(local.date()).timestamp()] = row
+                series = [{**row, "start": start} for start, row in days.items()]
             previous = 0.0
             rows = []
-            for row in self.series(statistic_id):
+            for row in series:
                 inside = row["start"] >= start.timestamp() and (
                     end is None or row["start"] < end.timestamp()
                 )
@@ -432,8 +441,13 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
 
 
 @pytest.fixture
-def portal(monkeypatch: pytest.MonkeyPatch) -> FakePortal:
-    """Serve the fixture account instead of the Portal Odbiorcy Enea."""
+def portal(monkeypatch: pytest.MonkeyPatch, clock: Clock) -> FakePortal:
+    """Serve the fixture account instead of the Portal Odbiorcy Enea.
+
+    Its responses were saved on SAVED_ON, so the clock is pinned with it: a
+    test running the integration on the real date would ask for days the
+    fixtures do not have, and pass or fail with the calendar.
+    """
     fake = FakePortal()
     monkeypatch.setattr(integration, "EneaApiClient", lambda *args: fake)
     monkeypatch.setattr(integration, "async_create_clientsession", lambda hass: None)

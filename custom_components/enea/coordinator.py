@@ -608,11 +608,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "initial_backfill": backfill,
             "cost_checked_until": iso(self._cost_checked_until),
             "costs_repriced_from": iso(self._costs_repriced_from),
-            "notifications": None if self._notifications is None else {
-                "checked_until": iso(self._notifications.checked_until),
-                "seen": self._notifications.seen,
-                "error": self._notifications.error,
-            },
+            "notifications": (
+                None if self._notifications is None else self._notifications.diagnostics()
+            ),
             "bill_prev_reading": iso(self.bill_prev_reading),
             "bill_last_reading": iso(self.bill_last_reading),
             "bill_estimates": {

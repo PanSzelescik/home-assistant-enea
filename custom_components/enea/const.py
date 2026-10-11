@@ -34,6 +34,8 @@ URL_CONSUMPTION_RANGE = (
 URL_CONSUMPTION_RANGE_DATA_SOURCE = URL_CONSUMPTION_RANGE + "/{data_source}"
 # POST z JSON-em {ppes, groups, timeRange, timeStart, timeEnd} — zakładka „Wiadomości”.
 URL_NOTIFICATIONS = f"{BASE_URL}/notification/"
+# POST bez treści — frontend wysyła go po zamknięciu okna nieprzeczytanej wiadomości.
+URL_NOTIFICATION_READ = f"{BASE_URL}/notification/read/{{notification_id}}"
 # Strona „Wiadomości” we frontendzie — załącznik wiadomości pobierze tylko zalogowany.
 URL_NOTIFICATIONS_PAGE = f"{PORTAL_URL}/portalOdbiorcy/#!/ems/powiadomienia"
 

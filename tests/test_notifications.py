@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from homeassistant.components import persistent_notification
 from homeassistant.components.persistent_notification import (
     _async_get_or_create_notifications,
     async_dismiss,
@@ -220,13 +221,14 @@ async def test_a_refresh_soon_after_a_check_does_not_ask_again(hass, clock, port
 
 
 async def test_a_dismissed_notification_stays_dismissed_after_a_restart(tmp_path, clock, portal, database):
-    """The messages seen and the day checked survive a restart."""
+    """The messages seen and the day checked survive a restart; nothing is marked read twice."""
     portal.notifications.append(_message(3011, NOW - timedelta(hours=1)))
     first = await async_start_hass(str(tmp_path))
     await first.config_entries.async_add(make_entry())
     await first.async_block_till_done()
     assert list(_shown(first)) == ["enea_notification_3011"]
     async_dismiss(first, "enea_notification_3011")
+    await first.async_block_till_done()
     await first.async_stop()
     portal.requests.clear()
 
@@ -237,6 +239,7 @@ async def test_a_dismissed_notification_stays_dismissed_after_a_restart(tmp_path
 
     assert _message_requests(portal) == [((FAKE_METER_ID,), SAVED_ON, SAVED_ON)]
     assert _shown(second) == {}
+    assert ("read", 3011) not in portal.requests
     await second.async_stop()
 
 
@@ -253,6 +256,8 @@ async def test_failing_messages_do_not_fail_the_refresh(hass, portal):
     assert coordinator.diagnostics_state()["notifications"] == {
         "checked_until": None,
         "seen": 0,
+        "shown": 0,
+        "read_to_send": 0,
         "error": "EneaApiError: Unexpected response from notifications endpoint: 500",
     }
 
@@ -344,3 +349,76 @@ async def test_the_store_goes_with_the_last_meter_of_the_account(hass, portal):
     await hass.config_entries.async_remove(second.entry_id)
     await hass.async_block_till_done()
     assert not _stored(hass).exists()
+
+
+# --- dismissing, and what a restart keeps --------------------------------------------
+
+
+async def test_dismissing_a_notification_marks_its_message_read(hass, portal):
+    """Closing it in Home Assistant does what closing the message's window in the portal does."""
+    portal.notifications.append(_message(3017, NOW - timedelta(hours=1)))
+    await _set_up(hass)
+
+    async_dismiss(hass, "enea_notification_3017")
+    await hass.async_block_till_done()
+
+    assert ("read", 3017) in portal.requests
+    assert portal.notifications[-1]["isRead"] is True
+
+
+async def test_dismissing_every_notification_marks_every_message_read(hass, portal):
+    """Dismissing all in Home Assistant reaches the portal for each message; others are left alone."""
+    portal.notifications += [_message(3018, NOW - timedelta(hours=1)), _message(3019, NOW)]
+    await _set_up(hass)
+    persistent_notification.async_create(hass, "Coś innego", notification_id="other")
+
+    persistent_notification.async_dismiss_all(hass)
+    await hass.async_block_till_done()
+
+    assert sorted(request[1] for request in portal.requests if request[0] == "read") == [3018, 3019]
+
+
+async def test_a_read_the_portal_refused_is_sent_with_the_next_check(hass, clock, portal):
+    """The portal down when the notification is dismissed: the next check sends it."""
+    portal.notifications.append(_message(3020, NOW - timedelta(hours=1)))
+    entry = await _set_up(hass)
+    portal.fail_read_with = EneaApiError("Cannot connect to Portal Odbiorcy Enea")
+
+    async_dismiss(hass, "enea_notification_3020")
+    await hass.async_block_till_done()
+    assert entry.runtime_data.coordinator.diagnostics_state()["notifications"]["read_to_send"] == 1
+    assert portal.notifications[-1]["isRead"] is False
+
+    portal.fail_read_with = None
+    clock.now = NOW + timedelta(hours=4)
+    await entry.runtime_data.coordinator.async_refresh()
+
+    assert portal.notifications[-1]["isRead"] is True
+    assert entry.runtime_data.coordinator.diagnostics_state()["notifications"]["read_to_send"] == 0
+
+
+async def test_a_notification_not_dismissed_comes_back_after_a_restart(tmp_path, clock, portal, database):
+    """Home Assistant forgets its notifications on a restart; the account's store does not."""
+    portal.notifications.append(_message(3021, NOW - timedelta(hours=1), title="Ważne"))
+    first = await async_start_hass(str(tmp_path))
+    await first.config_entries.async_add(make_entry())
+    await first.async_block_till_done()
+    shown_before = _shown(first)["enea_notification_3021"]
+    await first.async_stop()
+
+    second = await async_start_hass(str(tmp_path))
+    [entry] = second.config_entries.async_entries("enea")
+    assert await second.config_entries.async_setup(entry.entry_id)
+    await second.async_block_till_done()
+
+    shown = _shown(second)
+    assert list(shown) == ["enea_notification_3021"]
+    assert (shown["enea_notification_3021"]["title"], shown["enea_notification_3021"]["message"]) == (
+        shown_before["title"], shown_before["message"]
+    )
+    assert not any(request[0] == "read" for request in portal.requests)
+
+    async_dismiss(second, "enea_notification_3021")
+    await second.async_block_till_done()
+    assert ("read", 3021) in portal.requests
+    await second.async_stop()

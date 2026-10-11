@@ -192,7 +192,7 @@ Powiadomienie dostaje tylko wiadomość, której integracja jeszcze nie widział
 - wiadomość, którą portal pokazuje po każdym zalogowaniu, pojawi się nawet przeczytana,
 - pozostałe muszą być nieprzeczytane w Portalu Odbiorcy Enea; wiadomość bez daty ważności, której portal nie pokazuje po zalogowaniu, nie może być starsza niż 30 dni.
 
-Zamknięte powiadomienie nie wraca, także po restarcie. Integracja nie oznacza wiadomości jako przeczytanych w Portalu Odbiorcy Enea. Załącznik pobierzesz z portalu — powiadomienie podaje jego nazwę i link do zakładki **Wiadomości**.
+Powiadomienie wisi, dopóki go nie zamkniesz — także po restarcie Home Assistant, który sam swoich powiadomień nie pamięta. Zamknięcie powiadomienia oznacza wiadomość jako przeczytaną w Portalu Odbiorcy Enea, tak jak zamknięcie jej okna w portalu (gdy portal akurat nie odpowiada, integracja ponowi to przy następnym sprawdzeniu). Zamknięte powiadomienie nie wraca. Załącznik pobierzesz z portalu — powiadomienie podaje jego nazwę i link do zakładki **Wiadomości**.
 
 Kilka liczników na jednym koncie sprawdza wiadomości wspólnie — jednym zapytaniem o wszystkie liczniki z włączoną opcją. Wiadomość wysłana do wszystkich odbiorców pojawia się raz.
 

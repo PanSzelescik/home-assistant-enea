@@ -94,6 +94,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
     if account is not None and not account.client.session_closed:
         account.client.update_credentials(password)
     else:
+        if account is not None:
+            account.notifications.unsubscribe()
         session = async_create_clientsession(hass)
         client = EneaApiClient(session, username, password)
         account = EneaAccount(client, EneaNotifications(hass, client, username))
@@ -191,7 +193,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> boo
         ]
         # Remove the shared client and messages only when no other entries use the same account.
         if not any(e.data.get(CONF_USERNAME) == username for e in remaining):
-            hass.data[DOMAIN].pop(username, None)
+            if (account := hass.data[DOMAIN].pop(username, None)) is not None:
+                account.notifications.unsubscribe()
 
         # Remove the service when the last entry is unloaded.
         if not remaining:

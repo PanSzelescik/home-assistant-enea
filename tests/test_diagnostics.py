@@ -272,11 +272,14 @@ async def test_coordinator_state_reports_failures() -> None:
     coord._statistics_last_run = datetime(2026, 10, 9, 13, 0)
     coord._statistics_error = "EneaApiError: Unexpected response from range endpoint: 500"
     coord._zero_filled_days = {date(2026, 10, 3), date(2026, 10, 1)}
-    coord._notifications = SimpleNamespace(
-        checked_until=date(2026, 10, 8),
-        seen=3,
-        error="EneaApiError: Unexpected response from notifications endpoint: 500",
-    )
+    notifications_state = {
+        "checked_until": "2026-10-08",
+        "seen": 3,
+        "shown": 1,
+        "read_to_send": 0,
+        "error": "EneaApiError: Unexpected response from notifications endpoint: 500",
+    }
+    coord._notifications = SimpleNamespace(diagnostics=lambda: notifications_state)
 
     state = coord.diagnostics_state()
 
@@ -285,11 +288,7 @@ async def test_coordinator_state_reports_failures() -> None:
     assert state["statistics_last_run"] == "2026-10-09T13:00:00"
     assert state["statistics_error"] == "EneaApiError: Unexpected response from range endpoint: 500"
     assert state["zero_filled_days"] == ["2026-10-01", "2026-10-03"]
-    assert state["notifications"] == {
-        "checked_until": "2026-10-08",
-        "seen": 3,
-        "error": "EneaApiError: Unexpected response from notifications endpoint: 500",
-    }
+    assert state["notifications"] == notifications_state
     assert state["tariff_groups"] == [
         {"from": "2022-01-08", "until": "2025-12-13", "group": "G11", "priced": False},
         {"from": "2025-12-13", "until": None, "group": "G12", "priced": False},

@@ -6,7 +6,8 @@ of the account with the option on, plus the messages to every customer.  The
 first check fetches every message there is; later ones only the days since
 the last check, which the portal answers much faster.  A message becomes a
 persistent notification once, when it is first seen, and only while the
-portal would still present it — see should_show.
+portal would still present it — see should_show.  It stays until dismissed,
+a restart included; dismissing it marks the message read in the portal.
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from typing import Any
 
 from homeassistant.components import persistent_notification
 from homeassistant.const import CONF_USERNAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -101,14 +102,21 @@ def storage_key(username: str) -> str:
 class EneaNotifications:
     """Turns the new portal messages of one account into persistent notifications.
 
-    The ids of the messages seen, the last day checked and the meters checked
-    are stored per account, so a notification the user dismissed does not
-    come back after a restart, no message is missed while Home Assistant was
-    off and a meter added later gets its whole history checked.
+    Kept in the account's store:
+
+    * the ids of the messages seen, so a message is notified about once;
+    * the last day checked, so no message is missed while Home Assistant was off;
+    * the meters checked, so a meter added later gets its whole history checked;
+    * the notifications shown and not yet dismissed — Home Assistant keeps its
+      notifications in memory only, so these are shown again after a restart;
+    * the messages dismissed whose "read" the portal has not taken yet.
+
+    Dismissing a notification in Home Assistant marks its message read in the
+    portal, as closing the message's window there does.
     """
 
     def __init__(self, hass: HomeAssistant, client: EneaApiClient, username: str) -> None:
-        """Prepare the store; it is read on the first update."""
+        """Prepare the store, read on the first update, and watch for dismissals."""
         self._hass = hass
         self._client = client
         self._username = username
@@ -119,15 +127,30 @@ class EneaNotifications:
         self._loaded = False
         self._seen: set[int] = set()
         self._meters: set[int] = set()
+        # Notifications on screen, by message id: their title and text.
+        self._shown: dict[int, dict[str, str]] = {}
+        self._read_to_send: set[int] = set()
         self._last_check: datetime | None = None
         self.checked_until: date | None = None
         # The last check's failure, only logged — kept for the diagnostics report.
         self.error: str | None = None
+        self._unsubscribe = persistent_notification.async_register_callback(
+            hass, self._async_notifications_changed
+        )
 
-    @property
-    def seen(self) -> int:
-        """Return how many messages have been seen, for the diagnostics report."""
-        return len(self._seen)
+    def unsubscribe(self) -> None:
+        """Stop watching for dismissals; the account's last meter was unloaded."""
+        self._unsubscribe()
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Return the state worth a diagnostics report — counts, no message text."""
+        return {
+            "checked_until": self.checked_until.isoformat() if self.checked_until else None,
+            "seen": len(self._seen),
+            "shown": len(self._shown),
+            "read_to_send": len(self._read_to_send),
+            "error": self.error,
+        }
 
     def _meter_ids(self) -> list[int]:
         """Return the account's meters whose entries have the messages on."""
@@ -139,6 +162,73 @@ class EneaNotifications:
             and entry.options.get(CONF_NOTIFICATIONS, True)
         )
 
+    def _show(self, message_id: int, title: str, text: str) -> None:
+        """Create the notification of a message; the same id replaces, never doubles."""
+        persistent_notification.async_create(
+            self._hass, text, title=title, notification_id=NOTIFICATION_ID.format(id=message_id)
+        )
+
+    @callback
+    def _async_notifications_changed(
+        self, update_type: persistent_notification.UpdateType, notifications: dict[str, Any]
+    ) -> None:
+        """Mark the messages of dismissed notifications read in the portal."""
+        if update_type is not persistent_notification.UpdateType.REMOVED:
+            return
+        dismissed = [
+            message_id for message_id in self._shown
+            if NOTIFICATION_ID.format(id=message_id) in notifications
+        ]
+        if not dismissed:
+            return
+        for message_id in dismissed:
+            del self._shown[message_id]
+            self._read_to_send.add(message_id)
+        self._hass.async_create_task(self._async_send_read(), name="enea_notifications_read")
+
+    async def _async_send_read(self) -> None:
+        """Send the dismissed messages' "read" to the portal and store what is left."""
+        async with self._lock:
+            await self._async_mark_read()
+            await self._async_save()
+
+    async def _async_mark_read(self) -> None:
+        """Tell the portal which dismissed messages were read; a failure waits for the next check."""
+        for message_id in sorted(self._read_to_send):
+            try:
+                await self._client.mark_notification_read(message_id)
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to mark a Portal Odbiorcy Enea message read, will retry: %s", err
+                )
+                return
+            self._read_to_send.discard(message_id)
+
+    async def _async_save(self) -> None:
+        """Write the account's state to its store."""
+        await self._store.async_save(
+            {
+                "checked_until": self.checked_until.isoformat() if self.checked_until else None,
+                "meters": sorted(self._meters),
+                "seen": sorted(self._seen),
+                "shown": {str(message_id): shown for message_id, shown in self._shown.items()},
+                "read_to_send": sorted(self._read_to_send),
+            }
+        )
+
+    async def _async_load(self) -> None:
+        """Read the store and show again the notifications a restart took away."""
+        stored = await self._store.async_load() or {}
+        self._seen = set(stored.get("seen", ()))
+        self._meters = set(stored.get("meters", ()))
+        self._read_to_send = set(stored.get("read_to_send", ()))
+        self._shown = {int(key): value for key, value in (stored.get("shown") or {}).items()}
+        checked = stored.get("checked_until")
+        self.checked_until = date.fromisoformat(checked) if checked else None
+        for message_id, shown in self._shown.items():
+            self._show(message_id, shown["title"], shown["message"])
+        self._loaded = True
+
     async def async_update(self) -> None:
         """Fetch the messages since the last check and notify about the new ones.
 
@@ -148,6 +238,8 @@ class EneaNotifications:
         messages must not fail a refresh.
         """
         async with self._lock:
+            if not self._loaded:
+                await self._async_load()
             meter_ids = self._meter_ids()
             now = dt_util.now()
             if (
@@ -158,6 +250,7 @@ class EneaNotifications:
             ):
                 return
             try:
+                await self._async_mark_read()
                 await self._async_check(meter_ids, now)
             except Exception as err:
                 self.error = mask_ppe(f"{type(err).__name__}: {err}")
@@ -165,17 +258,10 @@ class EneaNotifications:
             else:
                 self.error = None
                 self._last_check = now
+            await self._async_save()
 
     async def _async_check(self, meter_ids: list[int], now: datetime) -> None:
         """Fetch the messages of the meters and create the notifications."""
-        if not self._loaded:
-            stored = await self._store.async_load() or {}
-            self._seen = set(stored.get("seen", ()))
-            self._meters = set(stored.get("meters", ()))
-            checked = stored.get("checked_until")
-            self.checked_until = date.fromisoformat(checked) if checked else None
-            self._loaded = True
-
         today = now.date()
         if self.checked_until is None or not self._meters.issuperset(meter_ids):
             # First check, or a meter never checked before: its whole history.
@@ -186,27 +272,18 @@ class EneaNotifications:
                 meter_ids, min(self.checked_until, today), today
             )
 
-        new = [
-            message for message in messages
-            if message.get("id") is not None and message["id"] not in self._seen
-        ]
-        for message in new:
+        for message in messages:
+            message_id = message.get("id")
+            if message_id is None or message_id in self._seen:
+                continue
+            self._seen.add(message_id)
             if should_show(message, now):
                 title = message.get("title")
-                persistent_notification.async_create(
-                    self._hass,
-                    notification_message(message),
-                    title=f"Portal Odbiorcy Enea: {title}" if title else "Portal Odbiorcy Enea",
-                    notification_id=NOTIFICATION_ID.format(id=message["id"]),
-                )
-        self._seen.update(message["id"] for message in new)
-        if new or self.checked_until != today or self._meters != set(meter_ids):
-            self.checked_until = today
-            self._meters = set(meter_ids)
-            await self._store.async_save(
-                {
-                    "checked_until": today.isoformat(),
-                    "meters": sorted(self._meters),
-                    "seen": sorted(self._seen),
+                shown = {
+                    "title": f"Portal Odbiorcy Enea: {title}" if title else "Portal Odbiorcy Enea",
+                    "message": notification_message(message),
                 }
-            )
+                self._shown[message_id] = shown
+                self._show(message_id, shown["title"], shown["message"])
+        self.checked_until = today
+        self._meters = set(meter_ids)

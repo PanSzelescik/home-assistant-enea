@@ -37,11 +37,13 @@ Integracja jest dostępna w domyślnym katalogu HACS — nie trzeba dodawać wł
 4. Ustaw interwał odświeżania i wybierz, które typy statystyk pobierać (domyślnie: energia pobrana i oddana; moc domyślnie wyłączona)
 5. Gotowe! Historia energii pobiera się automatycznie w tle — sensory są dostępne od razu
 
+Typ statystyk włączony później w opcjach integracji (np. moc) też dostaje swoją historię — integracja pobiera ją jednorazowo w tle, bez ponownego pobierania pozostałych.
+
 ## Statystyki historyczne godzinowe
 
 Po dodaniu integracji automatycznie pobierane są historyczne dane energii i mocy z granularnością **godzinową**. Dane są wstrzykiwane jako **statystyki zewnętrzne** Home Assistant, co pozwala wyświetlić pełną historię w panelu Energia z prawidłowymi timestampami.
 
-> **Kiedy dostępne:** Dane za poprzedni dzień pojawiają się zwykle po godzinie 11:00. Integracja automatycznie sprawdza dostępność przy każdym odświeżeniu i pobiera brakujące dni. Jeśli Portal Odbiorcy Enea w ogóle nie opublikuje danych za dany dzień (zdarza się sporadycznie), integracja czeka 3 dni, a potem wpisuje dla niego zerowe zużycie — dzięki temu luka nie zaburza statystyk kolejnych dni. Gdy dane później się pojawią, wystarczy ponownie uruchomić **`enea.backfill`** dla tego dnia, żeby je poprawnie zaimportować.
+> **Kiedy dostępne:** Licznik wysyła dane za poprzedni dzień zwykle między północą a 6:00, a w Home Assistant pojawiają się przy najbliższym odświeżeniu (domyślnie co 3,5 godziny). Integracja automatycznie sprawdza dostępność przy każdym odświeżeniu i pobiera brakujące dni. Jeśli Portal Odbiorcy Enea w ogóle nie opublikuje danych za dany dzień (zdarza się sporadycznie), integracja czeka 3 dni, a potem wpisuje dla niego zerowe zużycie — dzięki temu luka nie zaburza statystyk kolejnych dni. Gdy dane później się pojawią, wystarczy ponownie uruchomić **`enea.backfill`** dla tego dnia, żeby je poprawnie zaimportować.
 
 ### Dostępne statystyki
 
@@ -266,6 +268,8 @@ Workflow **Tests** uruchamia ten sam pomiar dla pushy i pull requestów. Podsumo
 pokrycia jest widoczne w podsumowaniu joba, a raporty HTML i XML w artefakcie
 `coverage-report`, przechowywanym przez 14 dni. Raporty powstają również po porażce
 testów, jeśli pomiar zebrał dane; nie zmienia to wyniku testów na sukces.
+
+Jak przygotować zmianę i pull request — zob. [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Podziękowania
 

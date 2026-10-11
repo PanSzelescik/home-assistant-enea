@@ -962,6 +962,18 @@ wheels = [
 ]
 
 [[package]]
+name = "holidays"
+version = "0.106"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a4/85/30fadb3b2014177299eea883bfd74d7e893d495fb4b37adc3f4968004d87/holidays-0.106.tar.gz", hash = "sha256:2e635a59102acb47e79a751c37fb04eff5ac77069a3b33d58cbfad66d243ffb3", size = 1048446, upload-time = "2026-10-05T19:23:13.417Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/f6/59f817df052a81e39bbc23cb10795cf721d14b36a4cf0d897bfe11648a22/holidays-0.106-py3-none-any.whl", hash = "sha256:4be3fb5be6a88a232e92f96825e4fab9b80710caabde90b7c476e57ba0ed9f5d", size = 1656690, upload-time = "2026-10-05T19:23:11.32Z" },
+]
+
+[[package]]
 name = "home-assistant-bluetooth"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -981,6 +993,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "coverage" },
+    { name = "holidays" },
     { name = "homeassistant" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -991,6 +1004,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "coverage", specifier = ">=7.16.2" },
+    { name = "holidays", specifier = ">=0.104" },
     { name = "homeassistant", specifier = ">=2026.6.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },

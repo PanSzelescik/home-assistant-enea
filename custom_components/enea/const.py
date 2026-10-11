@@ -49,6 +49,8 @@ CONF_FETCH_POWER_GENERATION = "fetch_power_generation"
 CONF_NET_METERING = "net_metering"
 # Set once a prosumer's energy history has been imported from balanced data.
 CONF_BALANCED_HISTORY = "balanced_history"
+# Statistic keys whose history has been imported; a measurement enabled later gets its own.
+CONF_IMPORTED_STATISTICS = "imported_statistics"
 
 # ---------------------------------------------------------------------------
 # Sensor keys (must match translation files)
@@ -60,6 +62,7 @@ SENSOR_KEY_STATUS = "status"
 SENSOR_KEY_ADDRESS = "address"
 SENSOR_KEY_READING_DATE = "reading_date"
 SENSOR_KEY_METER_MODEL = "meter_model"
+SENSOR_KEY_METER_ASSEMBLY = "meter_assembly"
 SENSOR_KEY_HAN_WMBUS = "han_wmbus"
 SENSOR_KEY_HAN_P1 = "han_p1"
 SENSOR_KEY_SWITCH_STATE = "switch_state"

@@ -106,14 +106,14 @@ async def test_running_backfill_blocks_incremental_refresh_and_can_be_cancelled(
     coord._fetch_power_consumption = False
     coord._fetch_power_generation = False
     coord._prosumer = True
-    coord._async_latest_statistics_date = AsyncMock()
+    coord._async_latest_statistics_dates = AsyncMock()
     coord._async_inject_days = AsyncMock()
     coord.async_update_listeners = Mock()
     coord.hass.config_entries = SimpleNamespace(async_update_entry=Mock())
     entered = asyncio.Event()
     release = asyncio.Event()
 
-    async def fetch(end):
+    async def fetch(end, keys=None):
         """Keep a fetch pending until cancellation, without relying on sleep timing."""
         entered.set()
         await release.wait()
@@ -125,7 +125,7 @@ async def test_running_backfill_blocks_incremental_refresh_and_can_be_cancelled(
     try:
         await asyncio.wait_for(entered.wait(), timeout=2)
         await coord._async_fetch_and_inject_stats()
-        coord._async_latest_statistics_date.assert_not_awaited()
+        coord._async_latest_statistics_dates.assert_not_awaited()
         coord._async_inject_days.assert_not_awaited()
 
         coord.cancel_backfill()

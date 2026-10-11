@@ -29,6 +29,7 @@ from .const import (
     STAT_KEY_POWER_CONSUMED,
     STAT_KEY_POWER_RETURNED,
 )
+from .parsing import has_data, slot_start_dt
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,26 +81,6 @@ async def async_statistics_overview(hass: HomeAssistant, meter_code: str) -> dic
             },
         }
     return overview
-
-
-def has_data(api_response: dict[str, Any]) -> bool:
-    """Return True if the response contains at least one non-null value."""
-    for entry in api_response.get("values", []):
-        for item in entry.get("items", []):
-            if item.get("value") is not None:
-                return True
-    return False
-
-
-def slot_start_dt(entry: dict[str, Any]) -> datetime:
-    """Return the local-aware start datetime of an hourly slot.
-
-    Derived from the slot's ``integrationEnd`` (ms epoch, end of the hour) rather
-    than from ``timeId``, so it stays correct across DST transitions — the API
-    returns 23 or 25 slots on the spring/autumn switch days, not a fixed 24.
-    """
-    end = dt_util.utc_from_timestamp(entry["integrationEnd"] / 1000)
-    return (end - timedelta(hours=1)).astimezone(dt_util.DEFAULT_TIME_ZONE)
 
 
 async def _newest_entry(

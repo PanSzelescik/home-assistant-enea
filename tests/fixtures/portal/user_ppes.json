@@ -1,0 +1,38 @@
+[
+  {
+    "id": 12345,
+    "name": "590310600000001234",
+    "code": "590310600000001234",
+    "contractualCapacity": 14.0,
+    "maximumPower": null,
+    "address": null,
+    "type": 1,
+    "tariffGroup": {
+      "id": 6189,
+      "name": "G12",
+      "zones": [
+        {
+          "id": 3466,
+          "name": "Dzień",
+          "obis": null,
+          "zoneNr": null,
+          "consumption": 0,
+          "consumptionForReport": 0,
+          "showInTable": true
+        },
+        {
+          "id": 3467,
+          "name": "Noc",
+          "obis": null,
+          "zoneNr": null,
+          "consumption": 0,
+          "consumptionForReport": 0,
+          "showInTable": true
+        }
+      ]
+    },
+    "roundWindow": 0,
+    "bestMeterCategory": "AMI",
+    "connectionVoltage": "nN"
+  }
+]

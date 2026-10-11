@@ -161,6 +161,9 @@
       "meter_model": {
         "name": "Model licznika"
       },
+      "meter_assembly": {
+        "name": "Data montażu licznika"
+      },
       "phases": {
         "name": "Typ instalacji",
         "state": {

@@ -8,6 +8,7 @@ Home Assistant test harness.
 """
 from __future__ import annotations
 
+import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +21,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 TEST_TIME_ZONE = "Europe/Warsaw"
 """The zone a real installation of this integration runs in."""
+
+PORTAL_FIXTURES = Path(__file__).parent / "fixtures" / "portal"
+"""Anonymised responses of the Portal Odbiorcy Enea (scripts/anonymize_fixtures.py)."""
+
+
+def load_portal_fixture(name: str) -> Any:
+    """Return a fresh copy of one saved portal response, by file name without .json."""
+    return json.loads((PORTAL_FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
 @pytest.fixture(autouse=True)

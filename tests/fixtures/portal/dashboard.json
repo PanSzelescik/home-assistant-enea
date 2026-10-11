@@ -1,0 +1,1925 @@
+{
+  "id": 12345,
+  "created": 1774017001823,
+  "name": "590310600000001234",
+  "code": "590310600000001234",
+  "agreementPower": 14,
+  "maximumPower": null,
+  "tariffGroupId": 6189,
+  "tariffGroupName": "G12",
+  "address": {
+    "city": "Poznań",
+    "district": null,
+    "street": "Przykładowa",
+    "postCode": "60-001",
+    "houseNum": "1",
+    "apartmentNum": null,
+    "parcelNum": null
+  },
+  "meters": [
+    {
+      "id": 1001,
+      "serialNumber": "90000001",
+      "powerState": "Nieustalony",
+      "typeName": "OTUS3",
+      "lastDataTime": null,
+      "roleName": "Rozliczeniowy",
+      "generationMeterType": null,
+      "sourceNumber": null,
+      "assemblyDate": 1774005164000,
+      "disassemblyDate": null
+    },
+    {
+      "id": 1002,
+      "serialNumber": "90000002",
+      "powerState": "Nieustalony",
+      "typeName": "MT174",
+      "lastDataTime": null,
+      "roleName": "Rozliczeniowy",
+      "generationMeterType": null,
+      "sourceNumber": null,
+      "assemblyDate": 1720168514000,
+      "disassemblyDate": 1774005164000
+    },
+    {
+      "id": 1003,
+      "serialNumber": "90000003",
+      "powerState": "Nieustalony",
+      "typeName": "MT174",
+      "lastDataTime": null,
+      "roleName": "Rozliczeniowy",
+      "generationMeterType": null,
+      "sourceNumber": null,
+      "assemblyDate": 1456268399000,
+      "disassemblyDate": 1720168514000
+    }
+  ],
+  "type": 1,
+  "currentValues": [
+    {
+      "measurementName": "Energia czynna pobrana",
+      "measurementId": 1,
+      "valueNoZones": {
+        "value": 1589.34957,
+        "roundWindowAfter": 0,
+        "roundWindowBefore": 8,
+        "exported": false
+      },
+      "valueZone1": {
+        "value": 968.91876,
+        "roundWindowAfter": 0,
+        "roundWindowBefore": 8,
+        "exported": false
+      },
+      "valueZone2": {
+        "value": 620.43081,
+        "roundWindowAfter": 0,
+        "roundWindowBefore": 8,
+        "exported": false
+      },
+      "valueZone3": {
+        "value": 0,
+        "roundWindowAfter": 0,
+        "roundWindowBefore": 8,
+        "exported": false
+      },
+      "valueZone4": null,
+      "unit": {
+        "symbol": "Wh",
+        "scaler": 3
+      },
+      "readingDate": 1791603073000,
+      "ppeZones": [
+        "Dzień 1.8.1",
+        "Noc 1.8.2"
+      ],
+      "values": [
+        {
+          "value": 1589.34957,
+          "roundWindowAfter": 0,
+          "roundWindowBefore": 8,
+          "exported": false
+        },
+        {
+          "value": 968.91876,
+          "roundWindowAfter": 0,
+          "roundWindowBefore": 8,
+          "exported": false
+        },
+        {
+          "value": 620.43081,
+          "roundWindowAfter": 0,
+          "roundWindowBefore": 8,
+          "exported": false
+        },
+        {
+          "value": 0,
+          "roundWindowAfter": 0,
+          "roundWindowBefore": 8,
+          "exported": false
+        },
+        null
+      ]
+    },
+    {
+      "measurementName": "Energia czynna oddana",
+      "measurementId": 2,
+      "valueNoZones": {
+        "value": 0.1411,
+        "roundWindowAfter": 0,
+        "roundWindowBefore": 8,
+        "exported": false
+      },
+      "valueZone1": {
+        "value": 0.1411,
+        "roundWindowAfter": 0,
+        "roundWindowBefore": 8,
+        "exported": false
+      },
+      "valueZone2": {
+        "value": 0,
+        "roundWindowAfter": 0,
+        "roundWindowBefore": 8,
+        "exported": false
+      },
+      "valueZone3": {
+        "value": 0,
+        "roundWindowAfter": 0,
+        "roundWindowBefore": 8,
+        "exported": false
+      },
+      "valueZone4": null,
+      "unit": {
+        "symbol": "Wh",
+        "scaler": 3
+      },
+      "readingDate": 1791603073000,
+      "ppeZones": [
+        "Dzień 2.8.1",
+        "Noc 2.8.2"
+      ],
+      "values": [
+        {
+          "value": 0.1411,
+          "roundWindowAfter": 0,
+          "roundWindowBefore": 8,
+          "exported": false
+        },
+        {
+          "value": 0.1411,
+          "roundWindowAfter": 0,
+          "roundWindowBefore": 8,
+          "exported": false
+        },
+        {
+          "value": 0,
+          "roundWindowAfter": 0,
+          "roundWindowBefore": 8,
+          "exported": false
+        },
+        {
+          "value": 0,
+          "roundWindowAfter": 0,
+          "roundWindowBefore": 8,
+          "exported": false
+        },
+        null
+      ]
+    }
+  ],
+  "billingWeekData": [
+    {
+      "measurementId": 1,
+      "measurementName": "Energia czynna pobrana",
+      "values": [
+        {
+          "timeId": 0,
+          "integrationEnd": 1780351200000,
+          "items": [
+            {
+              "value": 266,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 168,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1775512800000,
+          "timeTo": 1780351200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780437600000,
+          "items": [
+            {
+              "value": 3,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 2,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780351200000,
+          "timeTo": 1780437600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780524000000,
+          "items": [
+            {
+              "value": 4,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 2,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780437600000,
+          "timeTo": 1780524000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780610400000,
+          "items": [
+            {
+              "value": 4,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 3,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780524000000,
+          "timeTo": 1780610400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780696800000,
+          "items": [
+            {
+              "value": 4,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 3,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780610400000,
+          "timeTo": 1780696800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780783200000,
+          "items": [
+            {
+              "value": 5,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 3,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780696800000,
+          "timeTo": 1780783200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785621600000,
+          "items": [
+            {
+              "value": 282,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 180,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780783200000,
+          "timeTo": 1785621600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785708000000,
+          "items": [
+            {
+              "value": 6,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 2,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785621600000,
+          "timeTo": 1785708000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785794400000,
+          "items": [
+            {
+              "value": 6,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 3,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785708000000,
+          "timeTo": 1785794400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785880800000,
+          "items": [
+            {
+              "value": 4,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 2,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785794400000,
+          "timeTo": 1785880800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785967200000,
+          "items": [
+            {
+              "value": 7,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 2,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785880800000,
+          "timeTo": 1785967200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1790805600000,
+          "items": [
+            {
+              "value": 253,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 163,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785967200000,
+          "timeTo": 1790805600000
+        }
+      ],
+      "zones": [
+        {
+          "id": 3466,
+          "name": "Dzień",
+          "obis": "1.8.1",
+          "zoneNr": 1,
+          "consumption": 846,
+          "consumptionForReport": 0,
+          "showInTable": true
+        },
+        {
+          "id": 3467,
+          "name": "Noc",
+          "obis": "1.8.2",
+          "zoneNr": 2,
+          "consumption": 537,
+          "consumptionForReport": 0,
+          "showInTable": true
+        }
+      ],
+      "unit": "Wh",
+      "unitScaler": 3,
+      "sumConsumption": 1383,
+      "roundWindowBefore": 8,
+      "roundWindowAfter": 0
+    },
+    {
+      "measurementId": 2,
+      "measurementName": "Energia czynna oddana",
+      "values": [
+        {
+          "timeId": 0,
+          "integrationEnd": 1780351200000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1775512800000,
+          "timeTo": 1780351200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780437600000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780351200000,
+          "timeTo": 1780437600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780524000000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780437600000,
+          "timeTo": 1780524000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780610400000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780524000000,
+          "timeTo": 1780610400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780696800000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780610400000,
+          "timeTo": 1780696800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780783200000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780696800000,
+          "timeTo": 1780783200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785621600000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780783200000,
+          "timeTo": 1785621600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785708000000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785621600000,
+          "timeTo": 1785708000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785794400000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785708000000,
+          "timeTo": 1785794400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785880800000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785794400000,
+          "timeTo": 1785880800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785967200000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785880800000,
+          "timeTo": 1785967200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1790805600000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785967200000,
+          "timeTo": 1790805600000
+        }
+      ],
+      "zones": [
+        {
+          "id": 3466,
+          "name": "Dzień",
+          "obis": "2.8.1",
+          "zoneNr": 1,
+          "consumption": 0,
+          "consumptionForReport": 0,
+          "showInTable": true
+        },
+        {
+          "id": 3467,
+          "name": "Noc",
+          "obis": "2.8.2",
+          "zoneNr": 2,
+          "consumption": 0,
+          "consumptionForReport": 0,
+          "showInTable": true
+        }
+      ],
+      "unit": "Wh",
+      "unitScaler": 3,
+      "sumConsumption": 0,
+      "roundWindowBefore": 8,
+      "roundWindowAfter": 0
+    },
+    {
+      "measurementId": 3,
+      "measurementName": "Energia bierna kwadrant I",
+      "values": [
+        {
+          "timeId": 0,
+          "integrationEnd": 1780351200000,
+          "items": [
+            {
+              "value": 65,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 44,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1775512800000,
+          "timeTo": 1780351200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780437600000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780351200000,
+          "timeTo": 1780437600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780524000000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 1,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780437600000,
+          "timeTo": 1780524000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780610400000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 1,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780524000000,
+          "timeTo": 1780610400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780696800000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 1,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780610400000,
+          "timeTo": 1780696800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780783200000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780696800000,
+          "timeTo": 1780783200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785621600000,
+          "items": [
+            {
+              "value": 81,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 51,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780783200000,
+          "timeTo": 1785621600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785708000000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 1,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785621600000,
+          "timeTo": 1785708000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785794400000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 1,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785708000000,
+          "timeTo": 1785794400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785880800000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 1,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785794400000,
+          "timeTo": 1785880800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785967200000,
+          "items": [
+            {
+              "value": 2,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785880800000,
+          "timeTo": 1785967200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1790805600000,
+          "items": [
+            {
+              "value": 21,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 12,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785967200000,
+          "timeTo": 1790805600000
+        }
+      ],
+      "zones": [
+        {
+          "id": 3466,
+          "name": "Dzień",
+          "obis": "5.8.1",
+          "zoneNr": 1,
+          "consumption": 174,
+          "consumptionForReport": 0,
+          "showInTable": true
+        },
+        {
+          "id": 3467,
+          "name": "Noc",
+          "obis": "5.8.2",
+          "zoneNr": 2,
+          "consumption": 111,
+          "consumptionForReport": 0,
+          "showInTable": true
+        }
+      ],
+      "unit": "Varh",
+      "unitScaler": 3,
+      "sumConsumption": 286,
+      "roundWindowBefore": 8,
+      "roundWindowAfter": 0
+    },
+    {
+      "measurementId": 4,
+      "measurementName": "Energia bierna kwadrant II",
+      "values": [
+        {
+          "timeId": 0,
+          "integrationEnd": 1780351200000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1775512800000,
+          "timeTo": 1780351200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780437600000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780351200000,
+          "timeTo": 1780437600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780524000000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780437600000,
+          "timeTo": 1780524000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780610400000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780524000000,
+          "timeTo": 1780610400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780696800000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780610400000,
+          "timeTo": 1780696800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780783200000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780696800000,
+          "timeTo": 1780783200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785621600000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780783200000,
+          "timeTo": 1785621600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785708000000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785621600000,
+          "timeTo": 1785708000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785794400000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785708000000,
+          "timeTo": 1785794400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785880800000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785794400000,
+          "timeTo": 1785880800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785967200000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785880800000,
+          "timeTo": 1785967200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1790805600000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785967200000,
+          "timeTo": 1790805600000
+        }
+      ],
+      "zones": [
+        {
+          "id": 3466,
+          "name": "Dzień",
+          "obis": "6.8.1",
+          "zoneNr": 1,
+          "consumption": 0,
+          "consumptionForReport": 0,
+          "showInTable": true
+        },
+        {
+          "id": 3467,
+          "name": "Noc",
+          "obis": "6.8.2",
+          "zoneNr": 2,
+          "consumption": 0,
+          "consumptionForReport": 0,
+          "showInTable": true
+        }
+      ],
+      "unit": "Varh",
+      "unitScaler": 3,
+      "sumConsumption": 0,
+      "roundWindowBefore": 8,
+      "roundWindowAfter": 0
+    },
+    {
+      "measurementId": 5,
+      "measurementName": "Energia bierna kwadrant III",
+      "values": [
+        {
+          "timeId": 0,
+          "integrationEnd": 1780351200000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1775512800000,
+          "timeTo": 1780351200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780437600000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780351200000,
+          "timeTo": 1780437600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780524000000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780437600000,
+          "timeTo": 1780524000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780610400000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780524000000,
+          "timeTo": 1780610400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780696800000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780610400000,
+          "timeTo": 1780696800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780783200000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780696800000,
+          "timeTo": 1780783200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785621600000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780783200000,
+          "timeTo": 1785621600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785708000000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785621600000,
+          "timeTo": 1785708000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785794400000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785708000000,
+          "timeTo": 1785794400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785880800000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785794400000,
+          "timeTo": 1785880800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785967200000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785880800000,
+          "timeTo": 1785967200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1790805600000,
+          "items": [
+            {
+              "value": 0,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785967200000,
+          "timeTo": 1790805600000
+        }
+      ],
+      "zones": [
+        {
+          "id": 3466,
+          "name": "Dzień",
+          "obis": "7.8.1",
+          "zoneNr": 1,
+          "consumption": 0,
+          "consumptionForReport": 0,
+          "showInTable": true
+        },
+        {
+          "id": 3467,
+          "name": "Noc",
+          "obis": "7.8.2",
+          "zoneNr": 2,
+          "consumption": 0,
+          "consumptionForReport": 0,
+          "showInTable": true
+        }
+      ],
+      "unit": "Varh",
+      "unitScaler": 3,
+      "sumConsumption": 0,
+      "roundWindowBefore": 8,
+      "roundWindowAfter": 0
+    },
+    {
+      "measurementId": 6,
+      "measurementName": "Energia bierna kwadrant IV",
+      "values": [
+        {
+          "timeId": 0,
+          "integrationEnd": 1780351200000,
+          "items": [
+            {
+              "value": 61,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 37,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1775512800000,
+          "timeTo": 1780351200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780437600000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780351200000,
+          "timeTo": 1780437600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780524000000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780437600000,
+          "timeTo": 1780524000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780610400000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780524000000,
+          "timeTo": 1780610400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780696800000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780610400000,
+          "timeTo": 1780696800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1780783200000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780696800000,
+          "timeTo": 1780783200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785621600000,
+          "items": [
+            {
+              "value": 57,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 37,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1780783200000,
+          "timeTo": 1785621600000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785708000000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785621600000,
+          "timeTo": 1785708000000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785794400000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785708000000,
+          "timeTo": 1785794400000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785880800000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 1,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785794400000,
+          "timeTo": 1785880800000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1785967200000,
+          "items": [
+            {
+              "value": 1,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 0,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785880800000,
+          "timeTo": 1785967200000
+        },
+        {
+          "timeId": 0,
+          "integrationEnd": 1790805600000,
+          "items": [
+            {
+              "value": 68,
+              "tarifZoneId": 3466,
+              "status": 0,
+              "prevAgreement": false
+            },
+            {
+              "value": 43,
+              "tarifZoneId": 3467,
+              "status": 0,
+              "prevAgreement": false
+            }
+          ],
+          "isWinter": false,
+          "timeFrom": 1785967200000,
+          "timeTo": 1790805600000
+        }
+      ],
+      "zones": [
+        {
+          "id": 3466,
+          "name": "Dzień",
+          "obis": "8.8.1",
+          "zoneNr": 1,
+          "consumption": 193,
+          "consumptionForReport": 0,
+          "showInTable": true
+        },
+        {
+          "id": 3467,
+          "name": "Noc",
+          "obis": "8.8.2",
+          "zoneNr": 2,
+          "consumption": 118,
+          "consumptionForReport": 0,
+          "showInTable": true
+        }
+      ],
+      "unit": "Varh",
+      "unitScaler": 3,
+      "sumConsumption": 311,
+      "roundWindowBefore": 8,
+      "roundWindowAfter": 0
+    }
+  ],
+  "dateFrom": 1790978400000,
+  "dateTo": 1791583199000,
+  "roundWindowAfter": 3,
+  "roundWindowBefore": 8,
+  "detailedStatus": "Aktywny_Pod napięciem - z układem pomiarowym",
+  "agreements": [
+    {
+      "id": 2001,
+      "agreementNumber": "UMOWA/TEST/0001",
+      "from": 1733526000000,
+      "to": null,
+      "ppes": [],
+      "agreementPower": 14,
+      "agreementPowers": [],
+      "tariffGroupId": 6189,
+      "tariffGroupName": "G12"
+    },
+    {
+      "id": 2002,
+      "agreementNumber": "UMOWA/TEST/0002",
+      "from": 1208469600000,
+      "to": 1733526000000,
+      "ppes": [],
+      "agreementPower": 14,
+      "agreementPowers": [],
+      "tariffGroupId": 6189,
+      "tariffGroupName": "G12"
+    }
+  ],
+  "wmbusStatus": null,
+  "p1Status": null,
+  "switchState": 3,
+  "transmissionStatus": true,
+  "hanAvailable": true,
+  "drvSwitchLoadStatus": ""
+}

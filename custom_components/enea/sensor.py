@@ -48,6 +48,7 @@ from .const import (
     SENSOR_KEY_CAPACITY,
     SENSOR_KEY_HAN_P1,
     SENSOR_KEY_HAN_WMBUS,
+    SENSOR_KEY_METER_ASSEMBLY,
     SENSOR_KEY_METER_MODEL,
     SENSOR_KEY_PHASES,
     SENSOR_KEY_READING_DATE,
@@ -113,6 +114,12 @@ def _meter_model_attrs(data: dict[str, Any]) -> dict[str, Any]:
         }.items()
         if ts is not None
     }
+
+
+def _get_assembly_date(data: dict[str, Any]) -> datetime | None:
+    """Return when the active meter was assembled, or None if the portal does not say."""
+    ts = (get_active_meter(data) or {}).get("assemblyDate")
+    return datetime.fromtimestamp(ts / 1000, tz=timezone.utc) if ts else None
 
 
 def _get_reading_date(data: dict[str, Any]) -> datetime | None:
@@ -216,6 +223,14 @@ SENSOR_DESCRIPTIONS: tuple[EneaSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: (get_active_meter(data) or {}).get("typeName"),
         attr_fn=_meter_model_attrs,
+    ),
+    EneaSensorEntityDescription(
+        key=SENSOR_KEY_METER_ASSEMBLY,
+        translation_key=SENSOR_KEY_METER_ASSEMBLY,
+        icon="mdi:calendar-check",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_get_assembly_date,
     ),
     EneaSensorEntityDescription(
         key=SENSOR_KEY_PHASES,

@@ -128,7 +128,7 @@ async def test_forward_chunks_cover_inclusive_range_once(coord, length, offsets)
     """Chunk boundaries neither skip nor duplicate a day and preserve zero-fill policy."""
     start = date(2025, 1, 1)
 
-    async def fetch(first, last, zero_fill, grace, skip_leading):
+    async def fetch(first, last, zero_fill, grace, skip_leading, keys=None):
         """Represent every fetched day without building hundreds of hourly responses."""
         return [(first + timedelta(days=i), {}) for i in range((last - first).days + 1)]
 
@@ -205,7 +205,7 @@ async def test_backward_scan_stops_at_seven_empty_days(coord, empty_prefix, call
     assert result == data
     assert coord._fetch_range.await_count == calls
     assert coord._fetch_range.await_args_list[0].args == (first, end)
-    assert coord._fetch_range.await_args_list[0].kwargs == {}
+    assert coord._fetch_range.await_args_list[0].kwargs == {"keys": None}
     if calls == 2:
         assert coord._fetch_range.await_args_list[1].args == (first - timedelta(days=180), first - timedelta(days=1))
 
@@ -232,7 +232,7 @@ async def test_known_assembly_backfills_forward_with_zero_fill(coord):
     assert await coord._fetch_days_backward(date(2026, 10, 31)) == days
     coord._fetch_days_forward.assert_awaited_once_with(
         date(2026, 10, 1), date(2026, 10, 31), zero_fill_stale=True, grace_days=3,
-        skip_leading_gaps=True,
+        skip_leading_gaps=True, keys=None,
     )
 
 

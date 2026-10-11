@@ -125,6 +125,12 @@ Po wybraniu współczynnika w opcji **System opustów**:
 
 Szacunek nie uwzględnia nadwyżki przeniesionej z wcześniejszych okresów (energia oddana jest ważna 12 miesięcy). Przy net-billingu (przyłączenie od 1.04.2022) zostaw opcję **Brak**.
 
+### Która taryfa będzie tańsza?
+
+Integracja liczy koszty tylko w grupie taryfowej, w której jesteś, i nie porównuje grup. Do porównania służy **Kalkulator taryf** w [Portalu Odbiorcy Enea](https://portalodbiorcy.operator.enea.pl/portalOdbiorcy/#!/ems/kalkulator-taryf). Na podstawie godzinowych odczytów z Twojego licznika liczy koszt dystrybucji w każdej grupie (G11, G12, G12w, G12sezON, G13active). Ceny energii w każdej strefie wpisujesz sam, z faktury albo z oferty sprzedawcy.
+
+Kalkulator wymaga danych z ostatnich 12 miesięcy kompletnych w co najmniej 92%, więc po niedawnym montażu licznika albo zmianie umowy nie przeprowadzi symulacji. Wtedy skorzystaj z [kalkulatora taryf na profilach standardowych](https://www.operator.enea.pl/kalkulator-taryf) na stronie Enea Operator.
+
 ### Automatyczne przeładowanie
 
 Jeśli `enea_prices` zostanie zainstalowane po Enea Licznik, integracja Enea automatycznie się przeładuje — nie jest wymagane ręczne przeładowanie.

@@ -11,6 +11,8 @@ git-ignored for that reason), named after the request:
 * ``consumptionDashboard_ppe_id.json`` — ``/consumptionDashboard/ppe/{id}``
 * ``consumption_id_{from}_{to}_{type}_{resolution}[_{source}].json`` —
   ``/consumption/{id}/{from}/{to}/{type}/{resolution}[/{source}]``
+* ``notification.json`` — ``POST /notification/`` (the request body names the
+  meter id, the response only the PPE numbers in ``ppeCodes``)
 
 Every value identifying the customer — the meter id, the PPE number, the
 address, the serial numbers of the meters and the ids and numbers of the
@@ -125,6 +127,23 @@ def anonymize_dashboard(dashboard: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def anonymize_notifications(
+    messages: list[dict[str, Any]], ppes: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Replace the account's PPE numbers among the codes a message is addressed to."""
+    codes = {str(ppe[key]) for ppe in ppes for key in ("name", "code") if ppe.get(key)}
+
+    def fake(value: str | None) -> str | None:
+        """Return the comma-separated PPE codes with the account's replaced."""
+        if not value:
+            return value
+        return ",".join(
+            FAKE_PPE if code.strip() in codes else code for code in value.split(",")
+        )
+
+    return [{**message, "ppeCodes": fake(message.get("ppeCodes"))} for message in messages]
+
+
 def _leaks(text: str, identifiers: set[str]) -> list[str]:
     """Return the original identifiers still present in text."""
     leaked = []
@@ -150,6 +169,10 @@ def main(source: Path, target: Path) -> int:
         outputs["user_ppes.json"] = (anonymize_ppes(ppes), True)
     if dashboard:
         outputs["dashboard.json"] = (anonymize_dashboard(dashboard), True)
+    if (source / "notification.json").exists():
+        outputs["notifications.json"] = (
+            anonymize_notifications(load("notification.json"), ppes), True
+        )
     for path in sorted(source.glob("consumption_id_*.json")):
         match = RANGE_FILE.fullmatch(path.name)
         if not match:

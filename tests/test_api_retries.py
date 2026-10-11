@@ -13,7 +13,7 @@ from custom_components.enea.const import URL_LOGIN, URL_PPE_DASHBOARD
 def _response(status, data=None):
     """Provide the response methods used by the actual request implementation."""
     return SimpleNamespace(
-        status=status, url=URL(URL_PPE_DASHBOARD.format(meter_id=12345)),
+        method="GET", status=status, url=URL(URL_PPE_DASHBOARD.format(meter_id=12345)),
         read=AsyncMock(return_value=b"{}"), json=AsyncMock(return_value=data), release=Mock(),
     )
 

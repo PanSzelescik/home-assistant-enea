@@ -17,6 +17,7 @@ from .connector import EneaApiClient
 from .const import (
     COST_PRICES_STORAGE_KEY,
     COST_PRICES_STORAGE_VERSION,
+    NOTIFICATIONS_STORAGE_VERSION,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
     CONF_FETCH_POWER_CONSUMPTION,
@@ -24,6 +25,7 @@ from .const import (
     CONF_METER_ID,
     CONF_METER_NAME,
     CONF_NET_METERING,
+    CONF_NOTIFICATIONS,
     CONF_UPDATE_INTERVAL,
     DEFAULT_NET_METERING,
     DEFAULT_UPDATE_INTERVAL_DICT,
@@ -35,6 +37,15 @@ from .const import (
 )
 from .coordinator import EneaUpdateCoordinator
 from .issues import async_delete_issues
+from .notifications import EneaNotifications, storage_key
+
+
+@dataclass
+class EneaAccount:
+    """What the meters of one Portal Odbiorcy Enea account share."""
+
+    client: EneaApiClient
+    notifications: EneaNotifications
 
 
 @dataclass
@@ -78,13 +89,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
 
     # Reuse existing client for accounts with multiple meters (shared session/cookie).
     # If credentials changed (e.g. after reauth), update them in the shared client.
-    if username in hass.data[DOMAIN] and not hass.data[DOMAIN][username].session_closed:
-        client: EneaApiClient = hass.data[DOMAIN][username]
-        client.update_credentials(password)
+    # The messages are checked per account too: one request for all its meters.
+    account: EneaAccount | None = hass.data[DOMAIN].get(username)
+    if account is not None and not account.client.session_closed:
+        account.client.update_credentials(password)
     else:
+        if account is not None:
+            account.notifications.unsubscribe()
         session = async_create_clientsession(hass)
         client = EneaApiClient(session, username, password)
-        hass.data[DOMAIN][username] = client
+        account = EneaAccount(client, EneaNotifications(hass, client, username))
+        hass.data[DOMAIN][username] = account
 
     duration = entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_DICT)
     update_interval = timedelta(
@@ -95,7 +110,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
     update_coordinator = EneaUpdateCoordinator(
         hass,
         entry,
-        client,
+        account.client,
         entry.data[CONF_METER_ID],
         meter_code=entry.data[CONF_METER_NAME],
         update_interval=update_interval,
@@ -105,6 +120,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> bool
         fetch_power_generation=entry.options.get(CONF_FETCH_POWER_GENERATION, False),
         net_metering_ratio=NET_METERING_RATIOS.get(
             entry.options.get(CONF_NET_METERING, DEFAULT_NET_METERING)
+        ),
+        notifications=(
+            account.notifications if entry.options.get(CONF_NOTIFICATIONS, True) else None
         ),
     )
     entry.runtime_data = EneaRuntimeData(coordinator=update_coordinator)
@@ -173,9 +191,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> boo
             for e in hass.config_entries.async_entries(DOMAIN)
             if e.entry_id != entry.entry_id and e.state is ConfigEntryState.LOADED
         ]
-        # Remove the shared client only when no other entries use the same account.
+        # Remove the shared client and messages only when no other entries use the same account.
         if not any(e.data.get(CONF_USERNAME) == username for e in remaining):
-            hass.data[DOMAIN].pop(username, None)
+            if (account := hass.data[DOMAIN].pop(username, None)) is not None:
+                account.notifications.unsubscribe()
 
         # Remove the service when the last entry is unloaded.
         if not remaining:
@@ -186,8 +205,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> boo
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> None:
-    """Delete the repair issues and the stored cost prices of a removed meter entry."""
+    """Delete the repair issues and the stores of a removed meter entry.
+
+    The messages seen are the account's: they go with its last meter.
+    """
     async_delete_issues(hass, entry.entry_id)
     await Store(
         hass, COST_PRICES_STORAGE_VERSION, f"{COST_PRICES_STORAGE_KEY}.{entry.entry_id}"
     ).async_remove()
+    username = entry.data[CONF_USERNAME]
+    if not any(
+        other.entry_id != entry.entry_id and other.data.get(CONF_USERNAME) == username
+        for other in hass.config_entries.async_entries(DOMAIN)
+    ):
+        await Store(hass, NOTIFICATIONS_STORAGE_VERSION, storage_key(username)).async_remove()

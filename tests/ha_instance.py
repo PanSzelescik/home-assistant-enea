@@ -189,6 +189,12 @@ class FakePortal:
         # Report the meter as a prosumer's (type 2), as the portal does after a
         # PV installation is connected.
         self.prosumer = False
+        # The portal's messages; the fixture account has one, read long ago.
+        self.notifications: list[dict[str, Any]] = load_portal_fixture("notifications")
+        # Only the message requests fail with this; the dashboard still answers.
+        self.fail_notifications_with: Exception | None = None
+        # Only marking a message read fails with this.
+        self.fail_read_with: Exception | None = None
 
     def _check(self, *request: Any) -> None:
         """Record a request and raise the failure a test asked for, if any."""
@@ -237,6 +243,29 @@ class FakePortal:
             if hours:
                 return {"values": hours, "valuesToTable": hours, "zones": response["zones"]}
         return {"values": [], "valuesToTable": [], "zones": []}
+
+
+    async def get_notifications(
+        self, meter_ids: list[int], first: date | None = None, last: date | None = None
+    ) -> list[dict[str, Any]]:
+        """Return the messages received first..last, every one without dates."""
+        self._check("notifications", tuple(meter_ids), first, last)
+        if self.fail_notifications_with is not None:
+            raise self.fail_notifications_with
+        return [
+            copy.deepcopy(message) for message in self.notifications
+            if first is None
+            or first <= dt_util.as_local(dt_util.utc_from_timestamp(message["date"] / 1000)).date() <= last
+        ]
+
+    async def mark_notification_read(self, notification_id: int) -> None:
+        """Mark a message read, as closing its window in the portal does."""
+        self._check("read", notification_id)
+        if self.fail_read_with is not None:
+            raise self.fail_read_with
+        for message in self.notifications:
+            if message["id"] == notification_id:
+                message["isRead"] = True
 
 
 class FakeZonePricing:

@@ -46,6 +46,10 @@ class PortalServer:
             "/portalOdbiorcy/api/consumption/{meter_id}/{first}/{last}/{mtype}/{resolution}/{source}",
             self.range,
         )
+        app.router.add_post("/portalOdbiorcy/api/notification/", self.notifications)
+        app.router.add_post("/portalOdbiorcy/api/notification/read/{notification_id}", self.read)
+        # JSON bodies of the message requests, in order.
+        self.notification_queries: list[Any] = []
         self.server = TestServer(app)
 
     def expire_sessions(self) -> None:
@@ -103,6 +107,19 @@ class PortalServer:
         except FileNotFoundError:
             return web.json_response({"values": [], "valuesToTable": [], "zones": []})
 
+    async def notifications(self, request: web.Request) -> web.Response:
+        """Return the fixture account's messages, whatever the period asked for."""
+        self.requests.append("notifications")
+        if refused := self._refuse(request):
+            return refused
+        self.notification_queries.append(await request.json())
+        return web.json_response(load_portal_fixture("notifications"))
+
+    async def read(self, request: web.Request) -> web.Response:
+        """Mark a message read; the answer has no body to speak of."""
+        self.requests.append(f"read/{request.match_info['notification_id']}:{await request.text()!r}")
+        return self._refuse(request) or web.Response()
+
 
 @pytest.fixture
 async def portal(monkeypatch: pytest.MonkeyPatch):
@@ -113,6 +130,8 @@ async def portal(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(connector, "URL_LOGIN", f"{base}/auth/login")
     monkeypatch.setattr(connector, "URL_PPES", f"{base}/user/ppes")
     monkeypatch.setattr(connector, "URL_PPE_DASHBOARD", f"{base}/consumptionDashboard/ppe/{{meter_id}}")
+    monkeypatch.setattr(connector, "URL_NOTIFICATIONS", f"{base}/notification/")
+    monkeypatch.setattr(connector, "URL_NOTIFICATION_READ", f"{base}/notification/read/{{notification_id}}")
     monkeypatch.setattr(
         connector, "URL_CONSUMPTION_RANGE",
         f"{base}/consumption/{{meter_id}}/{{start_date}}/{{end_date}}/{{measurement_type}}/{{resolution}}",
@@ -159,6 +178,43 @@ async def test_balanced_data_is_asked_for_in_a_sixth_segment(portal, session):
     )
 
     assert portal.requests[-1] == "2026-03-27/2026-04-02/5/2/2"
+
+
+async def test_messages_are_asked_for_as_the_portal_frontend_does(portal, session):
+    """The meters and every customer (-1); all messages, then a range of days."""
+    client = EneaApiClient(session, USERNAME, PASSWORD)
+
+    everything = await client.get_notifications([METER_ID])
+    await client.get_notifications([METER_ID, 12346], date(2026, 10, 10), date(2026, 10, 11))
+
+    assert [message["title"] for message in everything] == ["Prace serwisowe"]
+    assert portal.notification_queries == [
+        {"ppes": [METER_ID, -1], "groups": None, "timeRange": 5, "timeStart": "null", "timeEnd": "null"},
+        {"ppes": [METER_ID, 12346, -1], "groups": None, "timeRange": 6,
+         "timeStart": "2026-10-10", "timeEnd": "2026-10-11"},
+    ]
+
+
+async def test_a_message_is_marked_read_with_an_empty_post(portal, session):
+    """No body goes out and none is expected back, as with the portal's frontend."""
+    client = EneaApiClient(session, USERNAME, PASSWORD)
+
+    assert await client.mark_notification_read(3006) is None
+
+    assert portal.requests == ["login", "read/3006:''"]
+
+
+async def test_expired_session_posts_the_message_query_again(portal, session):
+    """A POST is sent again, body and all, after the portal forgot the session."""
+    client = EneaApiClient(session, USERNAME, PASSWORD)
+    await client.authenticate()
+    portal.expire_sessions()
+
+    await client.get_notifications([METER_ID])
+
+    assert portal.requests == ["login", "notifications", "login", "notifications"]
+    # The refused request was not read; the one sent again carries the same body.
+    assert [query["timeRange"] for query in portal.notification_queries] == [5]
 
 
 async def test_expired_session_logs_in_again_once(portal, session):

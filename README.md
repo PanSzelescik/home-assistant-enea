@@ -125,6 +125,12 @@ Po wybraniu współczynnika w opcji **System opustów**:
 
 Szacunek nie uwzględnia nadwyżki przeniesionej z wcześniejszych okresów (energia oddana jest ważna 12 miesięcy). Przy net-billingu (przyłączenie od 1.04.2022) zostaw opcję **Brak**.
 
+### Która taryfa będzie tańsza?
+
+Integracja liczy koszty tylko w grupie taryfowej, w której jesteś, i nie porównuje grup. Do porównania służy **Kalkulator taryf** w [Portalu Odbiorcy Enea](https://portalodbiorcy.operator.enea.pl/portalOdbiorcy/#!/ems/kalkulator-taryf). Na podstawie godzinowych odczytów z Twojego licznika liczy koszt dystrybucji w każdej grupie (G11, G12, G12w, G12sezON, G13active). Ceny energii w każdej strefie wpisujesz sam, z faktury albo z oferty sprzedawcy.
+
+Kalkulator wymaga danych z ostatnich 12 miesięcy kompletnych w co najmniej 92%, więc po niedawnym montażu licznika albo zmianie umowy nie przeprowadzi symulacji. Wtedy skorzystaj z [kalkulatora taryf na profilach standardowych](https://www.operator.enea.pl/kalkulator-taryf) na stronie Enea Operator.
+
 ### Automatyczne przeładowanie
 
 Jeśli `enea_prices` zostanie zainstalowane po Enea Licznik, integracja Enea automatycznie się przeładuje — nie jest wymagane ręczne przeładowanie.
@@ -176,6 +182,20 @@ Tworzone gdy integracja `enea_prices` jest skonfigurowana z pasującą taryfą.
 
 ¹ Domyślnie wyłączone — włączysz je w ustawieniach encji urządzenia. Dotyczy nowo dodanych liczników; u istniejących zostają tak, jak były.
 
+## Wiadomości z Portalu Odbiorcy Enea
+
+Wiadomości z zakładki **Wiadomości** w Portalu Odbiorcy Enea (np. zapowiedź prac serwisowych portalu) pojawiają się w Home Assistant jako powiadomienia — z treścią, kategorią i datą otrzymania. Integracja sprawdza je przy każdym odświeżeniu: za pierwszym razem pobiera całą historię, potem tylko dni od ostatniego sprawdzenia. Wyłączysz to opcją **Pokazuj wiadomości z Portalu Odbiorcy Enea**.
+
+Powiadomienie dostaje tylko wiadomość, której integracja jeszcze nie widziała i którą portal wciąż by pokazał:
+
+- nie minęła jej data ważności (gdy ją ma),
+- wiadomość, którą portal pokazuje po każdym zalogowaniu, pojawi się nawet przeczytana,
+- pozostałe muszą być nieprzeczytane w Portalu Odbiorcy Enea; wiadomość bez daty ważności, której portal nie pokazuje po zalogowaniu, nie może być starsza niż 30 dni.
+
+Powiadomienie wisi, dopóki go nie zamkniesz — także po restarcie Home Assistant, który sam swoich powiadomień nie pamięta. Zamknięcie powiadomienia oznacza wiadomość jako przeczytaną w Portalu Odbiorcy Enea, tak jak zamknięcie jej okna w portalu (gdy portal akurat nie odpowiada, integracja ponowi to przy następnym sprawdzeniu). Zamknięte powiadomienie nie wraca. Załącznik pobierzesz z portalu — powiadomienie podaje jego nazwę i link do zakładki **Wiadomości**.
+
+Kilka liczników na jednym koncie sprawdza wiadomości wspólnie — jednym zapytaniem o wszystkie liczniki z włączoną opcją. Wiadomość wysłana do wszystkich odbiorców pojawia się raz.
+
 ## Opcje
 
 Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**:
@@ -187,6 +207,7 @@ Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**
 | Pobieraj statystyki energii oddanej | Tak | Wyłącz jeśli nie masz fotowoltaiki ani innego źródła generacji |
 | Pobieraj statystyki mocy pobranej | Nie | Godzinowe dane mocy czynnej pobranej (kW) |
 | Pobieraj statystyki mocy oddanej | Nie | Godzinowe dane mocy czynnej oddanej (kW); wyłącz jeśli nie masz fotowoltaiki |
+| Pokazuj wiadomości z Portalu Odbiorcy Enea | Tak | Wiadomości z portalu jako powiadomienia Home Assistant — patrz [Wiadomości z Portalu Odbiorcy Enea](#wiadomości-z-portalu-odbiorcy-enea) |
 | System opustów | Brak | Tylko licznik prosumenta: współczynnik 0,8 (instalacja do 10 kW) lub 0,7 (powyżej 10 kW) dla prosumentów przyłączonych do 31.03.2022 — patrz [Prosumenci w systemie opustów](#prosumenci-w-systemie-opustów) |
 
 Zmiana opcji powoduje natychmiastowe przeładowanie integracji. Wyłączenie danego kierunku ukrywa też odpowiednie sensory energii i kosztów.

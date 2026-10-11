@@ -9,6 +9,7 @@
           "fetch_generation": "Pobieraj statystyki energii oddanej",
           "fetch_power_consumption": "Pobieraj statystyki mocy pobranej",
           "fetch_power_generation": "Pobieraj statystyki mocy oddanej",
+          "notifications": "Pokazuj wiadomości z Portalu Odbiorcy Enea",
           "net_metering": "System opustów"
         },
         "data_description": {
@@ -17,6 +18,7 @@
           "fetch_generation": "Włącz, aby wyświetlać sensory energii oddanej do sieci i importować godzinowe statystyki. Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
           "fetch_power_consumption": "Włącz, aby importować godzinowe statystyki mocy pobranej (kW).",
           "fetch_power_generation": "Włącz, aby importować godzinowe statystyki mocy oddanej (kW). Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
+          "notifications": "Wiadomości z zakładki „Wiadomości” w Portalu Odbiorcy Enea (np. zapowiedzi prac serwisowych) pojawią się jako powiadomienia Home Assistant. Liczniki jednego konta sprawdzają je wspólnie.",
           "net_metering": "Prosument przyłączony do 31.03.2022 rozlicza energię oddaną w systemie opustów: z każdej oddanej kWh odbiera bez opłat 0,8 kWh (instalacja do 10 kW) albo 0,7 kWh (powyżej 10 kW). Współczynnik obniża szacowany rachunek i wycenę energii oddanej w panelu Energia. Przy net-billingu wybierz „Brak”."
         }
       }
@@ -51,6 +53,7 @@
           "fetch_generation": "Pobieraj statystyki energii oddanej",
           "fetch_power_consumption": "Pobieraj statystyki mocy pobranej",
           "fetch_power_generation": "Pobieraj statystyki mocy oddanej",
+          "notifications": "Pokazuj wiadomości z Portalu Odbiorcy Enea",
           "net_metering": "System opustów"
         },
         "data_description": {
@@ -59,6 +62,7 @@
           "fetch_generation": "Włącz, aby wyświetlać sensory energii oddanej do sieci i importować godzinowe statystyki. Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
           "fetch_power_consumption": "Włącz, aby importować godzinowe statystyki mocy pobranej (kW).",
           "fetch_power_generation": "Włącz, aby importować godzinowe statystyki mocy oddanej (kW). Wyłącz, jeśli nie masz paneli fotowoltaicznych ani innego źródła generacji.",
+          "notifications": "Wiadomości z zakładki „Wiadomości” w Portalu Odbiorcy Enea (np. zapowiedzi prac serwisowych) pojawią się jako powiadomienia Home Assistant. Liczniki jednego konta sprawdzają je wspólnie.",
           "net_metering": "Prosument przyłączony do 31.03.2022 rozlicza energię oddaną w systemie opustów: z każdej oddanej kWh odbiera bez opłat 0,8 kWh (instalacja do 10 kW) albo 0,7 kWh (powyżej 10 kW). Współczynnik obniża szacowany rachunek i wycenę energii oddanej w panelu Energia. Przy net-billingu wybierz „Brak”."
         }
       },

@@ -45,6 +45,7 @@ def _options(**updates):
         "fetch_generation": False,
         "fetch_power_consumption": False,
         "fetch_power_generation": False,
+        "notifications": True,
         **updates,
     }
 

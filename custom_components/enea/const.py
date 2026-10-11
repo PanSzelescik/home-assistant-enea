@@ -32,6 +32,12 @@ URL_CONSUMPTION_RANGE = (
 # The same endpoint with the data source of a prosumer's meter as one more segment —
 # Portal Odbiorcy Enea joins the query's values with "/" in this order.
 URL_CONSUMPTION_RANGE_DATA_SOURCE = URL_CONSUMPTION_RANGE + "/{data_source}"
+# POST z JSON-em {ppes, groups, timeRange, timeStart, timeEnd} — zakładka „Wiadomości”.
+URL_NOTIFICATIONS = f"{BASE_URL}/notification/"
+# POST bez treści — frontend wysyła go po zamknięciu okna nieprzeczytanej wiadomości.
+URL_NOTIFICATION_READ = f"{BASE_URL}/notification/read/{{notification_id}}"
+# Strona „Wiadomości” we frontendzie — załącznik wiadomości pobierze tylko zalogowany.
+URL_NOTIFICATIONS_PAGE = f"{PORTAL_URL}/portalOdbiorcy/#!/ems/powiadomienia"
 
 # ---------------------------------------------------------------------------
 # Config entry keys
@@ -51,6 +57,8 @@ CONF_NET_METERING = "net_metering"
 CONF_BALANCED_HISTORY = "balanced_history"
 # Statistic keys whose history has been imported; a measurement enabled later gets its own.
 CONF_IMPORTED_STATISTICS = "imported_statistics"
+# Wiadomości z Portalu Odbiorcy Enea jako powiadomienia HA (opcja licznika).
+CONF_NOTIFICATIONS = "notifications"
 
 # ---------------------------------------------------------------------------
 # Sensor keys (must match translation files)
@@ -299,3 +307,39 @@ INSTALLATION_SOURCE_BILLING_CYCLE = "billing_cycle"
 # Nowe przyłącze: statystyki zaczynają się razem z licznikiem — najwyżej tyle dni po
 # montażu (pierwsze dni portal bywa publikuje z opóźnieniem).
 NEW_CONNECTION_STATISTICS_SLACK = timedelta(days=7)
+
+# ---------------------------------------------------------------------------
+# Notifications — the "Wiadomości" of the Portal Odbiorcy Enea
+# ---------------------------------------------------------------------------
+
+
+class NotificationTimeRange(IntEnum):
+    """Period of the notification query, as the tabs of the portal's messages page.
+
+    DAY, WEEK, MONTH and YEAR start at timeStart; ALL takes no dates and
+    CUSTOM takes both (timeEnd inclusive).
+    """
+
+    DAY = 1
+    WEEK = 2
+    MONTH = 3
+    YEAR = 4
+    ALL = 5
+    CUSTOM = 6
+
+
+# Obok ID liczników — wiadomości do wszystkich odbiorców (np. przerwa techniczna portalu).
+NOTIFICATION_ALL_PPES = -1
+# Liczniki jednego konta pytają o wiadomości wspólnie; odświeżenie kolejnego licznika
+# w tym czasie nie wysyła drugiego zapytania (przy setupie wszystkie odświeżają się naraz).
+NOTIFICATIONS_MIN_INTERVAL = timedelta(minutes=10)
+# Wiadomości bez daty ważności starsze niż tyle nie trafiają do powiadomień HA — przy
+# pierwszym pobraniu całej historii nieprzeczytane sprzed lat byłyby tylko spamem.
+NOTIFICATION_MAX_AGE = timedelta(days=30)
+# ID wiadomości już widzianych, ostatni sprawdzony dzień i sprawdzane liczniki, per konto
+# (klucz ze skrótu loginu — sam login to adres e-mail).
+NOTIFICATIONS_STORAGE_KEY = f"{DOMAIN}.notifications"
+NOTIFICATIONS_STORAGE_VERSION = 1
+# ID powiadomienia HA: wiadomość do wszystkich odbiorców ma jedno ID, także gdy liczniki
+# są na różnych kontach — HA pokaże ją raz.
+NOTIFICATION_ID = f"{DOMAIN}_notification_{{id}}"

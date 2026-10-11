@@ -1,0 +1,16 @@
+[
+  {
+    "id": 3006,
+    "content": "Szanowni Państwo, informujemy, że dziś w godzinach 16:30-18:00 będą prowadzone prace serwisowe. W tym czasie dostęp do Portalu Odbiorcy będzie niemożliwy. Przepraszamy za utrudnienia i dziękujemy za wyrozumiałość.",
+    "title": "Prace serwisowe",
+    "date": 1781604827116,
+    "fileName": null,
+    "isRead": true,
+    "hasFile": false,
+    "notificationCategory": "Powiadomienie o niedostepności Portalu Odbiorcy - prace serwisowe",
+    "ppeCodes": "",
+    "presentedAfterLogin": false,
+    "expiryDate": 1781619300000,
+    "presentedAfterEveryLogin": false
+  }
+]

@@ -17,9 +17,11 @@ import aiohttp
 from .const import (
     BILLING_PERIOD_MIN_SEGMENT,
     MEASUREMENT_ID_CONSUMPTION,
+    NOTIFICATION_ALL_PPES,
     URL_CONSUMPTION_RANGE,
     URL_CONSUMPTION_RANGE_DATA_SOURCE,
     URL_LOGIN,
+    URL_NOTIFICATIONS,
     URL_PPE_DASHBOARD,
     URL_PPES,
     METERS_CACHE_TTL,
@@ -31,6 +33,7 @@ from .const import (
     TARIFF_GROUP_ALIASES,
     DataSource,
     MeasurementType,
+    NotificationTimeRange,
     Resolution,
 )
 
@@ -107,14 +110,15 @@ class EneaApiClient:
     ) -> Any:
         """Check response status and return the parsed JSON body.
 
-        Logs every request at debug level — path, status, body size and time
+        Logs every request at debug level — method, path, status, body size and time
         since `started` (time.monotonic() before the request was sent).  The
         portal's meter id in the path is replaced with "…" (logs end up in public
         GitHub issues); measurement type and resolution stay readable.
         """
         body = await resp.read()
         _LOGGER.debug(
-            "GET %s (%s): HTTP %d, %d B in %.2f s",
+            "%s %s (%s): HTTP %d, %d B in %.2f s",
+            resp.method,
             hide_meter_id(resp.url.path),
             label,
             resp.status,
@@ -157,14 +161,23 @@ class EneaApiClient:
         self._auth_gen += 1
         _LOGGER.debug("Successfully authenticated with Portal Odbiorcy Enea")
 
-    async def _request(self, url: str, label: str) -> Any:
-        """Perform an authenticated GET request, retrying once on session expiry."""
+    async def _request(self, url: str, label: str, body: Any = None) -> Any:
+        """Perform an authenticated request, retrying once on session expiry.
+
+        GET, or POST with body as JSON when one is given.
+        """
         if not self._authenticated:
             await self.authenticate()
 
+        def send() -> Awaitable[aiohttp.ClientResponse]:
+            """Issue the request; called again after a fresh login."""
+            if body is None:
+                return self._session.get(url)
+            return self._session.post(url, json=body)
+
         auth_gen = self._auth_gen
         started = time.monotonic()
-        async with _fetch(self._session.get(url)) as resp:
+        async with _fetch(send()) as resp:
             if resp.status not in (401, 403):
                 return await self._parse_response(resp, label, started)
 
@@ -178,7 +191,7 @@ class EneaApiClient:
                 await self.authenticate()
 
         started = time.monotonic()
-        async with _fetch(self._session.get(url)) as resp:
+        async with _fetch(send()) as resp:
             return await self._parse_response(resp, label, started)
 
     async def get_meters(self) -> list[dict[str, Any]]:
@@ -250,6 +263,30 @@ class EneaApiClient:
             data_source=data_source,
         )
         return await self._request(url, "consumption_range")
+
+    async def get_notifications(
+        self, meter_id: int, start_date: date | None = None, end_date: date | None = None
+    ) -> list[dict[str, Any]]:
+        """Return the portal's messages for the meter and for every customer.
+
+        Without dates every message there is (slow — the portal takes its time
+        over years of them); with them, the messages received from start_date
+        to end_date, both inclusive.  Dates the period does not take are sent as
+        the string "null", as the portal's frontend sends them.
+        """
+        if start_date is None or end_date is None:
+            time_range, start, end = NotificationTimeRange.ALL, "null", "null"
+        else:
+            time_range = NotificationTimeRange.CUSTOM
+            start, end = start_date.isoformat(), end_date.isoformat()
+        body = {
+            "ppes": [meter_id, NOTIFICATION_ALL_PPES],
+            "groups": None,
+            "timeRange": int(time_range),
+            "timeStart": start,
+            "timeEnd": end,
+        }
+        return await self._request(URL_NOTIFICATIONS, "notifications", body)
 
 
 def get_active_meter(data: dict[str, Any]) -> dict[str, Any] | None:

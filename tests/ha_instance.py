@@ -189,6 +189,10 @@ class FakePortal:
         # Report the meter as a prosumer's (type 2), as the portal does after a
         # PV installation is connected.
         self.prosumer = False
+        # The portal's messages; the fixture account has one, read long ago.
+        self.notifications: list[dict[str, Any]] = load_portal_fixture("notifications")
+        # Only the message requests fail with this; the dashboard still answers.
+        self.fail_notifications_with: Exception | None = None
 
     def _check(self, *request: Any) -> None:
         """Record a request and raise the failure a test asked for, if any."""
@@ -237,6 +241,20 @@ class FakePortal:
             if hours:
                 return {"values": hours, "valuesToTable": hours, "zones": response["zones"]}
         return {"values": [], "valuesToTable": [], "zones": []}
+
+
+    async def get_notifications(
+        self, meter_id: int, first: date | None = None, last: date | None = None
+    ) -> list[dict[str, Any]]:
+        """Return the messages received first..last, every one without dates."""
+        self._check("notifications", meter_id, first, last)
+        if self.fail_notifications_with is not None:
+            raise self.fail_notifications_with
+        return [
+            copy.deepcopy(message) for message in self.notifications
+            if first is None
+            or first <= dt_util.as_local(dt_util.utc_from_timestamp(message["date"] / 1000)).date() <= last
+        ]
 
 
 class FakeZonePricing:

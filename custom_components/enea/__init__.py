@@ -17,6 +17,8 @@ from .connector import EneaApiClient
 from .const import (
     COST_PRICES_STORAGE_KEY,
     COST_PRICES_STORAGE_VERSION,
+    NOTIFICATIONS_STORAGE_KEY,
+    NOTIFICATIONS_STORAGE_VERSION,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
     CONF_FETCH_POWER_CONSUMPTION,
@@ -186,8 +188,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> boo
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> None:
-    """Delete the repair issues and the stored cost prices of a removed meter entry."""
+    """Delete the repair issues and the stores of a removed meter entry."""
     async_delete_issues(hass, entry.entry_id)
     await Store(
         hass, COST_PRICES_STORAGE_VERSION, f"{COST_PRICES_STORAGE_KEY}.{entry.entry_id}"
+    ).async_remove()
+    await Store(
+        hass, NOTIFICATIONS_STORAGE_VERSION, f"{NOTIFICATIONS_STORAGE_KEY}.{entry.entry_id}"
     ).async_remove()

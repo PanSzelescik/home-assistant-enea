@@ -81,7 +81,7 @@ def _response(path: str, status: int, body: bytes, json_error: Exception | None 
         return {}
 
     return SimpleNamespace(
-        url=SimpleNamespace(path=path), status=status, read=read, json=json
+        method="GET", url=SimpleNamespace(path=path), status=status, read=read, json=json
     )
 
 

@@ -65,6 +65,7 @@ from .costs import (
     first_repriced_day,
     price_signatures,
 )
+from .notifications import EneaNotifications
 from .parsing import assemble_days
 from .statistics import async_insert_historical_statistics, get_statistic_id
 
@@ -134,9 +135,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._costs_repriced_from: date | None = None
         # Newest day covered by the energy/power statistics, refreshed every update.
         self.statistics_until: date | None = None
-        # The statistics step of a refresh made during startup waits for Home
-        # Assistant to start; this keeps it from being scheduled more than once.
-        self._statistics_deferred = False
+        # The statistics and messages steps of a refresh made during startup wait
+        # for Home Assistant to start; this keeps them from being scheduled more
+        # than once.
+        self._deferred_after_start = False
         # For the diagnostics report: when the statistics step last ran, the error
         # it swallowed (it only logs it) and the days stored as zero consumption
         # because the portal never published them — all since the last restart.
@@ -155,6 +157,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._dashboard_data: dict[str, Any] = {}
         # The enea_prices settings worked out from the meter; see installation.py.
         self.detected_installation = DetectedInstallation()
+        # The portal's messages as notifications; the error, only logged, is kept
+        # for the diagnostics report.
+        self._notifications = EneaNotifications(hass, config_entry.entry_id)
+        self._notifications_error: str | None = None
 
     @property
     def tariff_name(self) -> str | None:
@@ -230,18 +236,32 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # recorder thread only starts committing once Home Assistant has started.  The
         # first refresh runs inside this integration's setup, which startup waits for,
         # so waiting there would deadlock — during startup the step is deferred until
-        # Home Assistant has started.
+        # Home Assistant has started.  So are the messages: the first check fetches
+        # all of them, which the portal takes its time over.
         if self.hass.state is CoreState.running:
             await self._async_update_statistics()
-        elif not self._statistics_deferred:
-            self._statistics_deferred = True
-            unsub = async_at_started(self.hass, self._async_update_statistics_after_start)
+            await self._async_update_notifications()
+        elif not self._deferred_after_start:
+            self._deferred_after_start = True
+            unsub = async_at_started(self.hass, self._async_update_after_start)
             if self.config_entry is not None:
                 self.config_entry.async_on_unload(unsub)
 
         async_update_issues(self.hass, self._entry_id, self._meter_code, data)
 
         return data
+
+    async def _async_update_notifications(self) -> None:
+        """Turn the portal's new messages into notifications.
+
+        The messages are extra: failing to get them must not fail the refresh.
+        """
+        self._notifications_error = None
+        try:
+            await self._notifications.async_update(self.client, self.meter_id)
+        except Exception as err:
+            self._notifications_error = mask_ppe(f"{type(err).__name__}: {err}")
+            _LOGGER.warning("Failed to check the Portal Odbiorcy Enea messages: %s", err)
 
     async def _async_update_statistics(self) -> None:
         """Inject missing statistics, then read back the statistics date and the bills.
@@ -301,11 +321,12 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self.bill_prev_reading is not None or self.bill_last_reading is not None:
             await self.async_recompute_bills()
 
-    async def _async_update_statistics_after_start(self, _hass: HomeAssistant) -> None:
-        """Run the statistics step deferred during startup and refresh the entities."""
-        self._statistics_deferred = False
+    async def _async_update_after_start(self, _hass: HomeAssistant) -> None:
+        """Run the steps deferred during startup and refresh the entities."""
+        self._deferred_after_start = False
         await self._async_update_statistics()
         self.async_update_listeners()
+        await self._async_update_notifications()
 
     # ------------------------------------------------------------------
     # Statistics helpers
@@ -598,6 +619,11 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "initial_backfill": backfill,
             "cost_checked_until": iso(self._cost_checked_until),
             "costs_repriced_from": iso(self._costs_repriced_from),
+            "notifications": {
+                "checked_until": iso(self._notifications.checked_until),
+                "seen": self._notifications.seen,
+                "error": self._notifications_error,
+            },
             "bill_prev_reading": iso(self.bill_prev_reading),
             "bill_last_reading": iso(self.bill_last_reading),
             "bill_estimates": {

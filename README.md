@@ -176,6 +176,17 @@ Tworzone gdy integracja `enea_prices` jest skonfigurowana z pasującą taryfą.
 
 ¹ Domyślnie wyłączone — włączysz je w ustawieniach encji urządzenia. Dotyczy nowo dodanych liczników; u istniejących zostają tak, jak były.
 
+## Wiadomości z Portalu Odbiorcy Enea
+
+Wiadomości z zakładki **Wiadomości** w Portalu Odbiorcy Enea (np. zapowiedź prac serwisowych portalu) pojawiają się w Home Assistant jako powiadomienia — z treścią, kategorią i datą otrzymania. Integracja sprawdza je przy każdym odświeżeniu: za pierwszym razem pobiera całą historię, potem tylko dni od ostatniego sprawdzenia.
+
+Powiadomienie dostaje tylko wiadomość, której jeszcze nie widziała, a przy tym:
+
+- nie jest przeczytana w Portalu Odbiorcy Enea,
+- nie minęła jej data ważności (gdy ją ma), a wiadomość bez daty ważności nie jest starsza niż 30 dni.
+
+Zamknięte powiadomienie nie wraca, także po restarcie. Wiadomość wysłana do wszystkich odbiorców pojawia się raz, nawet przy kilku licznikach na koncie. Integracja nie oznacza wiadomości jako przeczytanych w Portalu Odbiorcy Enea. Załącznik pobierzesz z portalu — powiadomienie podaje jego nazwę i link do zakładki **Wiadomości**.
+
 ## Opcje
 
 Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**:

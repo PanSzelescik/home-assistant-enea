@@ -32,6 +32,10 @@ URL_CONSUMPTION_RANGE = (
 # The same endpoint with the data source of a prosumer's meter as one more segment —
 # Portal Odbiorcy Enea joins the query's values with "/" in this order.
 URL_CONSUMPTION_RANGE_DATA_SOURCE = URL_CONSUMPTION_RANGE + "/{data_source}"
+# POST z JSON-em {ppes, groups, timeRange, timeStart, timeEnd} — zakładka „Wiadomości”.
+URL_NOTIFICATIONS = f"{BASE_URL}/notification/"
+# Strona „Wiadomości” we frontendzie — załącznik wiadomości pobierze tylko zalogowany.
+URL_NOTIFICATIONS_PAGE = f"{PORTAL_URL}/portalOdbiorcy/#!/ems/powiadomienia"
 
 # ---------------------------------------------------------------------------
 # Config entry keys
@@ -299,3 +303,35 @@ INSTALLATION_SOURCE_BILLING_CYCLE = "billing_cycle"
 # Nowe przyłącze: statystyki zaczynają się razem z licznikiem — najwyżej tyle dni po
 # montażu (pierwsze dni portal bywa publikuje z opóźnieniem).
 NEW_CONNECTION_STATISTICS_SLACK = timedelta(days=7)
+
+# ---------------------------------------------------------------------------
+# Notifications — the "Wiadomości" of the Portal Odbiorcy Enea
+# ---------------------------------------------------------------------------
+
+
+class NotificationTimeRange(IntEnum):
+    """Period of the notification query, as the tabs of the portal's messages page.
+
+    DAY, WEEK, MONTH and YEAR start at timeStart; ALL takes no dates and
+    CUSTOM takes both (timeEnd inclusive).
+    """
+
+    DAY = 1
+    WEEK = 2
+    MONTH = 3
+    YEAR = 4
+    ALL = 5
+    CUSTOM = 6
+
+
+# Obok ID licznika — wiadomości do wszystkich odbiorców (np. przerwa techniczna portalu).
+NOTIFICATION_ALL_PPES = -1
+# Wiadomości bez daty ważności starsze niż tyle nie trafiają do powiadomień HA — przy
+# pierwszym pobraniu całej historii nieprzeczytane sprzed lat byłyby tylko spamem.
+NOTIFICATION_MAX_AGE = timedelta(days=30)
+# ID wiadomości już widzianych i ostatni sprawdzony dzień, per wpis licznika.
+NOTIFICATIONS_STORAGE_KEY = f"{DOMAIN}.notifications"
+NOTIFICATIONS_STORAGE_VERSION = 1
+# ID powiadomienia HA: wspólne dla liczników jednego konta, bo wiadomości do wszystkich
+# odbiorców przychodzą do każdego z nich.
+NOTIFICATION_ID = f"{DOMAIN}_notification_{{id}}"

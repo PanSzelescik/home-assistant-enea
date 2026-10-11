@@ -20,14 +20,17 @@ from custom_components.enea.coordinator import EneaUpdateCoordinator
 
 @pytest.fixture
 def coordinator(monkeypatch: pytest.MonkeyPatch):
-    """Return a coordinator whose statistics step and startup hook are recorded."""
-    calls: dict[str, list[Any]] = {"statistics": [], "at_started": [], "unload": []}
+    """Return a coordinator whose statistics and messages steps and startup hook are recorded."""
+    calls: dict[str, list[Any]] = {"statistics": [], "notifications": [], "at_started": [], "unload": []}
 
     async def get_ppe_dashboard(meter_id: int) -> dict[str, Any]:
         return {"tariffGroupName": "G12", "meters": []}
 
     async def update_statistics() -> None:
         calls["statistics"].append("run")
+
+    async def update_notifications() -> None:
+        calls["notifications"].append("run")
 
     def at_started(hass: Any, callback: Any) -> Any:
         calls["at_started"].append(callback)
@@ -45,8 +48,9 @@ def coordinator(monkeypatch: pytest.MonkeyPatch):
     coord.meter_id = 1
     coord._entry_id = "entry1"
     coord._meter_code = "PPE"
-    coord._statistics_deferred = False
+    coord._deferred_after_start = False
     coord._async_update_statistics = update_statistics  # type: ignore[method-assign]
+    coord._async_update_notifications = update_notifications  # type: ignore[method-assign]
     return coord, calls
 
 
@@ -58,6 +62,7 @@ async def test_startup_refresh_defers_statistics(coordinator) -> None:
 
     assert data["tariffGroupName"] == "G12"
     assert calls["statistics"] == []
+    assert calls["notifications"] == []  # the first check fetches every message: slow
     assert len(calls["at_started"]) == 1
     assert len(calls["unload"]) == 1
 
@@ -80,6 +85,7 @@ async def test_running_refresh_updates_statistics_inline(coordinator) -> None:
     await coord._async_update_data()
 
     assert calls["statistics"] == ["run"]
+    assert calls["notifications"] == ["run"]
     assert calls["at_started"] == []
 
 
@@ -95,7 +101,8 @@ async def test_startup_callback_updates_statistics_before_notifying_entities(coo
 
     assert calls["statistics"] == ["run"]
     assert observed == [["run"]]
-    assert coord._statistics_deferred is False
+    assert calls["notifications"] == ["run"]
+    assert coord._deferred_after_start is False
 
 
 async def test_running_backfill_blocks_incremental_refresh_and_can_be_cancelled(coordinator) -> None:

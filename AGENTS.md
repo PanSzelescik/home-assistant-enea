@@ -29,8 +29,9 @@ Niniejszy projekt to custom component dla Home Assistant integrujący liczniki z
 ```
 custom_components/enea/
 ├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, _matching_coordinators, serwisy refresh/backfill
-├── connector.py     — klient HTTP (EneaApiClient, _request helper; każde żądanie logowane na poziomie debug: ścieżka z ukrytym ID licznika, status, rozmiar, czas), wyjątki, get_active_meter(), infer_phases(), billing_period_starts(), agreement_tariffs() (grupy taryfowe umów z datami), tariff_group_name() (nazwa grupy jak na fakturze i w enea_prices), zone_name() (nazwa strefy z `ppeZones` bez kodu OBIS), mask_ppe(), hide_meter_id() (ukrywa ID licznika w ścieżce i w tekście błędów), format_address()
-├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill, _async_reprice_costs (przeliczanie kosztów po zmianie cen); klient API jako self.client; diagnostics_state() dla raportu diagnostycznego
+├── connector.py     — klient HTTP (EneaApiClient, _request helper — GET albo POST z JSON-em; każde żądanie logowane na poziomie debug: metoda, ścieżka z ukrytym ID licznika, status, rozmiar, czas; get_notifications), wyjątki, get_active_meter(), infer_phases(), billing_period_starts(), agreement_tariffs() (grupy taryfowe umów z datami), tariff_group_name() (nazwa grupy jak na fakturze i w enea_prices), zone_name() (nazwa strefy z `ppeZones` bez kodu OBIS), mask_ppe(), hide_meter_id() (ukrywa ID licznika w ścieżce i w tekście błędów), format_address()
+├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill, _async_reprice_costs (przeliczanie kosztów po zmianie cen), sprawdzanie wiadomości (`EneaNotifications`); klient API jako self.client; diagnostics_state() dla raportu diagnostycznego
+├── notifications.py — EneaNotifications (wiadomości z Portalu Odbiorcy Enea → powiadomienia HA, Store z widzianymi ID), should_show, notification_message
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", "configure", reconfigure, reauth; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
 ├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date, _han_port_state, _switch_state_attrs, EneaStatisticsDateSensor
 ├── binary_sensor.py — EneaBinarySensor, BINARY_SENSOR_DESCRIPTIONS: diagnostyczne transmisja z licznikiem i dostępność portu HAN
@@ -42,7 +43,7 @@ custom_components/enea/
 ├── parsing.py       — czyste funkcje bez zegara, sieci i stanu HA: has_data, slot_start_dt, split_range_response, zero_fill_missing_day, strip_pre_assembly_slots, assemble_days (odpowiedzi zakresowe wszystkich typów pomiaru → doby do importu + lista dni wyzerowanych); `_fetch_range` koordynatora tylko pobiera odpowiedzi i je tu przekazuje
 ├── statistics.py    — async_insert_historical_statistics, _collect_series, _inject_energy_series, _inject_power_series, write_cumulative_series + _shift_later_totals (wspólny zapis serii skumulowanej dla energii i kosztów), async_statistics_overview (przegląd serii licznika do raportu diagnostycznego)
 ├── costs.py         — cost_series + CostSeries (czysta wycena godzin jednego kierunku w strefach taryfy), async_insert_cost_statistics, async_get_cost_latest_date, async_cost_days_missing, price_signatures + first_repriced_day (skróty cen dni), _inject_cost_series, _clear_moved_hours, get_cost_statistic_name, find_tariff_group, TariffHistory + find_tariff_history (cennik grupy z umowy obowiązującej danego dnia)
-├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem): stan koordynatora (`diagnostics_state()`: m.in. ostatnie uruchomienie i błąd kroku statystyk, dni wypełnione zerami od restartu), stany encji (`_entity_states`, kluczowane kluczem encji, nie `entity_id` — ten zawiera PPE; bez `friendly_name`; stan i atrybuty sensora adresu ukryte), instalacja (`installation`: wartości wykryte przez `DetectedInstallation` ze źródłami vs ustawione w enea_prices), konfiguracja enea_prices z zasięgiem tabeli taryf (`_prices_coverage`: `covered_until`, okresy), przegląd statystyk (`async_statistics_overview`, ID zamaskowane) i dane z dashboardu (`billingWeekData` tylko z energią czynną, `measurementId` 1/2); TO_REDACT + _redact_meter_data ukrywają dane logowania, adres, numer PPE, `meter_id`, `id`/`name` na najwyższym poziomie oraz `id` w `meters[]`/`agreements[]`, `serialNumber`, `agreementNumber` (ID i nazwy stref zostają). HA sam dokłada wersje HA i integracji, strefę czasową i otwarte zgłoszenia z Napraw
+├── diagnostics.py   — async_get_config_entry_diagnostics (z wymuszonym odświeżeniem): stan koordynatora (`diagnostics_state()`: m.in. ostatnie uruchomienie i błąd kroku statystyk, dni wypełnione zerami od restartu, wiadomości: ostatni sprawdzony dzień, liczba widzianych, błąd — bez treści), stany encji (`_entity_states`, kluczowane kluczem encji, nie `entity_id` — ten zawiera PPE; bez `friendly_name`; stan i atrybuty sensora adresu ukryte), instalacja (`installation`: wartości wykryte przez `DetectedInstallation` ze źródłami vs ustawione w enea_prices), konfiguracja enea_prices z zasięgiem tabeli taryf (`_prices_coverage`: `covered_until`, okresy), przegląd statystyk (`async_statistics_overview`, ID zamaskowane) i dane z dashboardu (`billingWeekData` tylko z energią czynną, `measurementId` 1/2); TO_REDACT + _redact_meter_data ukrywają dane logowania, adres, numer PPE, `meter_id`, `id`/`name` na najwyższym poziomie oraz `id` w `meters[]`/`agreements[]`, `serialNumber`, `agreementNumber` (ID i nazwy stref zostają). HA sam dokłada wersje HA i integracji, strefę czasową i otwarte zgłoszenia z Napraw
 ├── services.yaml    — definicja akcji "refresh" i "backfill"
 ├── const.py         — DOMAIN, URLs, klucze konfiguracji, stałe statystyk, stałe kosztów (ENEA_PRICES_DOMAIN, UNIT_COST, COST_ZONE_DISPLAY, VAT_RATE, BILL_KEY_*)
 ├── manifest.json    — metadane integracji (wymagane przez HA/HACS/hassfest)
@@ -61,7 +62,7 @@ Statystyki historyczne są wstrzykiwane jako **external statistics** (poza syste
 
 - Coordinator co każde odświeżenie sprawdza aktualność statystyk przez `get_last_statistics` — odpytuje wszystkie aktywne serie (energy_consumed/returned, power_consumed/returned) **równolegle** (`asyncio.gather`) i bierze najnowszą datę.
 - Jeśli nie ma danych do wczoraj — pobiera brakujące dni i wstrzykuje.
-- **Podczas startu HA krok statystyk jest odraczany** (`_async_update_statistics` przez `async_at_started`). Wątek recordera zaczyna przetwarzać kolejkę (i commitować) dopiero po starcie HA, a pierwsze odświeżenie biegnie wewnątrz setupu integracji, na który start czeka — `get_instance(hass).async_block_till_done()` wołane w setupie zakleszcza start HA („Waiting for integrations to complete setup”). Zapytania odczytu przez `async_add_executor_job` recordera działają już w trakcie startu; nie wolno w nim czekać na zapis. Dane z dashboardu i sensory są dostępne od razu, statystyki/„Statystyki aktualne do”/rachunki dochodzą po starcie (`async_update_listeners`).
+- **Podczas startu HA krok statystyk jest odraczany** (`_async_update_statistics` przez `async_at_started`, w `_async_update_after_start` razem ze sprawdzeniem wiadomości). Wątek recordera zaczyna przetwarzać kolejkę (i commitować) dopiero po starcie HA, a pierwsze odświeżenie biegnie wewnątrz setupu integracji, na który start czeka — `get_instance(hass).async_block_till_done()` wołane w setupie zakleszcza start HA („Waiting for integrations to complete setup”). Zapytania odczytu przez `async_add_executor_job` recordera działają już w trakcie startu; nie wolno w nim czekać na zapis. Dane z dashboardu i sensory są dostępne od razu, statystyki/„Statystyki aktualne do”/rachunki dochodzą po starcie (`async_update_listeners`).
 - Backfill przy pierwszym uruchomieniu: zawsze pobiera maksymalną dostępną historię. Odbywa się jako **background task** (`hass.async_create_task`) — nie blokuje pierwszego odświeżenia koordynatora, sensory stają się dostępne natychmiast. Task jest cancellowany przy unload entry (`entry.async_on_unload`).
 - **Typ pomiaru włączony później** (opcje): odświeżenie sprawdza najnowszą godzinę każdej aktywnej serii osobno (`_async_latest_statistics_dates`). Seria bez żadnych statystyk, której klucza nie ma w `entry.data[CONF_IMPORTED_STATISTICS]`, dostaje import w tle tą samą ścieżką co pierwszy backfill, tylko dla swoich typów (`keys` w `_fetch_days_backward`/`_fetch_days_forward`/`_fetch_range`). Udany import (także pierwszy) dopisuje klucze do `imported_statistics`, więc typ, dla którego Portal Odbiorcy Enea nie ma nic (same `null`), nie wraca przy każdym odświeżeniu. Wpisy sprzed tej zmiany nie mają klucza — seria bez statystyk dostaje wtedy jednorazowy import. Luki po wyłączeniu i ponownym włączeniu typu (seria ma statystyki, ale starsze) nie są uzupełniane automatycznie — od tego jest `enea.backfill`.
 - "Ile się da" = gdy `assemblyDate` jest znane — fetch od daty montażu do wczoraj jednym zakresem; gdy nieznane — cofaj się chunkami 180-dniowymi, zatrzymaj gdy początek chunka zawiera 7 kolejnych dni bez danych.
@@ -268,6 +269,31 @@ Kluczowe pola odpowiedzi:
   - `readingDate` — timestamp ostatniego odczytu (ms)
   - `unit.symbol="Wh"`, `unit.scaler=3` → wartości są w kWh
 
+### Wiadomości (powiadomienia)
+
+```
+POST /notification/
+Content-Type: application/json
+Cookie: PER_JSESSIONID=<wartość>
+
+{"ppes": [12345, -1], "groups": null, "timeRange": 6, "timeStart": "2026-10-10", "timeEnd": "2026-10-11"}
+```
+
+Zakładka „Wiadomości” (`#!/ems/powiadomienia`). `ppes` to ID licznika i `-1` — wiadomości do wszystkich odbiorców (np. przerwa techniczna portalu). `timeRange` (`NotificationTimeRange`) odpowiada zakładkom: 1 = doba, 2 = tydzień, 3 = miesiąc, 4 = rok (od `timeStart`), 5 = wszystkie (daty jako napis `"null"`), 6 = własny przedział (`timeStart`–`timeEnd`, oba włącznie). Rok i wszystkie odpowiadają wyraźnie wolniej niż kilka dni.
+
+Odpowiedź to lista wiadomości (znaczenie pól z frontendu `dist/js/app.js` i szablonów `js/app/messages/view/messages-main.html`, `js/app/dashboardPGE/view/message-modal.html`):
+- `id` — ID wiadomości (wspólne dla wszystkich odbiorców wiadomości `-1`)
+- `title`, `content` — tytuł i treść (frontend wyświetla treść jako tekst, nie HTML)
+- `notificationCategory` — kategoria (kolumna „Kategoria”)
+- `date` — data otrzymania (ms)
+- `ppeCodes` — numery PPE, których dotyczy wiadomość; pusty napis dla wiadomości do wszystkich
+- `isRead` — przeczytana; frontend oznacza ją przez `POST /notification/read/{id}` po zamknięciu okna
+- `hasFile`, `fileName` — załącznik do pobrania z `GET /notification/attachment/{id}` (wymaga sesji)
+- `expiryDate` — data ważności (ms) albo `null`; frontend jej nie używa. W jedynym znanym przykładzie (prace serwisowe 16:30–18:00) wypada o 16:15
+- `presentedAfterLogin`, `presentedAfterEveryLogin` — wiadomość wyświetlana w oknie po zalogowaniu; frontend bierze je z `GET /notification/count` (`{count, notificationsAfterLogin}`, `count` = licznik przy kopercie)
+
+Nieużywane przez integrację: `GET /notification/count`, `GET /notification/unique/{max}` (ostatnie wiadomości na dashboardzie portalu, `max` = 10), `POST /notification/read/{id}`, `GET /notification/attachment/{id}`. Integracja nie zmienia niczego w Portalu Odbiorcy Enea — nie oznacza wiadomości jako przeczytanych.
+
 ### Endpoint statystyk historycznych — single day (legacy)
 
 ```
@@ -313,6 +339,16 @@ Kluczowe pola odpowiedzi:
 Wydajność (zmierzona): 6 miesięcy ~2s, rok ~5.5s, 3 lata ~26s (5.5 MB).
 
 Licznik wysyła dane za poprzedni dzień zwykle między północą a 6:00 (obserwacja na OTUS3), więc przy domyślnym interwale 3,5 h trafiają do HA zwykle przed 10:00. Zanim zostaną wysłane, doba ma komplet slotów z `value: null` (`status: 0`).
+
+## Wiadomości z Portalu Odbiorcy Enea
+
+`EneaNotifications` (`notifications.py`) zamienia nowe wiadomości licznika na powiadomienia HA (`persistent_notification.async_create`). Wołane przez `_async_update_notifications` po kroku statystyk przy każdym odświeżeniu; w trakcie startu HA odraczane razem z nim (`_async_update_after_start`) — pierwsze sprawdzenie pobiera całą historię, co po aktualizacji integracji wydłużałoby start. Błąd (portal, nietypowa odpowiedź) nie psuje odświeżenia: jest logowany jako ostrzeżenie i trafia do raportu diagnostycznego (`notifications.error`).
+
+- **Pierwsze sprawdzenie** (brak zapisu) pobiera całą historię (`timeRange` 5), **kolejne** — przedział od ostatniego sprawdzonego dnia (włącznie, bo wiadomość mogła przyjść po sprawdzeniu) do dziś (`timeRange` 6). Przerwa w działaniu HA nie gubi wiadomości.
+- Powiadomienie dostaje tylko wiadomość widziana **pierwszy raz** i spełniająca `should_show`: nieprzeczytana w portalu (`isRead`), z `expiryDate` w przyszłości, a bez `expiryDate` — otrzymana najwyżej `NOTIFICATION_MAX_AGE` (30 dni) temu; bez tego pierwsze pobranie całej historii pokazałoby nieprzeczytane wiadomości sprzed lat. Wszystkie pobrane ID trafiają do widzianych, także te bez powiadomienia.
+- Widziane ID i ostatni sprawdzony dzień są w `Store` `.storage/enea.notifications.{entry_id}` (usuwany w `async_remove_entry`) — zamknięte powiadomienie nie wraca po restarcie.
+- ID powiadomienia: `enea_notification_{id wiadomości}` (`NOTIFICATION_ID`), wspólne dla wpisów: wiadomość do wszystkich odbiorców przychodzi do każdego licznika konta, a HA pokazuje ją raz.
+- Tytuł: „Portal Odbiorcy Enea: {title}”. Treść: `content`, pod nią kursywą kategoria · data otrzymania (lokalna) · PPE z `ppeCodes`, a przy załączniku `📎 [fileName](strona Wiadomości)` — dopisane elementy nie zawierają słów, więc nie wymagają tłumaczeń.
 
 ## Sensory
 
@@ -470,11 +506,12 @@ Przy zmianie struktury danych w `ConfigEntry` (klucze w `entry.data`):
 `tests/fixtures/portal/` zawiera zanonimizowane odpowiedzi Portalu Odbiorcy Enea z prawdziwego konta (G12, OTUS3 zamontowany 2026-03-20 12:12, wcześniej MT174 bez danych AMI). Powstają skryptem `scripts/anonymize_fixtures.py` z surowych zrzutów w `data/` (gitignored; nazwy plików jak ścieżka żądania, np. `consumption_id_2026-03-27_2026-04-02_1_2.json`):
 
 - identyfikatory (ID licznika, PPE, adres, numery seryjne, ID i numery umów) zastępowane zmyślonymi (`12345`, `590310600000001234`); skrypt odmawia zapisu, gdy którykolwiek oryginalny identyfikator zostałby w wyniku,
+- w wiadomościach (`notification.json` → `notifications.json`) numery PPE konta w `ppeCodes` zastępowane zmyślonym; ID licznika jest tylko w treści żądania, nie w odpowiedzi,
 - każda wartość energii i mocy (`value`, `consumption`, `consumptionForReport`, `sumConsumption`) mnożona przez `SCALE` (0,83) — repo jest publiczne i należy do właściciela konta, więc profil zużycia byłby mu przypisywalny; kształt danych (luki, `null`, zera, strefy, doby DST) zostaje.
 
 **Pełny setup w działającym HA** (`tests/ha_instance.py`, testy `test_setup_entry.py` i `test_setup_with_prices.py`): prawdziwy `HomeAssistant` zbudowany jak w bootstrapie (`bootstrap.async_load_base_functionality`: rejestry, wpisy konfiguracji, tłumaczenia), bez pakietu testowego HA. Podmienione są tylko trzy rzeczy:
 
-- sieć — `FakePortal` odpowiada z fixture'ów i zapisuje żądania,
+- sieć — `FakePortal` odpowiada z fixture'ów i zapisuje żądania (wiadomości: `notifications`, filtrowane po dacie otrzymania, i `fail_notifications_with`),
 - recorder — `StatisticsDatabase` trzyma statystyki w pamięci per `statistic_id` i obsługuje `get_last_statistics`, `statistics_during_period` (z `change`), `get_metadata`, `async_add_external_statistics`; recorder jest tylko oznaczony jako załadowany,
 - zegar — `Clock` (`dt_util.now`), przesuwany między odświeżeniami.
 

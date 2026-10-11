@@ -272,8 +272,11 @@ async def test_coordinator_state_reports_failures() -> None:
     coord._statistics_last_run = datetime(2026, 10, 9, 13, 0)
     coord._statistics_error = "EneaApiError: Unexpected response from range endpoint: 500"
     coord._zero_filled_days = {date(2026, 10, 3), date(2026, 10, 1)}
-    coord._notifications = SimpleNamespace(checked_until=date(2026, 10, 8), seen=3)
-    coord._notifications_error = "EneaApiError: Unexpected response from notifications endpoint: 500"
+    coord._notifications = SimpleNamespace(
+        checked_until=date(2026, 10, 8),
+        seen=3,
+        error="EneaApiError: Unexpected response from notifications endpoint: 500",
+    )
 
     state = coord.diagnostics_state()
 

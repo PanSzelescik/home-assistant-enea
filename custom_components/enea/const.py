@@ -55,6 +55,8 @@ CONF_NET_METERING = "net_metering"
 CONF_BALANCED_HISTORY = "balanced_history"
 # Statistic keys whose history has been imported; a measurement enabled later gets its own.
 CONF_IMPORTED_STATISTICS = "imported_statistics"
+# Wiadomości z Portalu Odbiorcy Enea jako powiadomienia HA (opcja licznika).
+CONF_NOTIFICATIONS = "notifications"
 
 # ---------------------------------------------------------------------------
 # Sensor keys (must match translation files)
@@ -324,14 +326,18 @@ class NotificationTimeRange(IntEnum):
     CUSTOM = 6
 
 
-# Obok ID licznika — wiadomości do wszystkich odbiorców (np. przerwa techniczna portalu).
+# Obok ID liczników — wiadomości do wszystkich odbiorców (np. przerwa techniczna portalu).
 NOTIFICATION_ALL_PPES = -1
+# Liczniki jednego konta pytają o wiadomości wspólnie; odświeżenie kolejnego licznika
+# w tym czasie nie wysyła drugiego zapytania (przy setupie wszystkie odświeżają się naraz).
+NOTIFICATIONS_MIN_INTERVAL = timedelta(minutes=10)
 # Wiadomości bez daty ważności starsze niż tyle nie trafiają do powiadomień HA — przy
 # pierwszym pobraniu całej historii nieprzeczytane sprzed lat byłyby tylko spamem.
 NOTIFICATION_MAX_AGE = timedelta(days=30)
-# ID wiadomości już widzianych i ostatni sprawdzony dzień, per wpis licznika.
+# ID wiadomości już widzianych, ostatni sprawdzony dzień i sprawdzane liczniki, per konto
+# (klucz ze skrótu loginu — sam login to adres e-mail).
 NOTIFICATIONS_STORAGE_KEY = f"{DOMAIN}.notifications"
 NOTIFICATIONS_STORAGE_VERSION = 1
-# ID powiadomienia HA: wspólne dla liczników jednego konta, bo wiadomości do wszystkich
-# odbiorców przychodzą do każdego z nich.
+# ID powiadomienia HA: wiadomość do wszystkich odbiorców ma jedno ID, także gdy liczniki
+# są na różnych kontach — HA pokaże ją raz.
 NOTIFICATION_ID = f"{DOMAIN}_notification_{{id}}"

@@ -34,6 +34,7 @@ from .const import (
     CONF_METER_ID,
     CONF_METER_NAME,
     CONF_NET_METERING,
+    CONF_NOTIFICATIONS,
     CONF_TARIFF,
     CONF_UPDATE_INTERVAL,
     DEFAULT_NET_METERING,
@@ -97,6 +98,10 @@ def _options_schema(defaults: Mapping[str, Any], prosumer: bool) -> vol.Schema:
         vol.Required(
             CONF_FETCH_POWER_GENERATION,
             default=defaults.get(CONF_FETCH_POWER_GENERATION, False),
+        ): BooleanSelector(),
+        vol.Required(
+            CONF_NOTIFICATIONS,
+            default=defaults.get(CONF_NOTIFICATIONS, True),
         ): BooleanSelector(),
     }
     if prosumer:

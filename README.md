@@ -184,14 +184,17 @@ Tworzone gdy integracja `enea_prices` jest skonfigurowana z pasującą taryfą.
 
 ## Wiadomości z Portalu Odbiorcy Enea
 
-Wiadomości z zakładki **Wiadomości** w Portalu Odbiorcy Enea (np. zapowiedź prac serwisowych portalu) pojawiają się w Home Assistant jako powiadomienia — z treścią, kategorią i datą otrzymania. Integracja sprawdza je przy każdym odświeżeniu: za pierwszym razem pobiera całą historię, potem tylko dni od ostatniego sprawdzenia.
+Wiadomości z zakładki **Wiadomości** w Portalu Odbiorcy Enea (np. zapowiedź prac serwisowych portalu) pojawiają się w Home Assistant jako powiadomienia — z treścią, kategorią i datą otrzymania. Integracja sprawdza je przy każdym odświeżeniu: za pierwszym razem pobiera całą historię, potem tylko dni od ostatniego sprawdzenia. Wyłączysz to opcją **Pokazuj wiadomości z Portalu Odbiorcy Enea**.
 
-Powiadomienie dostaje tylko wiadomość, której jeszcze nie widziała, a przy tym:
+Powiadomienie dostaje tylko wiadomość, której integracja jeszcze nie widziała i którą portal wciąż by pokazał:
 
-- nie jest przeczytana w Portalu Odbiorcy Enea,
-- nie minęła jej data ważności (gdy ją ma), a wiadomość bez daty ważności nie jest starsza niż 30 dni.
+- nie minęła jej data ważności (gdy ją ma),
+- wiadomość, którą portal pokazuje po każdym zalogowaniu, pojawi się nawet przeczytana,
+- pozostałe muszą być nieprzeczytane w Portalu Odbiorcy Enea; wiadomość bez daty ważności, której portal nie pokazuje po zalogowaniu, nie może być starsza niż 30 dni.
 
-Zamknięte powiadomienie nie wraca, także po restarcie. Wiadomość wysłana do wszystkich odbiorców pojawia się raz, nawet przy kilku licznikach na koncie. Integracja nie oznacza wiadomości jako przeczytanych w Portalu Odbiorcy Enea. Załącznik pobierzesz z portalu — powiadomienie podaje jego nazwę i link do zakładki **Wiadomości**.
+Zamknięte powiadomienie nie wraca, także po restarcie. Integracja nie oznacza wiadomości jako przeczytanych w Portalu Odbiorcy Enea. Załącznik pobierzesz z portalu — powiadomienie podaje jego nazwę i link do zakładki **Wiadomości**.
+
+Kilka liczników na jednym koncie sprawdza wiadomości wspólnie — jednym zapytaniem o wszystkie liczniki z włączoną opcją. Wiadomość wysłana do wszystkich odbiorców pojawia się raz.
 
 ## Opcje
 
@@ -204,6 +207,7 @@ Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**
 | Pobieraj statystyki energii oddanej | Tak | Wyłącz jeśli nie masz fotowoltaiki ani innego źródła generacji |
 | Pobieraj statystyki mocy pobranej | Nie | Godzinowe dane mocy czynnej pobranej (kW) |
 | Pobieraj statystyki mocy oddanej | Nie | Godzinowe dane mocy czynnej oddanej (kW); wyłącz jeśli nie masz fotowoltaiki |
+| Pokazuj wiadomości z Portalu Odbiorcy Enea | Tak | Wiadomości z portalu jako powiadomienia Home Assistant — patrz [Wiadomości z Portalu Odbiorcy Enea](#wiadomości-z-portalu-odbiorcy-enea) |
 | System opustów | Brak | Tylko licznik prosumenta: współczynnik 0,8 (instalacja do 10 kW) lub 0,7 (powyżej 10 kW) dla prosumentów przyłączonych do 31.03.2022 — patrz [Prosumenci w systemie opustów](#prosumenci-w-systemie-opustów) |
 
 Zmiana opcji powoduje natychmiastowe przeładowanie integracji. Wyłączenie danego kierunku ukrywa też odpowiednie sensory energii i kosztów.

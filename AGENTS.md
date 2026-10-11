@@ -28,10 +28,10 @@ Niniejszy projekt to custom component dla Home Assistant integrujący liczniki z
 
 ```
 custom_components/enea/
-├── __init__.py      — setup/unload entry, EneaRuntimeData, EneaConfigEntry, _matching_coordinators, serwisy refresh/backfill
+├── __init__.py      — setup/unload entry, EneaAccount (wspólny klient i wiadomości konta w `hass.data[DOMAIN][username]`), EneaRuntimeData, EneaConfigEntry, _matching_coordinators, serwisy refresh/backfill
 ├── connector.py     — klient HTTP (EneaApiClient, _request helper — GET albo POST z JSON-em; każde żądanie logowane na poziomie debug: metoda, ścieżka z ukrytym ID licznika, status, rozmiar, czas; get_notifications), wyjątki, get_active_meter(), infer_phases(), billing_period_starts(), agreement_tariffs() (grupy taryfowe umów z datami), tariff_group_name() (nazwa grupy jak na fakturze i w enea_prices), zone_name() (nazwa strefy z `ppeZones` bez kodu OBIS), mask_ppe(), hide_meter_id() (ukrywa ID licznika w ścieżce i w tekście błędów), format_address()
-├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill, _async_reprice_costs (przeliczanie kosztów po zmianie cen), sprawdzanie wiadomości (`EneaNotifications`); klient API jako self.client; diagnostics_state() dla raportu diagnostycznego
-├── notifications.py — EneaNotifications (wiadomości z Portalu Odbiorcy Enea → powiadomienia HA, Store z widzianymi ID), should_show, notification_message
+├── coordinator.py   — EneaUpdateCoordinator: dane sensorów + pobieranie/wstrzykiwanie statystyk, _async_inject_days, async_backfill, _async_reprice_costs (przeliczanie kosztów po zmianie cen), sprawdzanie wiadomości konta (`EneaNotifications`, `None` przy wyłączonej opcji); klient API jako self.client; diagnostics_state() dla raportu diagnostycznego
+├── notifications.py — EneaNotifications (wiadomości konta z Portalu Odbiorcy Enea → powiadomienia HA, Store z widzianymi ID), should_show, notification_message, storage_key
 ├── config_flow.py   — EneaConfigFlow: krok "user", "select_meter", "configure", reconfigure, reauth; EneaOptionsFlow; _validate_options, _async_validate_and_update_credentials
 ├── sensor.py        — EneaSensor, EneaEnergySensor, EneaBillSensor, SENSOR_DESCRIPTIONS, _address_attrs, _meter_model_attrs, _get_reading_date, _han_port_state, _switch_state_attrs, EneaStatisticsDateSensor
 ├── binary_sensor.py — EneaBinarySensor, BINARY_SENSOR_DESCRIPTIONS: diagnostyczne transmisja z licznikiem i dostępność portu HAN
@@ -342,12 +342,13 @@ Licznik wysyła dane za poprzedni dzień zwykle między północą a 6:00 (obser
 
 ## Wiadomości z Portalu Odbiorcy Enea
 
-`EneaNotifications` (`notifications.py`) zamienia nowe wiadomości licznika na powiadomienia HA (`persistent_notification.async_create`). Wołane przez `_async_update_notifications` po kroku statystyk przy każdym odświeżeniu; w trakcie startu HA odraczane razem z nim (`_async_update_after_start`) — pierwsze sprawdzenie pobiera całą historię, co po aktualizacji integracji wydłużałoby start. Błąd (portal, nietypowa odpowiedź) nie psuje odświeżenia: jest logowany jako ostrzeżenie i trafia do raportu diagnostycznego (`notifications.error`).
+`EneaNotifications` (`notifications.py`) zamienia nowe wiadomości **konta** na powiadomienia HA (`persistent_notification.async_create`). Jeden obiekt na konto, w `EneaAccount` obok wspólnego klienta (`hass.data[DOMAIN][username]`); koordynator dostaje go tylko przy włączonej opcji `notifications` (domyślnie tak). Wołane po kroku statystyk przy każdym odświeżeniu; w trakcie startu HA odraczane razem z nim (`_async_update_after_start`) — pierwsze sprawdzenie pobiera całą historię, co po aktualizacji integracji wydłużałoby start. Błąd (portal, nietypowa odpowiedź) nie psuje odświeżenia: `async_update` go łapie, loguje jako ostrzeżenie i trzyma w `error` (raport diagnostyczny: `notifications.error`; przy wyłączonej opcji `notifications` = `None`).
 
-- **Pierwsze sprawdzenie** (brak zapisu) pobiera całą historię (`timeRange` 5), **kolejne** — przedział od ostatniego sprawdzonego dnia (włącznie, bo wiadomość mogła przyjść po sprawdzeniu) do dziś (`timeRange` 6). Przerwa w działaniu HA nie gubi wiadomości.
-- Powiadomienie dostaje tylko wiadomość widziana **pierwszy raz** i spełniająca `should_show`: nieprzeczytana w portalu (`isRead`), z `expiryDate` w przyszłości, a bez `expiryDate` — otrzymana najwyżej `NOTIFICATION_MAX_AGE` (30 dni) temu; bez tego pierwsze pobranie całej historii pokazałoby nieprzeczytane wiadomości sprzed lat. Wszystkie pobrane ID trafiają do widzianych, także te bez powiadomienia.
-- Widziane ID i ostatni sprawdzony dzień są w `Store` `.storage/enea.notifications.{entry_id}` (usuwany w `async_remove_entry`) — zamknięte powiadomienie nie wraca po restarcie.
-- ID powiadomienia: `enea_notification_{id wiadomości}` (`NOTIFICATION_ID`), wspólne dla wpisów: wiadomość do wszystkich odbiorców przychodzi do każdego licznika konta, a HA pokazuje ją raz.
+- **Jedno zapytanie na konto**: `ppes` = ID wszystkich niewyłączonych wpisów konta z włączoną opcją (z `config_entries`, także jeszcze niezaładowanych) + `-1`. Sprawdzenie pod `asyncio.Lock`; drugie w ciągu `NOTIFICATIONS_MIN_INTERVAL` (10 min) dla tych samych liczników jest pomijane — przy starcie i setupie wszystkie liczniki odświeżają się naraz. Nieudane sprawdzenie nie liczy się do odstępu, więc następne odświeżenie próbuje od razu.
+- **Pierwsze sprawdzenie** (brak zapisu) albo licznik, o który konto jeszcze nie pytało (`meters` w zapisie), pobiera całą historię (`timeRange` 5) dla wszystkich liczników; **kolejne** — przedział od ostatniego sprawdzonego dnia (włącznie, bo wiadomość mogła przyjść po sprawdzeniu) do dziś (`timeRange` 6). Przerwa w działaniu HA nie gubi wiadomości.
+- Powiadomienie dostaje tylko wiadomość widziana **pierwszy raz** i spełniająca `should_show` (portal wciąż by ją pokazał): po `expiryDate` — nigdy; `presentedAfterEveryLogin` — tak, nawet przeczytana (portal pokazuje ją po każdym logowaniu); przeczytana (`isRead`) — nie; nieprzeczytana z `presentedAfterLogin` albo z `expiryDate` w przyszłości — tak; pozostałe — otrzymane najwyżej `NOTIFICATION_MAX_AGE` (30 dni) temu, bo pierwsze pobranie całej historii pokazałoby nieprzeczytane wiadomości sprzed lat. Wszystkie pobrane ID trafiają do widzianych, także te bez powiadomienia. Logowanie integracji (`/auth/login`) nie jest logowaniem we frontendzie — nie pokazuje okien `notificationsAfterLogin` ani nie oznacza niczego jako przeczytane.
+- Widziane ID, ostatni sprawdzony dzień i sprawdzane liczniki są w `Store` `.storage/enea.notifications.{skrót}` — skrót SHA-256 loginu po casefold (`storage_key`), bo login to adres e-mail. Usuwany w `async_remove_entry` razem z ostatnim wpisem konta. Zamknięte powiadomienie nie wraca po restarcie.
+- ID powiadomienia: `enea_notification_{id wiadomości}` (`NOTIFICATION_ID`), więc wiadomość do wszystkich odbiorców HA pokazuje raz, także przy licznikach na różnych kontach.
 - Tytuł: „Portal Odbiorcy Enea: {title}”. Treść: `content`, pod nią kursywą kategoria · data otrzymania (lokalna) · PPE z `ppeCodes`, a przy załączniku `📎 [fileName](strona Wiadomości)` — dopisane elementy nie zawierają słów, więc nie wymagają tłumaczeń.
 
 ## Sensory
@@ -432,7 +433,7 @@ Wszystkie mają `IssueSeverity.WARNING` — użytkownik może je zignorować w U
 - Przy restarcie HA sesja jest tracona — `get_meters()` automatycznie wywołuje `authenticate()`
 - Przy permanentnym błędzie auth coordinator rzuca `ConfigEntryAuthFailed` → przepływ reauth w UI
 - Zmiana danych logowania przez użytkownika: dostępna przez **reconfigure flow** (menu ⋮ integracji) — inaczej niż reauth, który jest wyzwalany automatycznie przez 401
-- Wiele liczników na jednym koncie: współdzielony `EneaApiClient` w `hass.data[DOMAIN][username]`
+- Wiele liczników na jednym koncie: współdzielony `EneaAccount` (`EneaApiClient` i `EneaNotifications`) w `hass.data[DOMAIN][username]`
 
 ## Statystyki a sensory — podział odpowiedzialności
 
@@ -456,6 +457,7 @@ Dostępne przez **Ustawienia → Urządzenia i usługi → Enea → Konfiguruj**
 | `fetch_generation` | `True` | Pobieranie statystyk i sensorów energii oddanej |
 | `fetch_power_consumption` | `False` | Pobieranie statystyk mocy pobranej (kW) |
 | `fetch_power_generation` | `False` | Pobieranie statystyk mocy oddanej (kW) |
+| `notifications` | `True` | Wiadomości z Portalu Odbiorcy Enea jako powiadomienia HA; liczniki konta z włączoną opcją pytają wspólnie (zob. „Wiadomości z Portalu Odbiorcy Enea”) |
 | `net_metering` | `none` | System opustów prosumenta: `none` / `0_8` / `0_7` (`NET_METERING_RATIOS`). Pole tylko dla licznika prosumenta (`coordinator.prosumer`; w kroku `configure` — `type` z `/user/ppes`; zostaje edytowalne, gdy już ustawione). Koordynator stosuje je tylko dla prosumenta (`_net_metering`) |
 
 Zmiana opcji powoduje natychmiastowy reload integracji (`EneaOptionsFlow` dziedziczy po `OptionsFlowWithReload`). Integracja nie ma update listenera — przeładowywałby wpis także przy zapisie `entry.data` przez koordynator (`CONF_BALANCED_HISTORY`).

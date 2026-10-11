@@ -1,7 +1,7 @@
 """The Portal Odbiorcy Enea's messages turned into persistent notifications.
 
 The fixture account has one message, read in the portal long ago — the
-"Prace serwisowe" notice.  The tests add unread ones around it.
+"Prace serwisowe" notice.  The tests add others around it.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from homeassistant.config_entries import ConfigEntryState
 
 from custom_components.enea.connector import EneaApiError
 from custom_components.enea.const import URL_NOTIFICATIONS_PAGE
-from custom_components.enea.notifications import notification_message, should_show
+from custom_components.enea.notifications import notification_message, should_show, storage_key
 from conftest import load_portal_fixture
 from ha_instance import (  # noqa: F401 - clock, portal, database and hass are fixtures
     FAKE_METER_ID,
@@ -32,6 +32,7 @@ from ha_instance import (  # noqa: F401 - clock, portal, database and hass are f
     portal,
 )
 
+USERNAME = "test@example.invalid"
 SECOND_ID = 12346
 SECOND_PPE = "590310600000005678"
 
@@ -66,13 +67,25 @@ def _shown(hass) -> dict[str, Any]:
 
 
 def _message_requests(portal) -> list[tuple[Any, ...]]:
-    """Return the message requests made so far: meter id, first and last day."""
+    """Return the message requests made so far: meter ids, first and last day."""
     return [request[1:] for request in portal.requests if request[0] == "notifications"]
 
 
-async def _set_up(hass):
+def _stored(hass) -> Path:
+    """Return the file the account's messages seen are stored in."""
+    return Path(hass.config.path(".storage", storage_key(USERNAME)))
+
+
+def _add_second_meter(portal) -> None:
+    """Add a second meter to the fixture account."""
+    portal.dashboards[SECOND_ID] = {
+        **portal.dashboard, "id": SECOND_ID, "code": SECOND_PPE, "name": SECOND_PPE
+    }
+
+
+async def _set_up(hass, **options):
     """Add the fixture meter's entry and wait for its setup."""
-    entry = make_entry()
+    entry = make_entry(**options)
     await hass.config_entries.async_add(entry)
     await hass.async_block_till_done()
     return entry
@@ -102,6 +115,25 @@ def test_an_unread_message_without_expiry_counts_for_a_month():
     assert should_show(_message(1, NOW - timedelta(days=31)), NOW) is False
 
 
+def test_a_message_presented_after_every_login_counts_even_when_read():
+    """The portal shows it after every login, read or not — until it expires."""
+    received = NOW - timedelta(days=400)
+
+    assert should_show(_message(1, received, read=True, presentedAfterEveryLogin=True), NOW) is True
+    assert should_show(
+        _message(1, received, read=True, expiry=NOW - timedelta(days=1), presentedAfterEveryLogin=True),
+        NOW,
+    ) is False
+
+
+def test_a_message_presented_after_login_counts_until_read():
+    """The portal shows it after the next login while unread, however old."""
+    received = NOW - timedelta(days=400)
+
+    assert should_show(_message(1, received, presentedAfterLogin=True), NOW) is True
+    assert should_show(_message(1, received, read=True, presentedAfterLogin=True), NOW) is False
+
+
 def test_the_notification_text_has_the_message_its_category_and_date():
     """The words are the portal's; the date is local, as the portal shows it."""
     [message] = load_portal_fixture("notifications")
@@ -118,14 +150,21 @@ def test_the_notification_text_has_the_message_its_category_and_date():
 
 def test_the_notification_names_the_meter_and_points_to_an_attachment():
     """A message about one meter says which; its attachment is in the portal."""
-    message = _message(
-        1, NOW, ppeCodes=FAKE_PPE, hasFile=True, fileName="harmonogram.pdf"
-    )
+    message = _message(1, NOW, ppeCodes=FAKE_PPE, hasFile=True, fileName="harmonogram.pdf")
 
     text = notification_message(message)
 
     assert f" · PPE {FAKE_PPE}*" in text
     assert text.endswith(f"📎 [harmonogram.pdf]({URL_NOTIFICATIONS_PAGE})")
+
+
+def test_the_store_is_named_without_the_login():
+    """The login is an e-mail address; the store's file name does not give it away."""
+    key = storage_key(USERNAME)
+
+    assert key.startswith("enea.notifications.")
+    assert "example" not in key
+    assert key == storage_key(USERNAME.upper())  # the portal ignores the case of the login
 
 
 # --- in a running Home Assistant -------------------------------------------------
@@ -141,7 +180,7 @@ async def test_first_check_fetches_every_message_and_shows_the_current_ones(hass
 
     await _set_up(hass)
 
-    assert _message_requests(portal) == [(FAKE_METER_ID, None, None)]
+    assert _message_requests(portal) == [((FAKE_METER_ID,), None, None)]
     shown = _shown(hass)
     assert list(shown) == ["enea_notification_3007"]
     assert shown["enea_notification_3007"]["title"] == "Portal Odbiorcy Enea: Przerwa w dostawie energii"
@@ -157,13 +196,27 @@ async def test_later_checks_ask_for_the_days_since_the_last(hass, clock, portal)
     portal.notifications.append(_message(3010, clock.now - timedelta(hours=1), title="Nowa"))
     await coordinator.async_refresh()
 
-    assert _message_requests(portal) == [(FAKE_METER_ID, SAVED_ON, SAVED_ON + timedelta(days=2))]
+    assert _message_requests(portal) == [((FAKE_METER_ID,), SAVED_ON, SAVED_ON + timedelta(days=2))]
     assert list(_shown(hass)) == ["enea_notification_3010"]
 
     # The same message comes again with the next check of that day; it is shown once.
     async_dismiss(hass, "enea_notification_3010")
+    clock.now += timedelta(hours=1)
     await coordinator.async_refresh()
+    assert len(_message_requests(portal)) == 2
     assert _shown(hass) == {}
+
+
+async def test_a_refresh_soon_after_a_check_does_not_ask_again(hass, clock, portal):
+    """An action-triggered refresh minutes after the last check sends no message request."""
+    entry = await _set_up(hass)
+    portal.requests.clear()
+
+    clock.now = NOW + timedelta(minutes=5)
+    await entry.runtime_data.coordinator.async_refresh()
+
+    assert ("dashboard", FAKE_METER_ID) in portal.requests
+    assert _message_requests(portal) == []
 
 
 async def test_a_dismissed_notification_stays_dismissed_after_a_restart(tmp_path, clock, portal, database):
@@ -182,13 +235,13 @@ async def test_a_dismissed_notification_stays_dismissed_after_a_restart(tmp_path
     assert await second.config_entries.async_setup(entry.entry_id)
     await second.async_block_till_done()
 
-    assert _message_requests(portal) == [(FAKE_METER_ID, SAVED_ON, SAVED_ON)]
+    assert _message_requests(portal) == [((FAKE_METER_ID,), SAVED_ON, SAVED_ON)]
     assert _shown(second) == {}
     await second.async_stop()
 
 
 async def test_failing_messages_do_not_fail_the_refresh(hass, portal):
-    """The dashboard still comes through; the next check starts over from the full history."""
+    """The dashboard still comes through; the next refresh tries again, from the full history."""
     portal.fail_notifications_with = EneaApiError("Unexpected response from notifications endpoint: 500")
     portal.notifications.append(_message(3012, NOW - timedelta(hours=1)))
 
@@ -197,8 +250,7 @@ async def test_failing_messages_do_not_fail_the_refresh(hass, portal):
     assert entry.state is ConfigEntryState.LOADED
     coordinator = entry.runtime_data.coordinator
     assert coordinator.data["tariffGroupName"] == "G12"
-    state = coordinator.diagnostics_state()["notifications"]
-    assert state == {
+    assert coordinator.diagnostics_state()["notifications"] == {
         "checked_until": None,
         "seen": 0,
         "error": "EneaApiError: Unexpected response from notifications endpoint: 500",
@@ -208,31 +260,87 @@ async def test_failing_messages_do_not_fail_the_refresh(hass, portal):
     portal.requests.clear()
     await coordinator.async_refresh()
 
-    assert _message_requests(portal) == [(FAKE_METER_ID, None, None)]
+    assert _message_requests(portal) == [((FAKE_METER_ID,), None, None)]
     assert list(_shown(hass)) == ["enea_notification_3012"]
     assert coordinator.diagnostics_state()["notifications"]["error"] is None
 
 
-async def test_a_message_to_every_customer_is_one_notification_for_two_meters(hass, portal):
-    """Both meters of an account get it; Home Assistant shows it once."""
+async def test_the_option_turns_the_messages_off(hass, portal):
+    """With the option off nothing is asked for and the report says so."""
     portal.notifications.append(_message(3013, NOW - timedelta(hours=1)))
-    portal.dashboards[SECOND_ID] = {**portal.dashboard, "id": SECOND_ID, "code": SECOND_PPE, "name": SECOND_PPE}
 
+    entry = await _set_up(hass, notifications=False)
+
+    assert _message_requests(portal) == []
+    assert _shown(hass) == {}
+    assert entry.runtime_data.coordinator.diagnostics_state()["notifications"] is None
+
+
+async def test_two_meters_of_an_account_share_one_request(tmp_path, clock, portal, database):
+    """After a restart the first meter asks for both; the second's refresh asks for nothing."""
+    _add_second_meter(portal)
+    portal.notifications.append(_message(3014, NOW - timedelta(hours=1), ppeCodes=SECOND_PPE))
+    first = await async_start_hass(str(tmp_path))
     for entry in (make_entry(), make_entry(meter_name=SECOND_PPE, meter_id=SECOND_ID)):
-        await hass.config_entries.async_add(entry)
+        await first.config_entries.async_add(entry)
+    await first.async_block_till_done()
+    await first.async_stop()
+    portal.requests.clear()
+
+    second = await async_start_hass(str(tmp_path))
+    # Setting the integration up sets up both entries at once, as a start does.
+    entries = second.config_entries.async_entries("enea")
+    assert await second.config_entries.async_setup(entries[0].entry_id)
+    await second.async_block_till_done()
+
+    assert all(entry.state is ConfigEntryState.LOADED for entry in entries)
+    assert _message_requests(portal) == [((FAKE_METER_ID, SECOND_ID), SAVED_ON, SAVED_ON)]
+    await second.async_stop()
+
+
+async def test_a_meter_added_later_gets_its_history_checked(hass, portal):
+    """The account's new meter has never been asked about: the whole history again, for both."""
+    _add_second_meter(portal)
+    general = _message(3015, NOW - timedelta(hours=1))
+    portal.notifications.append(general)
+    await _set_up(hass)
+    assert list(_shown(hass)) == ["enea_notification_3015"]
+    async_dismiss(hass, "enea_notification_3015")
+
+    # The portal answers for the second meter too: its own message and the general one.
+    portal.notifications.append(_message(3016, NOW - timedelta(hours=2), ppeCodes=SECOND_PPE))
+    await hass.config_entries.async_add(make_entry(meter_name=SECOND_PPE, meter_id=SECOND_ID))
     await hass.async_block_till_done()
 
-    assert {request[0] for request in _message_requests(portal)} == {FAKE_METER_ID, SECOND_ID}
-    assert list(_shown(hass)) == ["enea_notification_3013"]
+    assert _message_requests(portal)[-1] == ((FAKE_METER_ID, SECOND_ID), None, None)
+    # The general message is not shown again — the account has seen it.
+    assert list(_shown(hass)) == ["enea_notification_3016"]
 
 
-async def test_removing_the_entry_removes_what_it_stored(hass):
-    """The messages seen go with the meter's entry."""
-    entry = await _set_up(hass)
-    stored = Path(hass.config.path(".storage", f"enea.notifications.{entry.entry_id}"))
-    assert stored.is_file()
+async def test_a_meter_with_the_option_off_is_left_out_of_the_request(hass, portal):
+    """Only the meters whose option is on are asked about."""
+    _add_second_meter(portal)
 
-    await hass.config_entries.async_remove(entry.entry_id)
+    await _set_up(hass, notifications=False)
+    await hass.config_entries.async_add(make_entry(meter_name=SECOND_PPE, meter_id=SECOND_ID))
     await hass.async_block_till_done()
 
-    assert not stored.exists()
+    assert _message_requests(portal) == [((SECOND_ID,), None, None)]
+
+
+async def test_the_store_goes_with_the_last_meter_of_the_account(hass, portal):
+    """The messages seen belong to the account; removing one of two meters keeps them."""
+    _add_second_meter(portal)
+    first = await _set_up(hass)
+    second = make_entry(meter_name=SECOND_PPE, meter_id=SECOND_ID)
+    await hass.config_entries.async_add(second)
+    await hass.async_block_till_done()
+    assert _stored(hass).is_file()
+
+    await hass.config_entries.async_remove(first.entry_id)
+    await hass.async_block_till_done()
+    assert _stored(hass).is_file()
+
+    await hass.config_entries.async_remove(second.entry_id)
+    await hass.async_block_till_done()
+    assert not _stored(hass).exists()

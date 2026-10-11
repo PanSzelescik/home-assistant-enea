@@ -265,9 +265,12 @@ class EneaApiClient:
         return await self._request(url, "consumption_range")
 
     async def get_notifications(
-        self, meter_id: int, start_date: date | None = None, end_date: date | None = None
+        self,
+        meter_ids: list[int],
+        start_date: date | None = None,
+        end_date: date | None = None,
     ) -> list[dict[str, Any]]:
-        """Return the portal's messages for the meter and for every customer.
+        """Return the portal's messages for the meters and for every customer.
 
         Without dates every message there is (slow — the portal takes its time
         over years of them); with them, the messages received from start_date
@@ -280,7 +283,7 @@ class EneaApiClient:
             time_range = NotificationTimeRange.CUSTOM
             start, end = start_date.isoformat(), end_date.isoformat()
         body = {
-            "ppes": [meter_id, NOTIFICATION_ALL_PPES],
+            "ppes": [*meter_ids, NOTIFICATION_ALL_PPES],
             "groups": None,
             "timeRange": int(time_range),
             "timeStart": start,

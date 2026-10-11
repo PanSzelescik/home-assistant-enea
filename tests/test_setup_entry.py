@@ -333,13 +333,15 @@ async def test_closed_session_gets_a_new_client(hass, portal, monkeypatch):
     monkeypatch.setattr(integration, "EneaApiClient", factory)
     entry = await _set_up(hass)
     assert await hass.config_entries.async_unload(entry.entry_id)
-    hass.data["enea"]["test@example.invalid"] = SimpleNamespace(session_closed=True)
+    hass.data["enea"]["test@example.invalid"] = SimpleNamespace(
+        client=SimpleNamespace(session_closed=True)
+    )
 
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
     assert factory.call_count == 2
-    assert hass.data["enea"]["test@example.invalid"] is portal
+    assert hass.data["enea"]["test@example.invalid"].client is portal
 
 
 async def test_failed_import_keeps_the_sensors_and_is_reported(hass, portal):

@@ -9,6 +9,7 @@
           "fetch_generation": "Fetch generation statistics",
           "fetch_power_consumption": "Fetch power consumed statistics",
           "fetch_power_generation": "Fetch power returned statistics",
+          "notifications": "Show messages from the Portal Odbiorcy Enea",
           "net_metering": "Net metering (system opustów)"
         },
         "data_description": {
@@ -17,6 +18,7 @@
           "fetch_generation": "Enable to show energy returned (exported) sensors and import hourly statistics. Disable if you have no solar panels or other generation source.",
           "fetch_power_consumption": "Enable to import hourly power consumed statistics (kW).",
           "fetch_power_generation": "Enable to import hourly power returned statistics (kW). Disable if you have no solar panels or other generation source.",
+          "notifications": "Messages from the “Wiadomości” tab of the Portal Odbiorcy Enea (e.g. announcements of maintenance work) appear as Home Assistant notifications. Meters of one account check them together.",
           "net_metering": "A prosumer connected by 31 March 2022 settles returned energy by net metering: each kWh returned is taken back free of charge as 0.8 kWh (installation up to 10 kW) or 0.7 kWh (above 10 kW). The ratio lowers the estimated bill and the value of returned energy in the Energy dashboard. Choose “None” under net-billing."
         }
       }
@@ -51,6 +53,7 @@
           "fetch_generation": "Fetch generation statistics",
           "fetch_power_consumption": "Fetch power consumed statistics",
           "fetch_power_generation": "Fetch power returned statistics",
+          "notifications": "Show messages from the Portal Odbiorcy Enea",
           "net_metering": "Net metering (system opustów)"
         },
         "data_description": {
@@ -59,6 +62,7 @@
           "fetch_generation": "Enable to show energy returned (exported) sensors and import hourly statistics. Disable if you have no solar panels or other generation source.",
           "fetch_power_consumption": "Enable to import hourly power consumed statistics (kW).",
           "fetch_power_generation": "Enable to import hourly power returned statistics (kW). Disable if you have no solar panels or other generation source.",
+          "notifications": "Messages from the “Wiadomości” tab of the Portal Odbiorcy Enea (e.g. announcements of maintenance work) appear as Home Assistant notifications. Meters of one account check them together.",
           "net_metering": "A prosumer connected by 31 March 2022 settles returned energy by net metering: each kWh returned is taken back free of charge as 0.8 kWh (installation up to 10 kW) or 0.7 kWh (above 10 kW). The ratio lowers the estimated bill and the value of returned energy in the Energy dashboard. Choose “None” under net-billing."
         }
       },

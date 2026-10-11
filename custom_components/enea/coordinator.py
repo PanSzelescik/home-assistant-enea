@@ -88,6 +88,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         fetch_power_consumption: bool = False,
         fetch_power_generation: bool = False,
         net_metering_ratio: float | None = None,
+        notifications: EneaNotifications | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -157,10 +158,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._dashboard_data: dict[str, Any] = {}
         # The enea_prices settings worked out from the meter; see installation.py.
         self.detected_installation = DetectedInstallation()
-        # The portal's messages as notifications; the error, only logged, is kept
-        # for the diagnostics report.
-        self._notifications = EneaNotifications(hass, config_entry.entry_id)
-        self._notifications_error: str | None = None
+        # The account's portal messages as notifications; None when the option is off.
+        self._notifications = notifications
 
     @property
     def tariff_name(self) -> str | None:
@@ -240,7 +239,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # all of them, which the portal takes its time over.
         if self.hass.state is CoreState.running:
             await self._async_update_statistics()
-            await self._async_update_notifications()
+            if self._notifications is not None:
+                await self._notifications.async_update()
         elif not self._deferred_after_start:
             self._deferred_after_start = True
             unsub = async_at_started(self.hass, self._async_update_after_start)
@@ -250,18 +250,6 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         async_update_issues(self.hass, self._entry_id, self._meter_code, data)
 
         return data
-
-    async def _async_update_notifications(self) -> None:
-        """Turn the portal's new messages into notifications.
-
-        The messages are extra: failing to get them must not fail the refresh.
-        """
-        self._notifications_error = None
-        try:
-            await self._notifications.async_update(self.client, self.meter_id)
-        except Exception as err:
-            self._notifications_error = mask_ppe(f"{type(err).__name__}: {err}")
-            _LOGGER.warning("Failed to check the Portal Odbiorcy Enea messages: %s", err)
 
     async def _async_update_statistics(self) -> None:
         """Inject missing statistics, then read back the statistics date and the bills.
@@ -326,7 +314,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._deferred_after_start = False
         await self._async_update_statistics()
         self.async_update_listeners()
-        await self._async_update_notifications()
+        if self._notifications is not None:
+            await self._notifications.async_update()
 
     # ------------------------------------------------------------------
     # Statistics helpers
@@ -619,10 +608,10 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "initial_backfill": backfill,
             "cost_checked_until": iso(self._cost_checked_until),
             "costs_repriced_from": iso(self._costs_repriced_from),
-            "notifications": {
+            "notifications": None if self._notifications is None else {
                 "checked_until": iso(self._notifications.checked_until),
                 "seen": self._notifications.seen,
-                "error": self._notifications_error,
+                "error": self._notifications.error,
             },
             "bill_prev_reading": iso(self.bill_prev_reading),
             "bill_last_reading": iso(self.bill_last_reading),

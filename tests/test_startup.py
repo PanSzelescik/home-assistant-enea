@@ -20,7 +20,7 @@ from custom_components.enea.coordinator import EneaUpdateCoordinator
 
 @pytest.fixture
 def coordinator(monkeypatch: pytest.MonkeyPatch):
-    """Return a coordinator whose statistics and messages steps and startup hook are recorded."""
+    """Return a coordinator whose statistics step, messages and startup hook are recorded."""
     calls: dict[str, list[Any]] = {"statistics": [], "notifications": [], "at_started": [], "unload": []}
 
     async def get_ppe_dashboard(meter_id: int) -> dict[str, Any]:
@@ -29,7 +29,7 @@ def coordinator(monkeypatch: pytest.MonkeyPatch):
     async def update_statistics() -> None:
         calls["statistics"].append("run")
 
-    async def update_notifications() -> None:
+    async def check_messages() -> None:
         calls["notifications"].append("run")
 
     def at_started(hass: Any, callback: Any) -> Any:
@@ -50,7 +50,7 @@ def coordinator(monkeypatch: pytest.MonkeyPatch):
     coord._meter_code = "PPE"
     coord._deferred_after_start = False
     coord._async_update_statistics = update_statistics  # type: ignore[method-assign]
-    coord._async_update_notifications = update_notifications  # type: ignore[method-assign]
+    coord._notifications = SimpleNamespace(async_update=check_messages)  # type: ignore[assignment]
     return coord, calls
 
 

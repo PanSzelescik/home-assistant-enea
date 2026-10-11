@@ -244,10 +244,10 @@ class FakePortal:
 
 
     async def get_notifications(
-        self, meter_id: int, first: date | None = None, last: date | None = None
+        self, meter_ids: list[int], first: date | None = None, last: date | None = None
     ) -> list[dict[str, Any]]:
         """Return the messages received first..last, every one without dates."""
-        self._check("notifications", meter_id, first, last)
+        self._check("notifications", tuple(meter_ids), first, last)
         if self.fail_notifications_with is not None:
             raise self.fail_notifications_with
         return [

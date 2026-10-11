@@ -174,16 +174,16 @@ async def test_balanced_data_is_asked_for_in_a_sixth_segment(portal, session):
 
 
 async def test_messages_are_asked_for_as_the_portal_frontend_does(portal, session):
-    """The meter and every customer (-1); all messages, then a range of days."""
+    """The meters and every customer (-1); all messages, then a range of days."""
     client = EneaApiClient(session, USERNAME, PASSWORD)
 
-    everything = await client.get_notifications(METER_ID)
-    await client.get_notifications(METER_ID, date(2026, 10, 10), date(2026, 10, 11))
+    everything = await client.get_notifications([METER_ID])
+    await client.get_notifications([METER_ID, 12346], date(2026, 10, 10), date(2026, 10, 11))
 
     assert [message["title"] for message in everything] == ["Prace serwisowe"]
     assert portal.notification_queries == [
         {"ppes": [METER_ID, -1], "groups": None, "timeRange": 5, "timeStart": "null", "timeEnd": "null"},
-        {"ppes": [METER_ID, -1], "groups": None, "timeRange": 6,
+        {"ppes": [METER_ID, 12346, -1], "groups": None, "timeRange": 6,
          "timeStart": "2026-10-10", "timeEnd": "2026-10-11"},
     ]
 
@@ -194,7 +194,7 @@ async def test_expired_session_posts_the_message_query_again(portal, session):
     await client.authenticate()
     portal.expire_sessions()
 
-    await client.get_notifications(METER_ID)
+    await client.get_notifications([METER_ID])
 
     assert portal.requests == ["login", "notifications", "login", "notifications"]
     # The refused request was not read; the one sent again carries the same body.

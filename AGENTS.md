@@ -292,7 +292,7 @@ Odpowiedź to lista wiadomości (znaczenie pól z frontendu `dist/js/app.js` i s
 - `expiryDate` — data ważności (ms) albo `null`; frontend jej nie używa. W jedynym znanym przykładzie (prace serwisowe 16:30–18:00) wypada o 16:15
 - `presentedAfterLogin`, `presentedAfterEveryLogin` — wiadomość wyświetlana w oknie po zalogowaniu; frontend bierze je z `GET /notification/count` (`{count, notificationsAfterLogin}`, `count` = licznik przy kopercie)
 
-`POST /notification/read/{id}` — bez treści (frontend: `$http.post('api/notification/read/' + id)`, bez nagłówków CSRF); odpowiedź nieczytana, sukces = 200 albo 204 (`EneaApiClient.mark_notification_read`, `_request(..., post=True, parse=False)`). Integracja wysyła go po zamknięciu powiadomienia w HA.
+`POST /notification/read/{id}` — bez treści (frontend: `$http.post('api/notification/read/' + id)`, bez nagłówków CSRF); odpowiedź nieczytana (potwierdzone 2026-10-11: HTTP 200, 5 B), sukces = 200 albo 204 (`EneaApiClient.mark_notification_read`, `_request(..., post=True, parse=False)`). Integracja wysyła go po zamknięciu powiadomienia w HA.
 
 Nieużywane przez integrację: `GET /notification/count`, `GET /notification/unique/{max}` (ostatnie wiadomości na dashboardzie portalu, `max` = 10), `GET /notification/attachment/{id}`.
 

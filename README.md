@@ -269,6 +269,8 @@ pokrycia jest widoczne w podsumowaniu joba, a raporty HTML i XML w artefakcie
 `coverage-report`, przechowywanym przez 14 dni. Raporty powstają również po porażce
 testów, jeśli pomiar zebrał dane; nie zmienia to wyniku testów na sukces.
 
+Jak przygotować zmianę i pull request — zob. [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Podziękowania
 
 Inspirowane integracją [Tauron AMIplus](https://github.com/PiotrMachowski/Home-Assistant-custom-components-Tauron-AMIplus) autorstwa [@PiotrMachowski](https://github.com/PiotrMachowski).

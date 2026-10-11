@@ -10,18 +10,20 @@ same calculation method as Enea's invoices:
    - Sprzedaż energii – energy price including the excise duty (akcyza), plus
      the seller's monthly trade fee (opłata handlowa) on a market offer.
    - Usługa dystrybucji – variable distribution fees per zone (grid, quality,
-     OZE, cogeneration) plus fixed monthly fees (network, capacity, subscription).
+     OZE, cogeneration) plus fixed monthly fees (network, capacity, transition, subscription).
 3. VAT (23%) is applied **once** to the total netto at the very end:
    total = round(total_netto × 1.23, 2).
 4. A prosumer under net metering (system opustów) pays energy and the variable
-   distribution fees only for the consumption left after the returned energy
+   network and quality fees only for the consumption left after the returned energy
    times the ratio (0.8/0.7) is settled against it — see settle_net_metering.
+   OZE and cogeneration are charged on all consumption after hourly balancing.
 
 Requires the enea_prices integration to be configured with a matching tariff.
 """
 from __future__ import annotations
 
 import asyncio
+from calendar import monthrange
 import logging
 import sys
 from dataclasses import dataclass, field
@@ -94,13 +96,13 @@ class BillEstimate:
 
     distribution_netto: float
     """Total distribution service cost netto — section 'Usługa dystrybucji'
-    (variable fees across all zones + fixed monthly fees), PLN."""
+    (variable fees across all zones + fixed monthly fees, including transition), PLN."""
 
     fixed_network_netto: float
-    """Fixed network fee netto for ``months`` full months, PLN."""
+    """Fixed network fee netto, prorated by calendar days at historical rates, PLN."""
 
     fixed_capacity_netto: float
-    """Capacity fee netto for ``months`` full months, PLN."""
+    """Capacity fee netto, prorated by calendar days at historical rates, PLN."""
 
     fixed_subscription_netto: float
     """Subscription fee netto for ``months`` full months, PLN."""
@@ -113,7 +115,7 @@ class BillEstimate:
     This is the only brutto value — VAT is applied once at the end."""
 
     months: int
-    """Number of full billing months in the period."""
+    """Months charged for subscription and trade fees."""
 
     start: date
     """Period start (exclusive) — day of the previous meter reading."""
@@ -121,12 +123,19 @@ class BillEstimate:
     end: date
     """Period end (inclusive) — day of the current meter reading."""
 
+    fixed_transition_netto: float = 0.0
+    """Transition fee, prorated by calendar days at their historical rates."""
+
+    distribution_months: float = 0.0
+    """Calendar-month equivalents for prorated fixed distribution fees."""
+
     returned_kwh_by_zone: dict[str, float] = field(default_factory=dict)
     """Returned kWh per zone; empty without net metering."""
 
     billed_kwh_by_zone: dict[str, float] = field(default_factory=dict)
     """Consumed kWh per zone left to pay for after net metering; energy and the
-    variable distribution fees are charged on it.  Empty without net metering."""
+    network and quality fees are charged on it. OZE and cogeneration use all
+    consumed kWh.  Empty without net metering."""
 
     net_metering_left_kwh: float | None = None
     """Net-metering credit left over in the period, kWh; None without net metering."""
@@ -289,7 +298,9 @@ async def async_estimate_bill(
     - Each line item is rounded to 2 decimal places at netto prices.
     - Variable distribution fees per zone are summed from four components
       rounded individually (variable_network, quality, oze, cogeneration).
-    - Fixed monthly fees, rounded individually, come from the period at end.
+    - Network, capacity and transition fees use each day's historical rate
+      and its fraction of that calendar month. Subscription and trade fees
+      are charged per month at the last available rate in that month.
     - VAT (23%) is applied once to the grand total netto at the very end.
 
     Args:
@@ -366,24 +377,46 @@ async def async_estimate_bill(
         # Usługa dystrybucji (zmienne): każdy składnik zaokrąglony osobno jak na fakturze
         variable_network_by_zone_netto[zone] = round(zone_usage.variable_network * share, 2)
         quality_by_zone_netto[zone] = round(zone_usage.quality * share, 2)
-        oze_by_zone_netto[zone] = round(zone_usage.oze * share, 2)
-        cogeneration_by_zone_netto[zone] = round(zone_usage.cogeneration * share, 2)
+        oze_by_zone_netto[zone] = round(zone_usage.oze, 2)
+        cogeneration_by_zone_netto[zone] = round(zone_usage.cogeneration, 2)
 
-    days = (end - start).days
-    months = max(1, round(days / 30.44)) if days > 0 else 0
+    # A partial month is days / actual days in that month, not days / 30.44.
+    # Look up every day: capacity was suspended in H1 2025, and both tariff
+    # groups and contract fees may change inside the bill.
+    fixed_network = fixed_capacity = fixed_transition = distribution_months = 0.0
+    monthly_fees: dict[tuple[int, int], Any] = {}
+    day = start + timedelta(days=1)
+    while day <= end:
+        daily_period = cfg.tariff.get_period_for_date(day)
+        if daily_period is not None:
+            m = daily_period.monthly
+            fraction = 1 / monthrange(day.year, day.month)[1]
+            distribution_months += fraction
+            fixed_network += m.get_network_fixed(cfg.phases) * fraction
+            fixed_capacity += m.get_capacity(cfg.annual_kwh) * fraction
+            # Compatibility with older enea_prices without transition fees.
+            if hasattr(m, "get_transition"):
+                fixed_transition += m.get_transition(cfg.annual_kwh) * fraction
+            monthly_fees[(day.year, day.month)] = m
+        day += timedelta(days=1)
 
-    if months == 0:
-        trade_fee_netto = 0.0
-        fixed_network_netto = 0.0
-        fixed_capacity_netto = 0.0
-        fixed_subscription_netto = 0.0
-    else:
-        m = period.monthly
-        # Opłata handlowa – tylko przy cenach z umowy; starsze enea_prices jej nie znają.
-        trade_fee_netto = round(getattr(m, "trade", 0.0) * months, 2)
-        fixed_network_netto = round(m.get_network_fixed(cfg.phases) * months, 2)
-        fixed_capacity_netto = round(m.get_capacity(cfg.annual_kwh) * months, 2)
-        fixed_subscription_netto = round(m.get_subscription(cfg.billing_months) * months, 2)
+    # The previous reading's month belongs to the previous bill. Charge each
+    # subsequent calendar month, including the final partial month, once.
+    # A window entirely within one month still carries one monthly charge.
+    charged_months = [
+        m for month, m in monthly_fees.items()
+        if month > (start.year, start.month)
+    ]
+    if not charged_months and monthly_fees:
+        charged_months = [next(reversed(monthly_fees.values()))]
+    months = len(charged_months)
+    trade_fee_netto = round(sum(getattr(m, "trade", 0.0) for m in charged_months), 2)
+    fixed_subscription_netto = round(
+        sum(m.get_subscription(cfg.billing_months) for m in charged_months), 2
+    )
+    fixed_network_netto = round(fixed_network, 2)
+    fixed_capacity_netto = round(fixed_capacity, 2)
+    fixed_transition_netto = round(fixed_transition, 2)
 
     energy_netto = round(sum(energy_by_zone_netto.values()) + trade_fee_netto, 2)
 
@@ -394,6 +427,7 @@ async def async_estimate_bill(
         + sum(cogeneration_by_zone_netto.values())
         + fixed_network_netto
         + fixed_capacity_netto
+        + fixed_transition_netto
         + fixed_subscription_netto,
         2,
     )
@@ -413,6 +447,8 @@ async def async_estimate_bill(
         distribution_netto=distribution_netto,
         fixed_network_netto=fixed_network_netto,
         fixed_capacity_netto=fixed_capacity_netto,
+        fixed_transition_netto=fixed_transition_netto,
+        distribution_months=round(distribution_months, 4),
         fixed_subscription_netto=fixed_subscription_netto,
         total_netto=total_netto,
         total=total,

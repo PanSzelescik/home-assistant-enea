@@ -309,6 +309,9 @@ async def test_coordinator_fetches_the_week_with_one_request_per_type(monkeypatc
 class _Pricing:
     """Per-kWh prices of one zone, as enea_prices' ZonePricing exposes them."""
 
+    oze = 0.0073
+    cogeneration = 0.003
+
     def __init__(self, energy: float, total_distribution: float) -> None:
         self.energy = energy
         self.total_distribution = total_distribution

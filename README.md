@@ -112,16 +112,20 @@ Gdy `enea_prices` jest skonfigurowane, dla każdego licznika tworzone są dwie e
 
 Kwota brutto w PLN obliczana metodą zbliżoną do faktury Enea: zużycie z każdej godziny przypisane do strefy według harmonogramu taryfy i wycenione cennikiem obowiązującym tego dnia (także cennikiem wcześniejszej grupy taryfowej, jeśli okres obejmuje zmianę grupy), każda pozycja kosztowa zaokrąglana do 2 miejsc po przecinku po cenach netto, VAT 23% doliczany raz do sumy końcowej. Gdy część okresu przypada na grupę taryfową bez wpisu w `enea_prices`, jej zużycie nie jest wyceniane i pokazuje je atrybut `unpriced_kwh`.
 
-Sensory rachunku mają dodatkowe atrybuty: `start`, `end`, `months`, `total_netto`, `energy_netto`, `trade_fee_netto` (opłata handlowa, tylko przy cenach z umowy w Enea Ceny), `distribution_netto`, `fixed_network_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `kwh_{strefa}`, `energy_{strefa}_netto`, `variable_network_{strefa}_netto`, `quality_{strefa}_netto`, `oze_{strefa}_netto`, `cogeneration_{strefa}_netto`.
+Sensory rachunku mają dodatkowe atrybuty: `start`, `end`, `months`, `distribution_months`, `total_netto`, `energy_netto`, `trade_fee_netto` (opłata handlowa, tylko przy cenach z umowy w Enea Ceny), `distribution_netto`, `fixed_network_netto`, `fixed_transition_netto`, `fixed_capacity_netto`, `fixed_subscription_netto`, `kwh_{strefa}`, `energy_{strefa}_netto`, `variable_network_{strefa}_netto`, `quality_{strefa}_netto`, `oze_{strefa}_netto`, `cogeneration_{strefa}_netto`.
+
+Opłaty stała sieciowa, przejściowa i mocowa są liczone według stawek każdego dnia, proporcjonalnie do liczby dni danego miesiąca (`distribution_months`). Abonament i opłata handlowa są naliczane miesięcznie (`months`), ze stawką z ostatniego wycenionego dnia miesiąca: miesiąc poprzedniego odczytu należy do poprzedniego rachunku; okno w obrębie jednego miesiąca ma jedną opłatę. To nadal szacunek — podziały i zaokrąglenia pozycji na fakturze, indywidualne zasady oferty oraz rozliczenie wcześniej pobranych opłat mogą powodować różnice.
+
+Dla faktury za 1.01–12.12 daty odczytów to **31.12 poprzedniego roku** i **12.12**. Sensor pokazuje **brutto**; atrybut `total_netto` pozwala porównać sumę netto z faktury.
 
 #### Prosumenci w systemie opustów
 
-Prosument przyłączony do 31.03.2022 rozlicza energię oddaną w systemie opustów: z każdej kWh oddanej do sieci odbiera bez opłat 0,8 kWh (instalacja do 10 kW) albo 0,7 kWh (powyżej 10 kW). Za tak odebraną energię nie płaci ani ceny energii, ani zmiennych opłat dystrybucyjnych (sieciowej zmiennej, jakościowej, OZE, kogeneracyjnej); opłaty stałe zostają.
+Prosument przyłączony do 31.03.2022 rozlicza energię oddaną w systemie opustów: z każdej kWh oddanej do sieci odbiera bez opłat 0,8 kWh (instalacja do 10 kW) albo 0,7 kWh (powyżej 10 kW). Za tak odebraną energię nie płaci ani ceny energii, ani opłat sieciowej zmiennej i jakościowej. OZE i kogeneracja są naliczane od całej energii pobranej po bilansowaniu godzinowym, przed opustem; opłaty stałe zostają.
 
 Po wybraniu współczynnika w opcji **System opustów**:
 
-- **szacowany rachunek** liczy energię i opłaty zmienne tylko od nadwyżki poboru. Energia oddana (× współczynnik) rozlicza najpierw pobór w tej samej strefie, a nadwyżka przechodzi na pozostałe strefy — od strefy z najwyższą stawką sieciową zmienną. Dochodzą atrybuty `returned_kwh_{strefa}` (energia oddana), `billed_kwh_{strefa}` (zużycie po opuście) i `net_metering_left_kwh` (niewykorzystany opust w okresie);
-- **koszt energii oddanej** w panelu Energia (`enea:…_koszt_energii_oddana_…`) jest liczony jako współczynnik × cena energii pobranej. Zmiana opcji przelicza historię kosztów.
+- **szacowany rachunek** liczy energię, opłatę sieciową zmienną i jakościową tylko od nadwyżki poboru. OZE i kogeneracja pozostają od całego poboru po bilansowaniu godzinowym. Energia oddana (× współczynnik) rozlicza najpierw pobór w tej samej strefie, a nadwyżka przechodzi na pozostałe strefy — od strefy z najwyższą stawką sieciową zmienną. Dochodzą atrybuty `returned_kwh_{strefa}` (energia oddana), `billed_kwh_{strefa}` (zużycie po opuście) i `net_metering_left_kwh` (niewykorzystany opust w okresie);
+- **koszt energii oddanej** w panelu Energia (`enea:…_koszt_energii_oddana_…`) jest liczony jako współczynnik × cena energii pobranej bez OZE i kogeneracji. Zmiana opcji lub tej wyceny przelicza historię kosztów.
 
 Szacunek nie uwzględnia nadwyżki przeniesionej z wcześniejszych okresów (energia oddana jest ważna 12 miesięcy). Przy net-billingu (przyłączenie od 1.04.2022) zostaw opcję **Brak**.
 

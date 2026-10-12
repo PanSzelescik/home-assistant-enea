@@ -110,7 +110,7 @@ def _returned_from_consumption(portal, share: float) -> dict[str, float]:
 
 
 async def test_net_metering_credits_returned_energy(hass, portal, database):
-    """Each returned kWh is worth 0.8 of a consumed one, in costs and on the bill."""
+    """Returned energy credits energy/network/quality, leaving the two levies payable."""
     portal.prosumer = True
     returned = _returned_from_consumption(portal, 0.4)
     tariff = FakeG12Tariff()
@@ -123,7 +123,7 @@ async def test_net_metering_credits_returned_energy(hass, portal, database):
     for zone, name, display in (("day", "Dzień", "dzien"), ("night", "Noc", "noc")):
         series = database.series(f"enea:{FAKE_PPE}_koszt_energii_oddana_{display}")
         assert series[-1]["sum"] == pytest.approx(
-            returned[name] * _kwh_price(period.zones[zone], 0.0) * 0.8, abs=1e-6
+            returned[name] * _kwh_price(period.zones[zone], 0.0, net_metering_return=True) * 0.8, abs=1e-6
         )
 
     registry = er.async_get(hass)

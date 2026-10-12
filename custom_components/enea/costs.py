@@ -65,9 +65,14 @@ def _akcyza() -> float:
     return getattr(sys.modules.get("custom_components.enea_prices.const"), "AKCYZA", 0.0)
 
 
-def _kwh_price(pricing: Any, akcyza: float) -> float:
+def _kwh_price(pricing: Any, akcyza: float, *, net_metering_return: bool = False) -> float:
     """Return the brutto price of one kWh in a zone, as the costs are charged."""
-    return round((pricing.energy + akcyza + pricing.total_distribution) * (1 + VAT_RATE), 4)
+    distribution = pricing.total_distribution
+    if net_metering_return:
+        # These levies remain payable on all imports after hourly balancing;
+        # returned energy under net metering cannot credit them back.
+        distribution -= pricing.oze + pricing.cogeneration
+    return round((pricing.energy + akcyza + distribution) * (1 + VAT_RATE), 4)
 
 
 def price_signatures(
@@ -80,7 +85,8 @@ def price_signatures(
     hour falls in and that zone's price — so it changes with the price list,
     with the zone schedule and with a holiday, and with nothing else.  A
     net-metering ratio other than 1.0 values returned energy below that price,
-    so it is part of the fingerprint too; at 1.0 it is left out, which keeps
+    so both it and the credit price excluding OZE/cogeneration are included;
+    at 1.0 they are left out, which keeps
     the fingerprints stored before the ratio existed.
     """
     akcyza = _akcyza()
@@ -95,6 +101,12 @@ def price_signatures(
                 pricing = period.zones.get(zone)
                 price = _kwh_price(pricing, akcyza) if pricing is not None else None
                 hours.append(f"{zone}={price}")
+                if returned_ratio != 1.0:
+                    credit = (
+                        _kwh_price(pricing, akcyza, net_metering_return=True)
+                        if pricing is not None else None
+                    )
+                    hours.append(f"credit={credit}")
             if returned_ratio != 1.0:
                 hours.append(f"returned={returned_ratio}")
             signatures[day.isoformat()] = hashlib.blake2s(
@@ -264,7 +276,11 @@ def cost_series(
             if zone not in period.zones:
                 continue
             total_kwh = sum(item.get("value") or 0.0 for item in entry.get("items", []))
-            cost = total_kwh * _kwh_price(period.zones[zone], akcyza) * ratio
+            price = _kwh_price(
+                period.zones[zone], akcyza,
+                net_metering_return=key == STAT_KEY_ENERGY_RETURNED and ratio != 1.0,
+            )
+            cost = total_kwh * price * ratio
             by_zone.setdefault(str(zone), []).append((dt, cost))
 
     return CostSeries(by_zone, hours, days_without_period)

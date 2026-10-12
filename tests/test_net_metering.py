@@ -89,6 +89,9 @@ class _Monthly:
     def get_subscription(self, billing_months: int) -> float:
         return 1.0
 
+    def get_transition(self, annual_kwh: int) -> float:
+        return 0.0
+
 
 class _Period:
     """A G12w period: peak from 6:00 to 21:00 has the higher variable network rate."""
@@ -167,6 +170,9 @@ async def test_the_bill_charges_only_what_net_metering_leaves(stored) -> None:
     assert with_ratio.net_metering_left_kwh == 0.0
     assert with_ratio.energy_by_zone_netto == {"Szczyt": 0.0, "Poza szczytem": 25.25}
     assert with_ratio.variable_network_by_zone_netto == {"Szczyt": 0.0, "Poza szczytem": 5.0}
+    assert with_ratio.quality_by_zone_netto == {"Szczyt": 0.0, "Poza szczytem": 1.5}
+    assert with_ratio.oze_by_zone_netto == {"Szczyt": 0.7, "Poza szczytem": 2.1}
+    assert with_ratio.cogeneration_by_zone_netto == {"Szczyt": 0.3, "Poza szczytem": 0.9}
     assert with_ratio.fixed_network_netto == without.fixed_network_netto
     assert with_ratio.total < without.total
 
@@ -186,6 +192,8 @@ async def test_without_net_metering_the_bill_is_unchanged(stored) -> None:
 class _CostPricing:
     energy = 0.5
     total_distribution = 0.3
+    oze = 0.007
+    cogeneration = 0.003
 
 
 class _CostPeriod:
@@ -230,9 +238,10 @@ async def test_returned_energy_is_costed_at_the_ratio(monkeypatch: pytest.Monkey
 
     await costs.async_insert_cost_statistics(object(), "PPE", days, _CostTariff(), False, True, 0.8)
 
-    # 2 kWh x (0.5 + 0.3) x 1.23 VAT x 0.8 = 1.5744 zl
+    # OZE and cogeneration (0.01 PLN/kWh) are not credited back.
+    # 2 kWh x (0.5 + 0.29) x 1.23 VAT x 0.8 = 1.55472 zl
     assert injected[0][0] == "Koszt energii oddana – Szczyt"
-    assert injected[0][1][0][1] == pytest.approx(1.5744)
+    assert injected[0][1][0][1] == pytest.approx(1.55472)
 
 
 def test_a_new_ratio_reprices_but_none_keeps_the_stored_fingerprints() -> None:

@@ -1,0 +1,36 @@
+{
+  "description": "Invoice-shaped regression data: the public invoice totals from issue #19 scaled by 0.83, a changed trade fee, no customer or meter identifiers. Dates retain the 2025 capacity-fee suspension boundary.",
+  "tariff": "G11",
+  "previous_reading": "2024-12-31",
+  "last_reading": "2025-12-12",
+  "phases": 3,
+  "annual_kwh": 5000,
+  "billing_months": 12,
+  "net_metering_ratio": 0.8,
+  "invoice_energy_price": 0.505,
+  "trade_fee": 9.50,
+  "consumed": [
+    {"day": "2025-02-01", "hour": 10, "kwh": 1015.92},
+    {"day": "2025-08-01", "hour": 10, "kwh": 4398.17}
+  ],
+  "returned": [
+    {"day": "2025-08-01", "hour": 12, "kwh": 5297.89}
+  ],
+  "expected": {
+    "consumed_kwh": 5414.09,
+    "returned_kwh": 5297.89,
+    "billed_kwh": 1175.778,
+    "energy_netto": 593.77,
+    "variable_network_netto": 288.77,
+    "quality_netto": 37.74,
+    "oze_netto": 18.95,
+    "cogeneration_netto": 16.24,
+    "fixed_network_netto": 115.47,
+    "fixed_capacity_netto": 86.25,
+    "fixed_transition_netto": 3.76,
+    "fixed_subscription_netto": 3.84,
+    "trade_fee_netto": 114.00,
+    "total_netto": 1278.79,
+    "total_brutto": 1572.91
+  }
+}

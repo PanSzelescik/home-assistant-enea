@@ -43,6 +43,9 @@ class _Monthly:
     def get_subscription(self, billing_months: int) -> float:
         return 1.0 * self.scale
 
+    def get_transition(self, annual_kwh: int) -> float:
+        return 0.0
+
 
 class _G12wPeriod:
     """Peak from 6:00 to 21:00, off-peak otherwise."""
@@ -164,8 +167,10 @@ async def test_each_hour_is_priced_by_its_own_day(stored) -> None:
 
     assert estimate is not None
     assert estimate.energy_by_zone_netto["Szczyt"] == pytest.approx(10 * 0.3 + 10 * 0.6)
-    # Fixed fees come from the period at the end of the bill.
-    assert estimate.fixed_network_netto == 20.0
+    # March 2-15 at 10 PLN/month, March 16-31 at 20 PLN/month.
+    assert estimate.fixed_network_netto == 14.84
+    assert estimate.fixed_capacity_netto == 7.42
+    assert estimate.distribution_months == 0.9677
 
 
 async def test_a_change_of_tariff_group_prices_each_part_by_its_group(stored) -> None:

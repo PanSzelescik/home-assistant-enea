@@ -96,6 +96,34 @@ async def test_fixed_fees_use_calendar_days_including_leap_day(stored, start, en
     assert bill.fixed_subscription_netto == 0.5
 
 
+@pytest.mark.parametrize(("start", "end"), [
+    (date(2026, 6, 6), date(2026, 8, 5)),
+    (date(2026, 6, 1), date(2026, 8, 6)),
+    (date(2026, 6, 10), date(2026, 8, 4)),
+])
+async def test_a_two_month_period_pays_two_whole_months(stored, real_enea_prices, start, end):
+    """A G12 invoice for 7.06–5.08.2026 charges 2 × 14.56, 2 × 24.05 and 2 × 1.92."""
+    tariffs = importlib.import_module("custom_components.enea_prices.tariffs")
+    cfg = PricesConfig(tariffs.TARIFFS["G12"], 3, 5000, 2, 0.005)
+    stored({CONSUMED: []})
+    bill = await async_estimate_bill(object(), "PPE", cfg, start, end)
+    assert bill.distribution_months == 2.0
+    assert bill.fixed_network_netto == 29.12
+    assert bill.fixed_capacity_netto == 48.10
+    assert bill.fixed_subscription_netto == 3.84
+
+
+async def test_a_window_off_whole_months_is_prorated_by_calendar_days(stored, real_enea_prices):
+    """53 days are further than the reading-day drift from two months."""
+    tariffs = importlib.import_module("custom_components.enea_prices.tariffs")
+    cfg = PricesConfig(tariffs.TARIFFS["G12"], 3, 5000, 2, 0.005)
+    stored({CONSUMED: []})
+    bill = await async_estimate_bill(object(), "PPE", cfg, date(2026, 6, 6), date(2026, 7, 29))
+    # June 7-30 is 24/30, July 1-29 is 29/31.
+    assert bill.distribution_months == 1.7355
+    assert bill.fixed_network_netto == 25.27
+
+
 async def test_transition_fee_stops_and_capacity_changes_at_new_year(stored, real_enea_prices):
     """Only December bears transition; capacity uses each year's rate."""
     tariffs = importlib.import_module("custom_components.enea_prices.tariffs")

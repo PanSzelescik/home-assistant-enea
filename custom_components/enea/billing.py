@@ -37,6 +37,8 @@ from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    AVERAGE_MONTH_DAYS,
+    BILLING_PERIOD_TOLERANCE_DAYS,
     COST_ZONE_DISPLAY,
     ENEA_PRICES_CONF_TARIFF,
     ENEA_PRICES_DOMAIN,
@@ -99,10 +101,11 @@ class BillEstimate:
     (variable fees across all zones + fixed monthly fees, including transition), PLN."""
 
     fixed_network_netto: float
-    """Fixed network fee netto, prorated by calendar days at historical rates, PLN."""
+    """Fixed network fee netto at historical rates, PLN: whole months for a
+    window of whole months, otherwise prorated by calendar days."""
 
     fixed_capacity_netto: float
-    """Capacity fee netto, prorated by calendar days at historical rates, PLN."""
+    """Capacity fee netto, charged like the fixed network fee, PLN."""
 
     fixed_subscription_netto: float
     """Subscription fee netto for ``months`` full months, PLN."""
@@ -124,10 +127,11 @@ class BillEstimate:
     """Period end (inclusive) — day of the current meter reading."""
 
     fixed_transition_netto: float = 0.0
-    """Transition fee, prorated by calendar days at their historical rates."""
+    """Transition fee, charged like the fixed network fee."""
 
     distribution_months: float = 0.0
-    """Calendar-month equivalents for prorated fixed distribution fees."""
+    """Months the fixed distribution fees are charged for (whole for a window
+    of whole months, else calendar-day fractions), over priced days only."""
 
     returned_kwh_by_zone: dict[str, float] = field(default_factory=dict)
     """Returned kWh per zone; empty without net metering."""
@@ -298,8 +302,10 @@ async def async_estimate_bill(
     - Each line item is rounded to 2 decimal places at netto prices.
     - Variable distribution fees per zone are summed from four components
       rounded individually (variable_network, quality, oze, cogeneration).
-    - Network, capacity and transition fees use each day's historical rate
-      and its fraction of that calendar month. Subscription and trade fees
+    - Network, capacity and transition fees use each day's historical rate.
+      A window of whole months is charged exactly those months, shared
+      equally among its days; any other window charges each day as its
+      fraction of that calendar month. Subscription and trade fees
       are charged per month at the last available rate in that month.
     - VAT (23%) is applied once to the grand total netto at the very end.
 
@@ -380,9 +386,23 @@ async def async_estimate_bill(
         oze_by_zone_netto[zone] = round(zone_usage.oze, 2)
         cogeneration_by_zone_netto[zone] = round(zone_usage.cogeneration, 2)
 
-    # A partial month is days / actual days in that month, not days / 30.44.
+    # The tariff charges these fees per month of the billing period (pkt 3.1.6,
+    # "Pi … w miesiącach") and splits them by days only between old and new
+    # rates (pkt 3.3.12).  A window of whole months, give or take the drift of
+    # the reading day, costs exactly those months: 7.06–5.08 is 2 on the
+    # invoice, not 24/30 + 1 + 5/31.  Any other window (a period cut short by a
+    # new contract or tariff group, as in #19, or one still running) charges
+    # each day as its share of its calendar month.
     # Look up every day: capacity was suspended in H1 2025, and both tariff
     # groups and contract fees may change inside the bill.
+    days = (end - start).days
+    whole_months = round(days / AVERAGE_MONTH_DAYS)
+    whole_month_share = (
+        whole_months / days
+        if whole_months
+        and abs(days - whole_months * AVERAGE_MONTH_DAYS) <= BILLING_PERIOD_TOLERANCE_DAYS
+        else None
+    )
     fixed_network = fixed_capacity = fixed_transition = distribution_months = 0.0
     monthly_fees: dict[tuple[int, int], Any] = {}
     day = start + timedelta(days=1)
@@ -390,7 +410,7 @@ async def async_estimate_bill(
         daily_period = cfg.tariff.get_period_for_date(day)
         if daily_period is not None:
             m = daily_period.monthly
-            fraction = 1 / monthrange(day.year, day.month)[1]
+            fraction = whole_month_share or 1 / monthrange(day.year, day.month)[1]
             distribution_months += fraction
             fixed_network += m.get_network_fixed(cfg.phases) * fraction
             fixed_capacity += m.get_capacity(cfg.annual_kwh) * fraction

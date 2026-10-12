@@ -167,10 +167,10 @@ async def test_each_hour_is_priced_by_its_own_day(stored) -> None:
 
     assert estimate is not None
     assert estimate.energy_by_zone_netto["Szczyt"] == pytest.approx(10 * 0.3 + 10 * 0.6)
-    # March 2-15 at 10 PLN/month, March 16-31 at 20 PLN/month.
-    assert estimate.fixed_network_netto == 14.84
-    assert estimate.fixed_capacity_netto == 7.42
-    assert estimate.distribution_months == 0.9677
+    # 30 days are a whole month: 14 days at 10 PLN/month and 16 days at 20 PLN/month.
+    assert estimate.fixed_network_netto == 15.33
+    assert estimate.fixed_capacity_netto == 7.67
+    assert estimate.distribution_months == 1.0
 
 
 async def test_a_change_of_tariff_group_prices_each_part_by_its_group(stored) -> None:

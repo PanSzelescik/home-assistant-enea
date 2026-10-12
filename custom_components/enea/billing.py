@@ -23,9 +23,9 @@ Requires the enea_prices integration to be configured with a matching tariff.
 from __future__ import annotations
 
 import asyncio
-from calendar import monthrange
 import logging
 import sys
+from calendar import monthrange
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -394,9 +394,7 @@ async def async_estimate_bill(
             distribution_months += fraction
             fixed_network += m.get_network_fixed(cfg.phases) * fraction
             fixed_capacity += m.get_capacity(cfg.annual_kwh) * fraction
-            # Compatibility with older enea_prices without transition fees.
-            if hasattr(m, "get_transition"):
-                fixed_transition += m.get_transition(cfg.annual_kwh) * fraction
+            fixed_transition += m.get_transition(cfg.annual_kwh) * fraction
             monthly_fees[(day.year, day.month)] = m
         day += timedelta(days=1)
 

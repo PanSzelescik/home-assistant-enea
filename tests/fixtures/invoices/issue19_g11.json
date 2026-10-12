@@ -1,5 +1,5 @@
 {
-  "description": "Synthetic invoice-shaped regression data: altered volumes and trade fee, no customer or meter identifiers. Dates retain the 2025 capacity-fee suspension boundary.",
+  "description": "Invoice-shaped regression data: the public invoice totals from issue #19 scaled by 0.83, a changed trade fee, no customer or meter identifiers. Dates retain the 2025 capacity-fee suspension boundary.",
   "tariff": "G11",
   "previous_reading": "2024-12-31",
   "last_reading": "2025-12-12",

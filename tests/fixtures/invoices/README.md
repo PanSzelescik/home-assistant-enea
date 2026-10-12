@@ -3,12 +3,13 @@
 `issue19_g11.json` preserves the billing structure reported in
 [issue #19](https://github.com/PanSzelescik/home-assistant-enea/issues/19#issuecomment-6110138268):
 G11, three phases, annual billing, a 0.8 opust, a partial December and the
-capacity-fee suspension through June 2025. Energy quantities have been scaled
-and the individual trade fee changed. No PPE, meter ID, invoice number,
-address, account data or diagnostic export is included.
+capacity-fee suspension through June 2025. The consumed and returned totals
+are the invoice's (published in that comment) multiplied by 0.83, and the
+trade fee is changed. No PPE, meter ID, invoice number, address, account data
+or diagnostic export is included.
 
-The rows are synthetic aggregate energy volumes placed in representative
-hours, not the customer's hourly load profile. Prices are constant for G11
+Each total sits in a single representative hour; there is no hourly load
+profile. Prices are constant for G11
 throughout this period. Keep the calendar year: moving it would change the
 regulated rates and the suspension boundary being tested.
 

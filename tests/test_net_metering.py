@@ -89,6 +89,9 @@ class _Monthly:
     def get_subscription(self, billing_months: int) -> float:
         return 1.0
 
+    def get_transition(self, annual_kwh: int) -> float:
+        return 0.0
+
 
 class _Period:
     """A G12w period: peak from 6:00 to 21:00 has the higher variable network rate."""

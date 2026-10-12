@@ -116,7 +116,7 @@ Sensory rachunku mają dodatkowe atrybuty: `start`, `end`, `months`, `distributi
 
 Opłaty stała sieciowa, przejściowa i mocowa są liczone według stawek każdego dnia, proporcjonalnie do liczby dni danego miesiąca (`distribution_months`). Abonament i opłata handlowa są naliczane miesięcznie (`months`), ze stawką z ostatniego wycenionego dnia miesiąca: miesiąc poprzedniego odczytu należy do poprzedniego rachunku; okno w obrębie jednego miesiąca ma jedną opłatę. To nadal szacunek — podziały i zaokrąglenia pozycji na fakturze, indywidualne zasady oferty oraz rozliczenie wcześniej pobranych opłat mogą powodować różnice.
 
-Dla faktury za 1.01–12.12 daty odczytów to **31.12 poprzedniego roku** i **12.12**. Sensor pokazuje **brutto**; atrybut `total_netto` pozwala porównać sumę netto z faktury.
+Okres rachunku zaczyna się dzień po „Dacie poprzedniego odczytu”, więc ustaw ją na **dzień przed pierwszym dniem okresu z faktury** (np. dla faktury za 1.01–12.12: 31.12 poprzedniego roku i 12.12). Sensor pokazuje **brutto**; atrybut `total_netto` pozwala porównać sumę netto z faktury.
 
 #### Prosumenci w systemie opustów
 

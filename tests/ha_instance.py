@@ -295,6 +295,10 @@ class FakeMonthlyFees:
         """Return the subscription fee: a longer billing period costs less a month."""
         return 0.5 if billing_months > 1 else 1.0
 
+    def get_transition(self, annual_kwh: int) -> float:
+        """Return the transition fee: abolished, as in 2026."""
+        return 0.0
+
 
 class FakeG12Period:
     """A G12 price period with Enea's schedule: night 22–6 and 13–15."""

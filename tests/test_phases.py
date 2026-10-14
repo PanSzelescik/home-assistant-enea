@@ -23,6 +23,7 @@ def _dashboard(model: str | None, capacity: float | None) -> dict[str, Any]:
         ("IE.5-TD1", None, "three_phase", {"source": "meter_model"}),
         ("MT382", 11, "three_phase", {"source": "meter_model"}),
         ("AM550-TD2.12", 11, "three_phase", {"source": "meter_model"}),
+        ("XT211", 11, "three_phase", {"source": "meter_model"}),
         ("otus3 ", 3, "three_phase", {"source": "meter_model"}),
         ("OTUS1", 14, "single_phase", {"source": "meter_model"}),
         ("XYZ123", 12, "three_phase", {"source": "contractual_capacity"}),

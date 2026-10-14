@@ -507,6 +507,7 @@ Przy zmianie struktury danych w `ConfigEntry` (klucze w `entry.data`):
    gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes
    ```
    Flaga `--generate-notes` automatycznie generuje changelog z commitów od poprzedniego tagu.
+6. Workflow `release.yaml` dołącza do wydania `enea.zip` (zawartość `custom_components/enea/`). HACS instaluje z niego integrację (`zip_release` w `hacs.json`) i liczy jego pobrania. Workflow kończy się błędem, gdy `version` w `manifest.json` nie odpowiada tagowi — wtedy popraw wersję i uruchom go ręcznie (`gh workflow run release.yaml -f tag=vX.Y.Z`).
 
 ## Testy na prawdziwych danych
 
@@ -534,6 +535,7 @@ Nowy zrzut: zapisz odpowiedź w `data/`, uruchom `uv run python scripts/anonymiz
 
 - `hacs.yaml` — walidacja przez `hacs/action@main` (push, PR, codziennie)
 - `hassfest.yaml` — walidacja `manifest.json` przez `home-assistant/actions/hassfest@master`
+- `release.yaml` — po opublikowaniu wydania dołącza do niego `enea.zip` dla HACS
 
 ## Testowanie lokalne
 

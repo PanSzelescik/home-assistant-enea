@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  # Attaches the zip to a release published before this workflow existed.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag
+        required: true
+
+permissions: {}
+
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      # HACS installs the zip from the release, so its manifest has to carry the release's version.
+      - name: Check the manifest version
+        run: |
+          version=$(jq -r .version custom_components/enea/manifest.json)
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::manifest.json has version $version, the release is $TAG"
+            exit 1
+          fi
+
+      # HACS unpacks the zip straight into custom_components/enea/.
+      - name: Zip the integration
+        working-directory: custom_components/enea
+        run: zip -r "$GITHUB_WORKSPACE/enea.zip" . -x '*__pycache__*'
+
+      - name: Upload the zip to the release
+        run: gh release upload "$TAG" enea.zip --clobber

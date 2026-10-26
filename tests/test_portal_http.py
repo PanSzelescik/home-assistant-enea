@@ -17,10 +17,10 @@ from aiohttp import web
 from aiohttp.client_reqrep import ConnectionKey
 from aiohttp.test_utils import TestServer
 
+from conftest import load_portal_fixture
 from custom_components.enea import connector
 from custom_components.enea.connector import EneaApiClient, EneaApiError, EneaAuthError, _fetch
 from custom_components.enea.const import DataSource, MeasurementType, Resolution
-from conftest import load_portal_fixture
 
 USERNAME = "test@example.invalid"
 PASSWORD = "test-password"

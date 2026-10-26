@@ -15,7 +15,13 @@ from custom_components.enea.sensor import EneaBillSensor
 from custom_components.enea.statistics import get_statistic_id
 from ha_instance import database, real_enea_prices  # noqa: F401
 from test_bill_period import (
-    CONSUMED, _G11Period, _Monthly, _Tariff, _at, _cfg, stored,
+    CONSUMED,
+    _at,
+    _cfg,
+    _G11Period,
+    _Monthly,
+    _Tariff,
+    stored,  # noqa: F401 — fixture
 )
 from test_net_metering import _CostPricing, _CostTariff
 

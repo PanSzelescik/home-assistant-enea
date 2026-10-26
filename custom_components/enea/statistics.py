@@ -7,7 +7,6 @@ from datetime import date, datetime, timedelta
 from functools import partial
 from typing import Any
 
-from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMeanType, StatisticMetaData
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
@@ -17,6 +16,7 @@ from homeassistant.components.recorder.statistics import (
 )
 from homeassistant.const import UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
@@ -60,7 +60,7 @@ async def async_statistics_overview(hass: HomeAssistant, meter_code: str) -> dic
     ))
 
     overview: dict[str, Any] = {}
-    for sid, last in zip(statistic_ids, newest):
+    for sid, last in zip(statistic_ids, newest, strict=True):
         meta = metadata[sid][1]
         row = (last.get(sid) or [{}])[0]
         start = row.get("start")

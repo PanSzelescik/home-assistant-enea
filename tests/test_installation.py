@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from itertools import pairwise
 from typing import Any
 
 import pytest
@@ -214,7 +215,7 @@ async def test_a_prosumers_tariff_change_suggests_no_billing_period(detect) -> N
                 "measurementId": 1,
                 "values": [
                     {"timeFrom": _ms(a), "timeTo": _ms(b), "items": []}
-                    for a, b in zip(edges, edges[1:])
+                    for a, b in pairwise(edges)
                 ],
             }
         ],

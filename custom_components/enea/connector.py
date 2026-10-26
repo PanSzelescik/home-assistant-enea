@@ -10,14 +10,20 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Any
 
-from homeassistant.util import dt as dt_util
-
 import aiohttp
+from homeassistant.util import dt as dt_util
 
 from .const import (
     BILLING_PERIOD_MIN_SEGMENT,
     MEASUREMENT_ID_CONSUMPTION,
+    METERS_CACHE_TTL,
     NOTIFICATION_ALL_PPES,
+    PHASES_BY_METER_MODEL,
+    PHASES_SOURCE_CAPACITY,
+    PHASES_SOURCE_METER_MODEL,
+    PHASES_THREE,
+    PHASES_THREE_MIN_CAPACITY_KW,
+    TARIFF_GROUP_ALIASES,
     URL_CONSUMPTION_RANGE,
     URL_CONSUMPTION_RANGE_DATA_SOURCE,
     URL_LOGIN,
@@ -25,13 +31,6 @@ from .const import (
     URL_NOTIFICATIONS,
     URL_PPE_DASHBOARD,
     URL_PPES,
-    METERS_CACHE_TTL,
-    PHASES_BY_METER_MODEL,
-    PHASES_SOURCE_CAPACITY,
-    PHASES_SOURCE_METER_MODEL,
-    PHASES_THREE,
-    PHASES_THREE_MIN_CAPACITY_KW,
-    TARIFF_GROUP_ALIASES,
     DataSource,
     MeasurementType,
     NotificationTimeRange,
@@ -52,7 +51,7 @@ class EneaAuthError(EneaApiError):
 @asynccontextmanager
 async def _fetch(
     coro: Awaitable[aiohttp.ClientResponse],
-) -> AsyncGenerator[aiohttp.ClientResponse, None]:
+) -> AsyncGenerator[aiohttp.ClientResponse]:
     """Async context manager that issues a request and translates connection errors.
 
     Automatically releases the response on exit, so callers never need to
@@ -69,7 +68,7 @@ async def _fetch(
         raise EneaApiError(
             f"SSL error connecting to Portal Odbiorcy Enea: {err}"
         ) from err
-    except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as err:
+    except (TimeoutError, aiohttp.ClientError, RuntimeError) as err:
         # Some client errors (TooManyRedirects, InvalidURL) quote the URL with the
         # meter id; chaining them would bring it back in every logged traceback.
         raise EneaApiError(
@@ -135,7 +134,7 @@ class EneaApiClient:
             return None
         try:
             return await resp.json()
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001 — any parse failure becomes EneaApiError
             # aiohttp's ContentTypeError quotes the full URL, meter id included;
             # chaining it would bring the URL back in every logged traceback.
             raise EneaApiError(

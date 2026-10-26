@@ -1,5 +1,5 @@
 """Downward corrections and long gaps preserve cumulative energy and cost history."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -12,12 +12,12 @@ from custom_components.enea import costs, statistics
                          ids=["lower-reading", "zero-reading"])
 async def test_downward_correction_across_gap_moves_tail_once(wire_recorder, running_state, replacement, expected):
     """Correcting to less or zero shifts later sums, preserves readings and is repeatable."""
-    hours = [datetime(2026, month, day, tzinfo=timezone.utc) for month, day in [
+    hours = [datetime(2026, month, day, tzinfo=UTC) for month, day in [
         (1, 1), (6, 1), (6, 2), (6, 3), (6, 4),
     ]]
     totals = [100.0, 104.0, 110.0, 115.0, 122.0]
     states = totals if running_state else [1.0, 4.0, 6.0, 5.0, 7.0]
-    store = wire_recorder(statistics, list(zip(hours, totals, states)))
+    store = wire_recorder(statistics, list(zip(hours, totals, states, strict=True)))
     inject = costs._inject_cost_series if running_state else statistics._inject_energy_series
     series = [(hours[1], replacement), (hours[2], replacement)]
 

@@ -6,12 +6,11 @@ import datetime
 import pytest
 from homeassistant.util import dt as dt_util
 
+from conftest import FakeStore
 from custom_components.enea import coordinator as coordinator_module
 from custom_components.enea import costs as costs_module
 from custom_components.enea.connector import EneaApiError
 from custom_components.enea.coordinator import EneaUpdateCoordinator
-
-from conftest import FakeStore
 
 
 @pytest.fixture

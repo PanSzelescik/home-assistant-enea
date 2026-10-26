@@ -535,6 +535,7 @@ Nowy zrzut: zapisz odpowiedź w `data/`, uruchom `uv run python scripts/anonymiz
 
 ## CI/CD
 
+- `tests.yaml` — pytest z pokryciem oraz `ruff check` (reguły w `[tool.ruff]` w `pyproject.toml`; `ruff format` nieużywany). Importy fixture'ów pytest oznaczaj `# noqa: F401`, bo `ruff check --fix` je usuwa
 - `hacs.yaml` — walidacja przez `hacs/action@main` (push, PR, codziennie)
 - `hassfest.yaml` — walidacja `manifest.json` przez `home-assistant/actions/hassfest@master`
 - `release.yaml` — po opublikowaniu wydania dołącza do niego `enea.zip` dla HACS

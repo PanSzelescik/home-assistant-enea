@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from custom_components.enea import date as module
 from conftest import FakeConfigEntry, FakeHass
+from custom_components.enea import date as module
 
 
 @pytest.fixture

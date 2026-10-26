@@ -24,13 +24,14 @@ from types import MappingProxyType
 
 import pytest
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 
+from conftest import load_portal_fixture
 from custom_components.enea import const as enea_const
 from custom_components.enea.billing import find_prices_config
 from custom_components.enea.costs import TariffHistory, _akcyza, _kwh_price, find_tariff_group
 from custom_components.enea.parsing import slot_start_dt
-from conftest import load_portal_fixture
 from ha_instance import (  # noqa: F401 - the imported fixtures are used by name
     FAKE_PPE,
     SAVED_ON,
@@ -153,7 +154,8 @@ def test_tariff_history_wraps_real_groups():
 
     history = TariffHistory(g12, [(date(2000, 1, 1), change, g11, "G11"), (change, None, g12, "G12")])
 
-    assert history.get_period_for_date(change - timedelta(days=1)) is g11.get_period_for_date(change - timedelta(days=1))
+    day_before = change - timedelta(days=1)
+    assert history.get_period_for_date(day_before) is g11.get_period_for_date(day_before)
     assert history.get_period_for_date(change) is g12.get_period_for_date(change)
     assert {id(p) for p in g11.periods} <= {id(p) for p in history.periods}
 

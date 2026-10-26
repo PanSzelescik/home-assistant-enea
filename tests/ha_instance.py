@@ -27,9 +27,9 @@ from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.util import dt as dt_util
 
 import custom_components.enea as integration
+from conftest import TEST_TIME_ZONE, load_portal_fixture
 from custom_components.enea import billing, coordinator, costs, installation, statistics
 from custom_components.enea.parsing import slot_start_dt
-from conftest import TEST_TIME_ZONE, load_portal_fixture
 
 FAKE_METER_ID = 12345
 FAKE_PPE = "590310600000001234"
@@ -303,7 +303,7 @@ class FakeMonthlyFees:
 class FakeG12Period:
     """A G12 price period with Enea's schedule: night 22–6 and 13–15."""
 
-    NIGHT_HOURS = {22, 23, 0, 1, 2, 3, 4, 5, 13, 14}
+    NIGHT_HOURS = frozenset({22, 23, 0, 1, 2, 3, 4, 5, 13, 14})
 
     def __init__(self, valid_from: date, valid_until: date) -> None:
         self.valid_from = valid_from
@@ -384,7 +384,7 @@ def register_prices_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry
     entry up and reads its runtime_data, so it is put straight into the
     registry the way a loaded entry sits there.
     """
-    hass.config_entries._entries[entry.entry_id] = entry  # noqa: SLF001
+    hass.config_entries._entries[entry.entry_id] = entry
 
 
 async def async_start_hass(config_dir: str) -> HomeAssistant:

@@ -16,10 +16,10 @@ from homeassistant.components.persistent_notification import (
 )
 from homeassistant.config_entries import ConfigEntryState
 
+from conftest import load_portal_fixture
 from custom_components.enea.connector import EneaApiError
 from custom_components.enea.const import URL_NOTIFICATIONS_PAGE
 from custom_components.enea.notifications import notification_message, should_show, storage_key
-from conftest import load_portal_fixture
 from ha_instance import (  # noqa: F401 - clock, portal, database and hass are fixtures
     FAKE_METER_ID,
     FAKE_PPE,

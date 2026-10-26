@@ -6,7 +6,8 @@ other, and a setting two meters share must not be "fixed" for one of them.
 """
 from __future__ import annotations
 
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 
 from ha_instance import (  # noqa: F401 - clock, portal, database and hass are fixtures
     FAKE_PPE,

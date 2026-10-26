@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import pytest
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 
 from custom_components.enea.costs import _kwh_price
 from custom_components.enea.repairs import async_create_fix_flow
@@ -61,7 +62,7 @@ async def test_installed_but_not_configured_prices_are_offered_and_set_up(hass):
     result = await _fix(hass, issue_id)
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    flow_type, flow_id = result["next_flow"]
+    _flow_type, flow_id = result["next_flow"]
     created = await hass.config_entries.flow.async_configure(flow_id, SETTINGS)
     assert created["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()

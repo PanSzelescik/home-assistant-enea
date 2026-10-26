@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from conftest import FakeConfigEntry, FakeHass
 
+from conftest import FakeConfigEntry, FakeHass
 from custom_components.enea.billing import find_prices_config
 from custom_components.enea.connector import agreement_tariffs, tariff_group_name, zone_name
 from custom_components.enea.costs import find_tariff_group

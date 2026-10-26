@@ -59,6 +59,16 @@ SAVED_ON = date(2026, 10, 10)
 
 SPRING_FORWARD = date(2026, 3, 29)
 
+FALL_BACK = date(2026, 10, 25)
+
+FALL_BACK_WEEK = "range_2026-10-19_2026-10-26_1"
+"""Energy consumed over the week clocks went back, saved the day after."""
+
+FALL_BACK_DAY = "range_2026-10-25_2026-10-25_1"
+"""Energy consumed on the fall-back day alone, as the daily top-up asks for it."""
+
+FALL_BACK_SAVED_ON = date(2026, 10, 26)
+
 
 def _assembly() -> datetime:
     """Return the active meter's assembly the way the coordinator derives it."""
@@ -264,6 +274,60 @@ async def test_spring_forward_week_reaches_the_statistics(monkeypatch):
     assert written["Energia oddana"][-1]["sum"] == 0.0
     assert all(row["mean"] >= 0 for row in written["Moc pobrana"])
     assert all(row["mean"] == 0.0 for row in written["Moc oddana"])
+
+
+# --- the fall-back day ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", [FALL_BACK_WEEK, FALL_BACK_DAY])
+def test_fall_back_day_gets_its_repeated_hour(name):
+    """The day clocks go back has 25 consecutive hours, 02:00 twice.
+
+    The portal returns the second 02:00–03:00 apart, in 'valuesWinterToTable',
+    and dates the first 01:00–02:00 and 02:00–03:00 an hour late.  Taken as
+    they come, 01:00 was missing, the first 02:00 collided with the repeated
+    one and the repeated hour was lost.
+    """
+    response = load_portal_fixture(name)
+    assert len(response["valuesWinterToTable"]) == 1
+    repeated = response["valuesWinterToTable"][0]
+
+    days = split_range_response(response)
+
+    day = days[FALL_BACK]
+    hours = _hours(day)
+    midnight = dt_util.start_of_local_day(FALL_BACK).timestamp()
+    # Timestamps, not datetimes: local datetimes compare by wall clock, so the
+    # two 02:00 would pass for one and the same hour.
+    assert [hour.timestamp() for hour in hours] == [midnight + i * 3600 for i in range(25)]
+    assert [hour.hour for hour in hours] == [0, 1, 2, 2, *range(3, 24)]
+    assert [entry["timeId"] for entry in day["values"]] == [1, 2, 3, 3, *range(4, 25)]
+    assert day["values"][3]["items"] == repeated["items"]
+    for other, other_data in days.items():
+        if other != FALL_BACK:
+            assert [hour.hour for hour in _hours(other_data)] == list(range(24)), other
+
+
+@pytest.mark.parametrize("name", [FALL_BACK_WEEK, FALL_BACK_DAY])
+def test_fall_back_hours_add_up_to_the_portals_own_sums(name):
+    """Every hour of the range, the repeated one too, reaches the series once."""
+    response = load_portal_fixture(name)
+    zone_names = {zone["id"]: zone["name"] for zone in response["zones"]}
+    days, _ = assemble_days(
+        {STAT_KEY_ENERGY_CONSUMED: response}, today=FALL_BACK_SAVED_ON, assembly=_assembly()
+    )
+    series: dict[str, list[tuple[datetime, float]]] = {}
+    for _, day_data in days:
+        statistics._collect_series(day_data[STAT_KEY_ENERGY_CONSUMED], "pobrana", "Energia", series)
+
+    for rows in series.values():
+        assert len({hour.timestamp() for hour, _ in rows}) == len(rows)
+    assert sum(v for _, v in series["Energia pobrana"]) == pytest.approx(
+        response["sumConsumption"], abs=1e-3
+    )
+    for zone in response["zones"]:
+        rows = series[f"Energia pobrana – {zone_names[zone['id']]}"]
+        assert sum(v for _, v in rows) == pytest.approx(zone["consumption"], abs=1e-3)
 
 
 async def test_coordinator_fetches_the_week_with_one_request_per_type(monkeypatch):

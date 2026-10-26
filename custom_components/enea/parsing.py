@@ -31,6 +31,8 @@ def slot_start_dt(entry: dict[str, Any]) -> datetime:
     Derived from the slot's ``integrationEnd`` (ms epoch, end of the hour) rather
     than from ``timeId``, so it stays correct across DST transitions — the API
     returns 23 or 25 slots on the spring/autumn switch days, not a fixed 24.
+    On the fall-back day split_range_response first retimes the slots, whose
+    ``integrationEnd`` is wrong there (see _merge_repeated_hours).
     """
     end = dt_util.utc_from_timestamp(entry["integrationEnd"] / 1000)
     return (end - timedelta(hours=1)).astimezone(dt_util.DEFAULT_TIME_ZONE)
@@ -51,6 +53,10 @@ def split_range_response(api_response: dict[str, Any]) -> dict[date, dict[str, A
     that month); for a short range it repeats 'valuesToTable'.  Whichever holds
     more entries is used, so the monthly sums never stand in for hours.
 
+    On the fall-back day the repeated hour comes separately, in
+    'valuesWinterToTable' ('valuesWinter'), and is put back into its day by
+    _merge_repeated_hours.
+
     Args:
         api_response: Raw API response from the range endpoint.
 
@@ -59,7 +65,12 @@ def split_range_response(api_response: dict[str, Any]) -> dict[date, dict[str, A
     """
     values: list[dict[str, Any]] = api_response.get("values") or []
     values_to_table: list[dict[str, Any]] = api_response.get("valuesToTable") or []
-    entries = values_to_table if len(values_to_table) > len(values) else values
+    if len(values_to_table) > len(values):
+        entries = values_to_table
+        repeated: list[dict[str, Any]] = api_response.get("valuesWinterToTable") or []
+    else:
+        entries = values
+        repeated = api_response.get("valuesWinter") or []
     zones = api_response.get("zones", [])
 
     result: dict[date, dict[str, Any]] = {}
@@ -68,7 +79,56 @@ def split_range_response(api_response: dict[str, Any]) -> dict[date, dict[str, A
             continue
         day = slot_start_dt(entry).date()
         result.setdefault(day, {"values": [], "zones": zones})["values"].append(entry)
+
+    repeated_by_day: dict[date, list[dict[str, Any]]] = {}
+    for entry in repeated:
+        if entry.get("integrationEnd") is None:
+            continue
+        repeated_by_day.setdefault(slot_start_dt(entry).date(), []).append(entry)
+    for day, day_repeated in repeated_by_day.items():
+        if day in result:
+            result[day]["values"] = _merge_repeated_hours(
+                day, result[day]["values"], day_repeated
+            )
     return result
+
+
+def _merge_repeated_hours(
+    day: date, day_values: list[dict[str, Any]], repeated: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Insert the repeated fall-back hour into its day and retime the whole day.
+
+    On the day clocks go back the portal returns 24 slots by wall-clock hour
+    (``timeId``) in 'valuesToTable' and the second 02:00–03:00 separately in
+    'valuesWinterToTable', with the same ``timeId``.  The ``integrationEnd`` of
+    the first 01:00–02:00 and 02:00–03:00 is an hour late (as if already in
+    winter time), so the first 02:00–03:00 collides with the repeated one and
+    01:00–02:00 is left empty.  The repeated slot goes right after the slot
+    with its ``timeId``, and every slot of the day is given consecutive real
+    hours from local midnight.
+
+    The day is left as it came when the slots do not fill it exactly — then the
+    response is not what this was written for, and nothing is guessed.
+    """
+    merged = list(day_values)
+    for entry in repeated:
+        positions = [
+            index for index, slot in enumerate(merged)
+            if slot.get("timeId") == entry.get("timeId")
+        ]
+        if not positions:
+            return day_values
+        merged.insert(positions[-1] + 1, entry)
+
+    start = dt_util.start_of_local_day(day).timestamp()
+    end = dt_util.start_of_local_day(day + timedelta(days=1)).timestamp()
+    if len(merged) != round((end - start) / 3600):
+        return day_values
+    start_ms = round(start * 1000)
+    return [
+        {**entry, "integrationEnd": start_ms + (index + 1) * 3_600_000}
+        for index, entry in enumerate(merged)
+    ]
 
 
 def zero_fill_missing_day(day_data: DayData) -> DayData:

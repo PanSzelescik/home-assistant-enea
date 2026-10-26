@@ -3,23 +3,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from homeassistant.util import dt as dt_util
 
-from custom_components.enea import coordinator as module, statistics
+from conftest import FakeHass
+from custom_components.enea import coordinator as module
+from custom_components.enea import statistics
 from custom_components.enea.connector import EneaApiError
 from custom_components.enea.const import MeasurementType, Resolution
-from conftest import FakeHass
 
 
 def _slots(day, value=1.0):
     """Build real elapsed hours between two Warsaw midnights, including DST."""
-    start = datetime.combine(day, time(), dt_util.DEFAULT_TIME_ZONE).astimezone(timezone.utc)
-    end = datetime.combine(day + timedelta(days=1), time(), dt_util.DEFAULT_TIME_ZONE).astimezone(timezone.utc)
+    start = datetime.combine(day, time(), dt_util.DEFAULT_TIME_ZONE).astimezone(UTC)
+    end = datetime.combine(day + timedelta(days=1), time(), dt_util.DEFAULT_TIME_ZONE).astimezone(UTC)
     return [
         {"timeId": index + 1, "integrationEnd": int((start + timedelta(hours=index + 1)).timestamp() * 1000),
          "items": [{"tarifZoneId": 1, "value": value}]}
@@ -296,7 +297,7 @@ async def test_manual_backfill_refetches_zeroes_then_corrects_stored_history(coo
     """Real range parsing and injection repair a missing day and remain idempotent."""
     day = date(2026, 6, 1)
     slot = _slots(day)[0]
-    hour = datetime.fromtimestamp(slot["integrationEnd"] / 1000 - 3600, timezone.utc)
+    hour = datetime.fromtimestamp(slot["integrationEnd"] / 1000 - 3600, UTC)
     store = wire_recorder(statistics, [
         (hour - timedelta(hours=1), 100.0, 2.0),
         (hour, 100.0, 0.0),

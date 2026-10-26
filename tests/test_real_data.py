@@ -18,7 +18,9 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from homeassistant.util import dt as dt_util
 
-from custom_components.enea import config_flow, coordinator as coordinator_module, costs, statistics
+from conftest import PORTAL_FIXTURES, FakeHass, load_portal_fixture
+from custom_components.enea import config_flow, costs, statistics
+from custom_components.enea import coordinator as coordinator_module
 from custom_components.enea.binary_sensor import BINARY_SENSOR_DESCRIPTIONS
 from custom_components.enea.connector import (
     agreement_tariffs,
@@ -38,7 +40,6 @@ from custom_components.enea.diagnostics import _redact_meter_data
 from custom_components.enea.installation import detect_billing_months, latest_reading_day
 from custom_components.enea.parsing import assemble_days, has_data, slot_start_dt, split_range_response
 from custom_components.enea.sensor import SENSOR_DESCRIPTIONS
-from conftest import PORTAL_FIXTURES, FakeHass, load_portal_fixture
 
 FAKE_PPE = "590310600000001234"
 FAKE_METER_ID = 12345
@@ -384,7 +385,7 @@ class _Pricing:
 class _G12Period:
     """Enea's G12 schedule: night 22–6 and 13–15 all year, as the portal shows it."""
 
-    NIGHT_HOURS = {22, 23, 0, 1, 2, 3, 4, 5, 13, 14}
+    NIGHT_HOURS = frozenset({22, 23, 0, 1, 2, 3, 4, 5, 13, 14})
 
     def __init__(self) -> None:
         self.zones = {"Dzień": _Pricing(0.6, 0.4), "Noc": _Pricing(0.4, 0.1)}

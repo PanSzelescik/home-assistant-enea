@@ -9,10 +9,9 @@ from typing import Any
 import pytest
 from homeassistant.util import dt as dt_util
 
+from conftest import FakeConfigEntry, FakeHass
 from custom_components.enea import diagnostics as diagnostics_module
 from custom_components.enea.installation import DetectedInstallation
-
-from conftest import FakeConfigEntry, FakeHass
 
 PPE = "590310600000000001"
 METER_ID = 12345

@@ -10,13 +10,12 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from homeassistant.util import dt as dt_util
 
+from conftest import FakeConfigEntry
 from custom_components.enea import coordinator as coordinator_module
 from custom_components.enea import issues as issues_module
 from custom_components.enea import repairs as repairs_module
 from custom_components.enea.coordinator import EneaUpdateCoordinator
 from custom_components.enea.installation import DetectedInstallation
-
-from conftest import FakeConfigEntry
 
 
 @dataclass

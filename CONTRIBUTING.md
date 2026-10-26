@@ -4,7 +4,8 @@ Dzięki, że chcesz pomóc! Ten plik opisuje, jak przygotować zmianę, żeby da
 przejrzeć i wydać.
 
 *In English: issues and pull requests in English are welcome. Run the tests with
-`uv run --locked --group dev pytest -q`, never commit real customer data (PPE numbers,
+`uv run --locked --group dev pytest -q` and the linter with
+`uv run --locked --group dev ruff check .`, never commit real customer data (PPE numbers,
 meter ids, addresses — the `data/` directory is git-ignored for that reason), write commit
 messages in English and add a test that fails without your fix.*
 
@@ -27,6 +28,17 @@ Potrzebujesz [uv](https://docs.astral.sh/uv/); wersję Pythona (3.14) uv pobierz
 uv sync --locked --group dev
 uv run --locked --group dev pytest -q
 ```
+
+Linter ([Ruff](https://docs.astral.sh/ruff/), reguły w `pyproject.toml`; CI sprawdza go przy
+każdym pushu i PR). `--fix` poprawia importy i proste rzeczy sam:
+
+```sh
+uv run --locked --group dev ruff check .
+uv run --locked --group dev ruff check --fix .
+```
+
+`--fix` usuwa też importy fixture'ów pytest, które wyglądają na nieużywane — takie importy
+oznaczaj `# noqa: F401`. Formatowanie (`ruff format`) nie jest wymagane.
 
 Pokrycie kodu (linie i rozgałęzienia, raport HTML w `htmlcov/index.html`):
 

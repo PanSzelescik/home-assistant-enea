@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -17,7 +17,6 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from . import EneaConfigEntry
 from .connector import (
@@ -33,7 +32,6 @@ from .const import (
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
     CONF_METER_NAME,
-    PORTAL_URL,
     DEFAULT_NAME,
     DOMAIN,
     HAN_STATE_BY_CODE,
@@ -43,6 +41,7 @@ from .const import (
     MEASUREMENT_ID_CONSUMPTION,
     PHASES_SINGLE,
     PHASES_THREE,
+    PORTAL_URL,
     SENSOR_KEY_ADDRESS,
     SENSOR_KEY_BILLING_PERIOD_START,
     SENSOR_KEY_CAPACITY,
@@ -107,7 +106,7 @@ def _meter_model_attrs(data: dict[str, Any]) -> dict[str, Any]:
     if not m:
         return {}
     return {
-        k: datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
+        k: datetime.fromtimestamp(ts / 1000, tz=UTC).isoformat()
         for k, ts in {
             "assembly_date": m.get("assemblyDate"),
             "disassembly_date": m.get("disassemblyDate"),
@@ -119,7 +118,7 @@ def _meter_model_attrs(data: dict[str, Any]) -> dict[str, Any]:
 def _get_assembly_date(data: dict[str, Any]) -> datetime | None:
     """Return when the active meter was assembled, or None if the portal does not say."""
     ts = (get_active_meter(data) or {}).get("assemblyDate")
-    return datetime.fromtimestamp(ts / 1000, tz=timezone.utc) if ts else None
+    return datetime.fromtimestamp(ts / 1000, tz=UTC) if ts else None
 
 
 def _get_reading_date(data: dict[str, Any]) -> datetime | None:
@@ -132,7 +131,7 @@ def _get_reading_date(data: dict[str, Any]) -> datetime | None:
         ),
         None,
     )
-    return datetime.fromtimestamp(ts / 1000, tz=timezone.utc) if ts else None
+    return datetime.fromtimestamp(ts / 1000, tz=UTC) if ts else None
 
 
 def _han_port_state(data: dict[str, Any], status_key: str) -> str | None:

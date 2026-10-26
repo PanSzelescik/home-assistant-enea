@@ -7,26 +7,27 @@ statistics (StatisticsDatabase) and the clock replaced.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
-from typing import Any
-from urllib.parse import parse_qs, urlsplit
-
 import asyncio
 import contextlib
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import Mock
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
-from homeassistant.config_entries import ConfigEntryState, SOURCE_REAUTH
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState
-from homeassistant.helpers import device_registry as dr, entity_registry as er, issue_registry as ir
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 
 import custom_components.enea as integration
+from conftest import load_portal_fixture
 from custom_components.enea import diagnostics
 from custom_components.enea.connector import EneaApiError, EneaAuthError
 from custom_components.enea.parsing import slot_start_dt
-from conftest import load_portal_fixture
 from ha_instance import (  # noqa: F401 - clock, portal, database and hass are fixtures
     FAKE_METER_ID,
     FAKE_PPE,

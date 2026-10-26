@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
@@ -23,7 +23,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .connector import EneaApiClient, EneaAuthError, EneaApiError, format_address
+from .connector import EneaApiClient, EneaApiError, EneaAuthError, format_address
 from .const import (
     ABORT_REAUTH_SUCCESSFUL,
     ABORT_RECONFIGURE_SUCCESSFUL,
@@ -39,15 +39,15 @@ from .const import (
     CONF_UPDATE_INTERVAL,
     DEFAULT_NET_METERING,
     DEFAULT_UPDATE_INTERVAL_DICT,
-    NET_METERING_RATIOS,
-    PPE_TYPE_PROSUMER,
-    MIN_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
     ERROR_AT_LEAST_ONE_FETCH_TYPE,
     ERROR_CANNOT_CONNECT,
-    ERROR_INVALID_AUTH,
     ERROR_INTERVAL_TOO_SHORT,
+    ERROR_INVALID_AUTH,
     ERROR_UNKNOWN,
+    MIN_UPDATE_INTERVAL_MINUTES,
+    NET_METERING_RATIOS,
+    PPE_TYPE_PROSUMER,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -206,7 +206,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._meters = meters
         self._dashboards = {
             m["id"]: d
-            for m, d in zip(meters, dashboards)
+            for m, d in zip(meters, dashboards, strict=True)
             if isinstance(d, dict)
         }
         return {}

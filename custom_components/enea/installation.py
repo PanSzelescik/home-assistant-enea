@@ -122,9 +122,13 @@ def detect_billing_months(
     """
     if len(starts) >= 2 and (months := _months(starts[-2], starts[-1])) is not None:
         return months, INSTALLATION_SOURCE_BILLING_PERIODS
-    if prev_reading is not None and last_reading is not None and prev_reading < last_reading:
-        if (months := _months(prev_reading, last_reading)) is not None:
-            return months, INSTALLATION_SOURCE_READING_DATES
+    if (
+        prev_reading is not None
+        and last_reading is not None
+        and prev_reading < last_reading
+        and (months := _months(prev_reading, last_reading)) is not None
+    ):
+        return months, INSTALLATION_SOURCE_READING_DATES
     return None, None
 
 

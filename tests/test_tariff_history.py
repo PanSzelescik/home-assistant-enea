@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from conftest import FakeConfigEntry, FakeHass
 from homeassistant.util import dt as dt_util
 
+from conftest import FakeConfigEntry, FakeHass
 from custom_components.enea import costs
 from custom_components.enea.connector import agreement_tariffs
 from custom_components.enea.const import STAT_KEY_ENERGY_CONSUMED

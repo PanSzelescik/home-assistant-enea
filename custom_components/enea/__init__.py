@@ -8,16 +8,13 @@ from datetime import timedelta
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.util import dt as dt_util
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .connector import EneaApiClient
 from .const import (
-    COST_PRICES_STORAGE_KEY,
-    COST_PRICES_STORAGE_VERSION,
-    NOTIFICATIONS_STORAGE_VERSION,
     CONF_FETCH_CONSUMPTION,
     CONF_FETCH_GENERATION,
     CONF_FETCH_POWER_CONSUMPTION,
@@ -27,10 +24,13 @@ from .const import (
     CONF_NET_METERING,
     CONF_NOTIFICATIONS,
     CONF_UPDATE_INTERVAL,
+    COST_PRICES_STORAGE_KEY,
+    COST_PRICES_STORAGE_VERSION,
     DEFAULT_NET_METERING,
     DEFAULT_UPDATE_INTERVAL_DICT,
     DOMAIN,
     NET_METERING_RATIOS,
+    NOTIFICATIONS_STORAGE_VERSION,
     PLATFORMS,
     SERVICE_BACKFILL,
     SERVICE_REFRESH,
@@ -192,9 +192,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: EneaConfigEntry) -> boo
             if e.entry_id != entry.entry_id and e.state is ConfigEntryState.LOADED
         ]
         # Remove the shared client and messages only when no other entries use the same account.
-        if not any(e.data.get(CONF_USERNAME) == username for e in remaining):
-            if (account := hass.data[DOMAIN].pop(username, None)) is not None:
-                account.notifications.unsubscribe()
+        if (
+            not any(e.data.get(CONF_USERNAME) == username for e in remaining)
+            and (account := hass.data[DOMAIN].pop(username, None)) is not None
+        ):
+            account.notifications.unsubscribe()
 
         # Remove the service when the last entry is unloaded.
         if not remaining:

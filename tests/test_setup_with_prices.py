@@ -11,11 +11,12 @@ from datetime import date, timedelta
 from typing import Any
 
 import pytest
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 
+from conftest import load_portal_fixture
 from custom_components.enea.costs import _kwh_price
 from custom_components.enea.parsing import slot_start_dt
-from conftest import load_portal_fixture
 from ha_instance import (  # noqa: F401 - clock, portal, database and hass are fixtures
     FAKE_PPE,
     SAVED_ON,

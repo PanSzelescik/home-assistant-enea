@@ -528,7 +528,7 @@ async def async_get_cost_latest_date(
     ))
 
     latest: date | None = None
-    for sid, stats in zip(stat_ids, all_stats_list):
+    for sid, stats in zip(stat_ids, all_stats_list, strict=True):
         records = stats.get(sid)
         if not records:
             continue

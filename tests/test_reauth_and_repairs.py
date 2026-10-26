@@ -4,7 +4,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from homeassistant.config_entries import ConfigEntryState, SOURCE_REAUTH
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.enea import config_flow

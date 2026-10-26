@@ -5,9 +5,9 @@ import datetime
 from typing import Any
 
 import pytest
-from conftest import TEST_TIME_ZONE
 from homeassistant.util import dt as dt_util
 
+from conftest import TEST_TIME_ZONE
 from custom_components.enea import costs, statistics
 
 TZ = dt_util.get_time_zone(TEST_TIME_ZONE)

@@ -197,7 +197,7 @@ class EneaNotifications:
         for message_id in sorted(self._read_to_send):
             try:
                 await self._client.mark_notification_read(message_id)
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001 — retried before the next check
                 _LOGGER.warning(
                     "Failed to mark a Portal Odbiorcy Enea message read, will retry: %s", err
                 )
@@ -244,15 +244,15 @@ class EneaNotifications:
             now = dt_util.now()
             if (
                 not meter_ids
-                or self._last_check is not None
+                or (self._last_check is not None
                 and now - self._last_check < NOTIFICATIONS_MIN_INTERVAL
-                and self._meters.issuperset(meter_ids)
+                and self._meters.issuperset(meter_ids))
             ):
                 return
             try:
                 await self._async_mark_read()
                 await self._async_check(meter_ids, now)
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001 — messages must not break the refresh
                 self.error = mask_ppe(f"{type(err).__name__}: {err}")
                 _LOGGER.warning("Failed to check the Portal Odbiorcy Enea messages: %s", err)
             else:

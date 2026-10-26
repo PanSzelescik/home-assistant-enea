@@ -3,21 +3,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Collection
 from dataclasses import replace
 from datetime import date, datetime, timedelta
-from collections.abc import Collection
 from typing import Any
 
-from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder.statistics import get_last_statistics
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.recorder import get_instance
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
+from .billing import BillEstimate, async_estimate_bill, find_prices_config
 from .connector import (
     EneaApiClient,
     EneaApiError,
@@ -44,17 +45,10 @@ from .const import (
     STAT_KEY_ENERGY_RETURNED,
     STAT_KEY_POWER_CONSUMED,
     STAT_KEY_POWER_RETURNED,
+    STAT_NAME_BY_KEY,
     DataSource,
     MeasurementType,
     Resolution,
-    STAT_NAME_BY_KEY,
-)
-from .billing import BillEstimate, async_estimate_bill, find_prices_config
-from .installation import DetectedInstallation, async_detect_installation
-from .issues import (
-    async_update_installation_issues,
-    async_update_issues,
-    async_update_prices_setup_issue,
 )
 from .costs import (
     async_cost_days_missing,
@@ -64,6 +58,12 @@ from .costs import (
     find_tariff_history,
     first_repriced_day,
     price_signatures,
+)
+from .installation import DetectedInstallation, async_detect_installation
+from .issues import (
+    async_update_installation_issues,
+    async_update_issues,
+    async_update_prices_setup_issue,
 )
 from .notifications import EneaNotifications
 from .parsing import assemble_days
@@ -353,7 +353,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ))
 
         latest: dict[str, date | None] = {}
-        for key, sid, last in zip(keys, stat_ids, last_stats_list):
+        for key, sid, last in zip(keys, stat_ids, last_stats_list, strict=True):
             ts = last[sid][0].get("start") if last.get(sid) else None
             latest[key] = (
                 dt_util.utc_from_timestamp(ts).astimezone(dt_util.DEFAULT_TIME_ZONE).date()
@@ -865,14 +865,13 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         responses: dict[str, dict[str, Any]] = {}
         first_exc: BaseException | None = None
-        for (key, mtype), result in zip(keys_and_types, results):
+        for (key, mtype), result in zip(keys_and_types, results, strict=True):
             if isinstance(result, BaseException):
                 if isinstance(result, asyncio.CancelledError):
                     raise result  # propagate cancellation so shutdown/reload can proceed
                 _LOGGER.warning(
                     "Range stats request failed for key=%s type=%d (%s–%s): %s",
                     key, mtype, start_date, end_date, result,
-                    exc_info=True,
                 )
                 if first_exc is None:
                     first_exc = result
@@ -963,7 +962,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         When the assembly date is known, delegates to _fetch_days_forward because
         the exact start is known — though not where the portal's data begins,
-        so the days before the first one with data are skipped, not zero-filled. When the assembly date is unknown, fetches
+        so the days before the first one with data are skipped, not zero-filled.
+        When the assembly date is unknown, fetches
         RANGE_FETCH_CHUNK_DAYS-sized chunks going backward and stops after
         BACKFILL_MAX_CONSECUTIVE_EMPTY consecutive days with no data at the
         start (oldest end) of a chunk.

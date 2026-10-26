@@ -68,6 +68,11 @@ FALL_BACK_WEEK = "range_2026-10-19_2026-10-26_1"
 FALL_BACK_DAY = "range_2026-10-25_2026-10-25_1"
 """Energy consumed on the fall-back day alone, as the daily top-up asks for it."""
 
+FALL_BACK_LONG = "range_2026-09-16_2026-10-26_1"
+"""Six weeks around the fall-back day: 'values' holds daily sums, not hours."""
+
+FALL_BACK_RANGES = [FALL_BACK_WEEK, FALL_BACK_DAY, FALL_BACK_LONG]
+
 FALL_BACK_SAVED_ON = date(2026, 10, 26)
 
 
@@ -280,7 +285,7 @@ async def test_spring_forward_week_reaches_the_statistics(monkeypatch):
 # --- the fall-back day ---------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", [FALL_BACK_WEEK, FALL_BACK_DAY])
+@pytest.mark.parametrize("name", FALL_BACK_RANGES)
 def test_fall_back_day_gets_its_repeated_hour(name):
     """The day clocks go back has 25 consecutive hours, 02:00 twice.
 
@@ -309,7 +314,7 @@ def test_fall_back_day_gets_its_repeated_hour(name):
             assert [hour.hour for hour in _hours(other_data)] == list(range(24)), other
 
 
-@pytest.mark.parametrize("name", [FALL_BACK_WEEK, FALL_BACK_DAY])
+@pytest.mark.parametrize("name", FALL_BACK_RANGES)
 def test_fall_back_hours_add_up_to_the_portals_own_sums(name):
     """Every hour of the range, the repeated one too, reaches the series once."""
     response = load_portal_fixture(name)

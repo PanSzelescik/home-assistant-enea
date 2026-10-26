@@ -47,11 +47,12 @@ def split_range_response(api_response: dict[str, Any]) -> dict[date, dict[str, A
     per-day dict has the same {'values', 'zones'} shape as a single-day
     response, so has_data, _collect_series and cost statistics need no changes.
 
-    The hourly slots are in 'valuesToTable'.  For a range spanning several
-    months 'values' holds monthly sums instead (one entry per month, with an
-    extra zone -1 for the total and an ``integrationEnd`` that is not the end of
-    that month); for a short range it repeats 'valuesToTable'.  Whichever holds
-    more entries is used, so the monthly sums never stand in for hours.
+    The hourly slots are in 'valuesToTable'.  For a longer range 'values' holds
+    sums instead — daily, weekly or, over several months, monthly (one entry
+    per month, with an extra zone -1 for the total and an ``integrationEnd``
+    that is not the end of that month); for a short range it repeats
+    'valuesToTable'.  Whichever holds more entries is used, so the sums never
+    stand in for hours.
 
     On the fall-back day the repeated hour comes separately, in
     'valuesWinterToTable' ('valuesWinter'), and is put back into its day by

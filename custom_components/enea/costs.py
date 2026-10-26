@@ -424,7 +424,11 @@ async def _clear_moved_hours(
             if dt.timestamp() in stored_starts and dt.timestamp() not in own_starts
         ]
         if moved:
-            series_by_zone[zone_str] = sorted([*own, *moved])
+            # By timestamp: local datetimes compare by wall clock, so the two
+            # 02:00 of the fall-back day would tie and be ordered by their cost.
+            series_by_zone[zone_str] = sorted(
+                [*own, *moved], key=lambda row: row[0].timestamp()
+            )
 
 
 async def _has_stored_costs(

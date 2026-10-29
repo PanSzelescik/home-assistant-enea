@@ -264,6 +264,7 @@ Kluczowe pola odpowiedzi:
 - `currentValues[]` — aktualne odczyty energii:
   - `measurementId=1` → energia czynna pobrana
   - `measurementId=2` → energia czynna oddana
+  - `measurementId=3`–`6` → energia bierna, kwadranty I–IV (`unit.symbol="Varh"`); u części liczników są w `currentValues` (#61), u innych tylko w `billingWeekData`. Integracja ich nie używa — sensory energii powstają wyłącznie dla `MEASUREMENT_ID_CONSUMPTION`/`MEASUREMENT_ID_GENERATION` (`const.py`; numeracja inna niż `MeasurementType` endpointu statystyk)
   - `valueNoZones.value` — suma stref (kWh)
   - `valueZone1.value`, `valueZone2.value`, … — wartości per strefa
   - `ppeZones[]` — nazwy stref np. `["Dzień 1.8.1", "Noc 1.8.2"]`

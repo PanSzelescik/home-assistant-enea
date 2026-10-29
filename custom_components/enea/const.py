@@ -175,7 +175,11 @@ METERS_CACHE_TTL = timedelta(minutes=5)
 # Statistics API — measurement types and resolution
 # ---------------------------------------------------------------------------
 
+# measurementId in the dashboard's currentValues and billingWeekData: 1 = active energy
+# consumed, 2 = active energy returned, 3–6 = reactive energy, quadrants I–IV.  The
+# statistics endpoint numbers its measurement types differently (MeasurementType).
 MEASUREMENT_ID_CONSUMPTION = 1
+MEASUREMENT_ID_GENERATION = 2
 
 class MeasurementType(IntEnum):
     """API measurement type identifiers."""

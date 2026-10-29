@@ -121,6 +121,43 @@ async def test_setup_creates_the_meter_and_its_entities(hass, portal):
         assert hass.states.get(entity_id) is None
 
 
+async def test_reactive_energy_gets_no_sensors(hass, portal, caplog):
+    """currentValues carrying reactive energy (3–6), here before energy returned (#61).
+
+    Energy returned keeps reading measurementId 2 and nothing else is taken for
+    it, so Home Assistant has no duplicate entity ids to refuse.
+    """
+    returned = next(cv for cv in portal.dashboard["currentValues"] if cv["measurementId"] == 2)
+    reactive = [
+        {
+            **returned,
+            "measurementId": quadrant,
+            "measurementName": f"Energia bierna kwadrant {quadrant - 2}",
+            "valueNoZones": {"value": 100.0 * quadrant},
+            "valueZone1": {"value": 100.0 * quadrant},
+            "unit": {"symbol": "Varh", "scaler": 3},
+        }
+        for quadrant in range(3, 7)
+    ]
+    consumed = portal.dashboard["currentValues"][0]
+    portal.dashboard["currentValues"] = [consumed, *reactive, returned]
+
+    entry = await _set_up(hass)
+
+    assert float(_state(hass, "generation_total")) == returned["valueNoZones"]["value"]
+    assert float(_state(hass, "generation_zone1")) == returned["valueZone1"]["value"]
+    energy_keys = sorted(
+        entity.unique_id.removeprefix(f"enea-{FAKE_PPE}-")
+        for entity in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+        if "_total" in entity.unique_id or "_zone" in entity.unique_id
+    )
+    assert energy_keys == [
+        "consumption_total", "consumption_zone1", "consumption_zone2",
+        "generation_total", "generation_zone1", "generation_zone2",
+    ]
+    assert "already exists" not in caplog.text
+
+
 async def test_first_setup_imports_the_history_from_the_assembly(hass, portal, database):
     """The background import starts at the assembly and runs to yesterday in 180-day chunks.
 

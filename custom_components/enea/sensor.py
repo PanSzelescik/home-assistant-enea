@@ -39,6 +39,7 @@ from .const import (
     HAN_STATE_NOT_SUPPORTED,
     HAN_STATES,
     MEASUREMENT_ID_CONSUMPTION,
+    MEASUREMENT_ID_GENERATION,
     PHASES_SINGLE,
     PHASES_THREE,
     PORTAL_URL,
@@ -315,16 +316,19 @@ async def async_setup_entry(
     )
     sensors.append(EneaStatisticsDateSensor(coordinator, meter_code))
 
-    # Energy sensors — total (always) + per-zone (dynamic)
+    # Energy sensors — total (always) + per-zone (dynamic).  currentValues also
+    # carries reactive energy (measurementId 3–6), which gets no sensors.
+    energy_kinds = {
+        MEASUREMENT_ID_CONSUMPTION: ("consumption", "pobrana", fetch_consumption),
+        MEASUREMENT_ID_GENERATION: ("generation", "oddana", fetch_generation),
+    }
     for cv in data.get("currentValues", []):
         measurement_id: int = cv["measurementId"]
-        is_consumption = measurement_id == MEASUREMENT_ID_CONSUMPTION
-        if is_consumption and not fetch_consumption:
+        if measurement_id not in energy_kinds:
             continue
-        if not is_consumption and not fetch_generation:
+        prefix, type_label, enabled = energy_kinds[measurement_id]
+        if not enabled:
             continue
-        prefix = "consumption" if is_consumption else "generation"
-        type_label = "pobrana" if is_consumption else "oddana"
 
         # Total (sum of all zones)
         sensors.append(

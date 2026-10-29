@@ -10,7 +10,13 @@ from homeassistant.helpers import entity_registry as er
 
 from . import EneaConfigEntry
 from .billing import find_prices_config
-from .const import CONF_METER_ID, CONF_METER_NAME, SENSOR_KEY_ADDRESS
+from .const import (
+    CONF_METER_ID,
+    CONF_METER_NAME,
+    MEASUREMENT_ID_CONSUMPTION,
+    MEASUREMENT_ID_GENERATION,
+    SENSOR_KEY_ADDRESS,
+)
 from .installation import DetectedInstallation
 from .statistics import async_statistics_overview
 
@@ -38,7 +44,7 @@ _REDACT_ID_IN_LISTS = ("meters", "agreements")
 
 # billingWeekData niesie też cztery kwadranty energii biernej, których integracja nie
 # używa, a które zajmują większość raportu — zostaje tylko energia czynna.
-_ACTIVE_ENERGY_MEASUREMENT_IDS = (1, 2)
+_ACTIVE_ENERGY_MEASUREMENT_IDS = (MEASUREMENT_ID_CONSUMPTION, MEASUREMENT_ID_GENERATION)
 
 
 def _redact_meter_data(data: dict[str, Any] | None) -> dict[str, Any] | None:

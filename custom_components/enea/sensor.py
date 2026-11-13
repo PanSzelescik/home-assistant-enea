@@ -561,7 +561,8 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
         Section 'Usługa dystrybucji': distribution_netto (sum) + fixed fees
         (fixed_network_netto, fixed_capacity_netto, fixed_subscription_netto) +
         per-zone components: variable_network_<zone>_netto, quality_<zone>_netto,
-        oze_<zone>_netto, cogeneration_<zone>_netto.
+        oze_<zone>_netto, cogeneration_<zone>_netto; for a group charging the
+        capacity fee per kWh (C11) also capacity_<zone>_netto where it applies.
         """
         est = self.coordinator.bill_estimates.get(self._bill_key)
         if est is None:
@@ -608,6 +609,10 @@ class EneaBillSensor(CoordinatorEntity[EneaUpdateCoordinator], SensorEntity):  #
         for zone_display in est.kwh_by_zone:
             safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
             attrs[f"cogeneration_{safe}_netto"] = est.cogeneration_by_zone_netto.get(zone_display, 0.0)
+        # Opłata mocowa od kWh (grupy C) – tylko strefy, w których jest naliczana.
+        for zone_display, amount in est.capacity_by_zone_netto.items():
+            safe = zone_display.lower().translate(_TRANSL).replace(" ", "_")
+            attrs[f"capacity_{safe}_netto"] = amount
         attrs["fixed_subscription_netto"] = est.fixed_subscription_netto
         attrs["distribution_netto"] = est.distribution_netto
         # Podsumowanie

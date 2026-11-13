@@ -25,6 +25,7 @@ class _Prices:
     phases: int = 3
     billing_months: int = 2
     annual_kwh: int = 5000
+    contract_power: float | None = None
 
 
 @pytest.fixture
@@ -157,6 +158,18 @@ def test_nothing_is_raised_for_what_the_meter_leaves_open(registry) -> None:
     _update_installation(DetectedInstallation())
 
     assert registry["open"] == {}
+
+
+def test_a_group_priced_per_kw_is_not_asked_for_phases_or_consumption(registry) -> None:
+    """C11 stores contracted power instead: phases and yearly use price nothing there.
+
+    The billing period still matters – the subscription fee depends on it.
+    """
+    registry["prices"] = _Prices(phases=1, annual_kwh=0, billing_months=1, contract_power=10.0)
+
+    _update_installation()
+
+    assert set(registry["open"]) == {"billing_months_mismatch_entry1"}
 
 
 def test_without_prices_nothing_is_compared(registry) -> None:

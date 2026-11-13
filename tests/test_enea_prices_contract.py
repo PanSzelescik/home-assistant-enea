@@ -101,7 +101,7 @@ def test_portal_aliases_name_tariff_groups():
     assert set(enea_const.TARIFF_GROUP_ALIASES.values()) <= set(tariffs)
 
 
-@pytest.mark.parametrize("group_name", ["G11", "G12", "G12w", "G12sezON", "G13active"])
+@pytest.mark.parametrize("group_name", ["G11", "G12", "G12w", "G12sezON", "G13active", "C11"])
 def test_tariff_group_shape(group_name):
     """Each group has what costs, bills and diagnostics read, in every period."""
     group = _module("tariffs").TARIFFS[group_name]
@@ -125,7 +125,7 @@ def test_tariff_group_shape(group_name):
         assert isinstance(getattr(monthly, "trade", 0.0), Real)
 
 
-@pytest.mark.parametrize("group_name", ["G11", "G12", "G12w", "G12sezON", "G13active"])
+@pytest.mark.parametrize("group_name", ["G11", "G12", "G12w", "G12sezON", "G13active", "C11"])
 def test_every_hour_falls_in_a_priced_zone(group_name):
     """An hour the schedule puts outside the period's zones would silently cost nothing."""
     group = _module("tariffs").TARIFFS[group_name]
@@ -136,7 +136,7 @@ def test_every_hour_falls_in_a_priced_zone(group_name):
                 assert period.get_zone_at_hour(hour, day=day) in period.zones, (period.valid_from, day, hour)
 
 
-@pytest.mark.parametrize("group_name", ["G11", "G12", "G12w", "G12sezON", "G13active"])
+@pytest.mark.parametrize("group_name", ["G11", "G12", "G12w", "G12sezON", "G13active", "C11"])
 def test_brutto_price_agrees_with_the_costs(group_name):
     """enea_prices' brutto kWh price and the one costs charge round to the same value."""
     tariffs = _module("tariffs")
@@ -220,6 +220,31 @@ async def test_enea_finds_the_real_entry_and_its_settings(hass):
     assert cfg.tariff is prices.runtime_data.tariff is find_tariff_group(hass, "G12")
     assert (cfg.phases, cfg.annual_kwh, cfg.billing_months) == (3, 2000, 2)
     assert cfg.akcyza == _module("tariffs").AKCYZA
+
+
+async def test_a_c11_entry_gives_its_power_and_a_fee_per_kw(hass):
+    """C11 stores contracted power, not phases: the fixed fee counts it, and the
+    power reaches PricesConfig so the issues skip phases and consumption."""
+    prices = await _add(hass, ConfigEntry(
+        data={"tariff": "C11", "contract_power": 10.0, "billing_months": 1},
+        discovery_keys=MappingProxyType({}),
+        domain="enea_prices",
+        minor_version=1,
+        options={},
+        source="user",
+        subentries_data=None,
+        title="Ceny C11",
+        unique_id="C11",
+        version=1,
+    ))
+
+    assert prices.state is ConfigEntryState.LOADED
+    cfg = find_prices_config(hass, "c11")
+    assert cfg is not None
+    assert cfg.contract_power == 10.0
+    for period in cfg.tariff.periods:
+        assert round(period.monthly.get_network_fixed(cfg.phases), 2) == 74.10
+        assert period.monthly.get_capacity(cfg.annual_kwh) == 0.0
 
 
 async def test_setting_prices_up_reloads_the_meter_with_costs_and_bills(hass, database):

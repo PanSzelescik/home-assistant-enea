@@ -70,8 +70,9 @@ def _kwh_price(pricing: Any, akcyza: float, *, net_metering_return: bool = False
     distribution = pricing.total_distribution
     if net_metering_return:
         # These levies remain payable on all imports after hourly balancing;
-        # returned energy under net metering cannot credit them back.
-        distribution -= pricing.oze + pricing.cogeneration
+        # returned energy under net metering cannot credit them back.  So does
+        # the per-kWh capacity fee of the C groups (absent before C11).
+        distribution -= pricing.oze + pricing.cogeneration + getattr(pricing, "capacity", 0.0)
     return round((pricing.energy + akcyza + distribution) * (1 + VAT_RATE), 4)
 
 

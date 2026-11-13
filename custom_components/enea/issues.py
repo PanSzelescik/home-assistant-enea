@@ -144,7 +144,10 @@ def _mismatches(
     it prices by; a consumption within the configured bracket is no mismatch.
     """
     found = []
-    if detected.phases is not None and detected.phases != cfg.phases:
+    # A group charged per kW of contracted power (C11) stores neither phases nor
+    # a yearly consumption: nothing is priced by them, so there is nothing to fix.
+    per_kw = cfg.contract_power is not None
+    if not per_kw and detected.phases is not None and detected.phases != cfg.phases:
         model = ((get_active_meter(data) or {}).get("typeName") or "").strip()
         found.append(
             _Mismatch(
@@ -174,7 +177,8 @@ def _mismatches(
             )
         )
     if (
-        detected.annual_kwh is not None
+        not per_kw
+        and detected.annual_kwh is not None
         and detected.annual_kwh_until is not None
         and capacity_bracket(detected.annual_kwh) != capacity_bracket(cfg.annual_kwh)
     ):

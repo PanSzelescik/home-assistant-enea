@@ -2,6 +2,16 @@ name: Propozycja funkcji (PL)
 description: Zaproponuj nową funkcję lub ulepszenie
 labels: ["enhancement", "lang: pl"]
 body:
+  - type: dropdown
+    id: uses_other
+    attributes:
+      label: Czy używasz integracji Enea Ceny?
+      options:
+        - Tak
+        - Nie
+    validations:
+      required: true
+
   - type: textarea
     id: description
     attributes:

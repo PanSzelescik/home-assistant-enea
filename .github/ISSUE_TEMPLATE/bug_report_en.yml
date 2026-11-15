@@ -54,6 +54,16 @@ body:
       label: Tariff Group
       placeholder: "e.g. G11, G12, G13"
 
+  - type: dropdown
+    id: uses_other
+    attributes:
+      label: Do you use the Enea Ceny integration?
+      options:
+        - Yes
+        - No
+    validations:
+      required: true
+
   - type: textarea
     id: description
     attributes:
@@ -75,5 +85,4 @@ body:
     attributes:
       label: Diagnostics Report
       description: |
-        Optionally attach the diagnostics report (Settings → Devices & Services → Enea → menu ⋮ → Download diagnostics). Login details, the address, the PPE number, Portal Odbiorcy Enea identifiers and meter and agreement numbers are hidden in it automatically.
-      render: json
+        Optionally attach the diagnostics report (Settings → Devices & Services → Enea → menu ⋮ → Download diagnostics). Login details, the address, the PPE number, Portal Odbiorcy Enea identifiers and meter and agreement numbers are hidden in it automatically. Drag the downloaded `.json` file here.

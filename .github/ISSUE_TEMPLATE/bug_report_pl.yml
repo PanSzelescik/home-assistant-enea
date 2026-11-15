@@ -54,6 +54,16 @@ body:
       label: Grupa taryfowa
       placeholder: "np. G11, G12, G13"
 
+  - type: dropdown
+    id: uses_other
+    attributes:
+      label: Czy używasz integracji Enea Ceny?
+      options:
+        - Tak
+        - Nie
+    validations:
+      required: true
+
   - type: textarea
     id: description
     attributes:
@@ -75,5 +85,4 @@ body:
     attributes:
       label: Raport diagnostyczny
       description: |
-        Opcjonalnie załącz raport diagnostyczny (Ustawienia → Urządzenia i usługi → Enea → menu ⋮ → Pobierz diagnostykę). Dane logowania, adres, numer PPE, identyfikatory z Portalu Odbiorcy Enea oraz numery liczników i umów są w nim automatycznie ukrywane.
-      render: json
+        Opcjonalnie załącz raport diagnostyczny (Ustawienia → Urządzenia i usługi → Enea → menu ⋮ → Pobierz diagnostykę). Dane logowania, adres, numer PPE, identyfikatory z Portalu Odbiorcy Enea oraz numery liczników i umów są w nim automatycznie ukrywane. Przeciągnij tu pobrany plik `.json`.

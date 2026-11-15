@@ -2,6 +2,16 @@ name: Feature Request (EN)
 description: Suggest a new feature or improvement
 labels: ["enhancement", "lang: en"]
 body:
+  - type: dropdown
+    id: uses_other
+    attributes:
+      label: Do you use the Enea Ceny integration?
+      options:
+        - Yes
+        - No
+    validations:
+      required: true
+
   - type: textarea
     id: description
     attributes:

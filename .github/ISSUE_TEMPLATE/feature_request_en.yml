@@ -7,8 +7,8 @@ body:
     attributes:
       label: Do you use the Enea Ceny integration?
       options:
-        - Yes
-        - No
+        - "Yes"
+        - "No"
     validations:
       required: true
 

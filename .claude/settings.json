@@ -10,8 +10,7 @@
   },
   "enabledPlugins": {
     "home-assistant-skills@home-assistant-skills": true,
-    "pyright-lsp@claude-plugins-official": true,
-    "codex@openai-codex": true
+    "pyright-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "home-assistant-skills": {

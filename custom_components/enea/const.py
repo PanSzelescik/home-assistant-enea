@@ -264,6 +264,8 @@ COST_ZONE_DISPLAY: dict[str, str] = {
     "recommended_use": "Zalecany pobór",
     "remaining": "Pozostałe godziny",
     "recommended_limit": "Zalecane ograniczenie",
+    # C11: godziny, w których naliczana jest opłata mocowa od kWh (dni robocze 7–22).
+    "capacity_hours": "Godziny opłaty mocowej",
 }
 
 # System opustów (prosumenci przyłączeni do 31.03.2022, art. 4 ustawy o OZE): z każdej kWh

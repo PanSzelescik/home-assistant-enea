@@ -224,3 +224,45 @@ async def test_bill_sensor_exposes_transition_and_fractional_months(stored):
     sensor._bill_key = "previous"
     assert sensor.extra_state_attributes["fixed_transition_netto"] == 0.12
     assert sensor.extra_state_attributes["distribution_months"] == 0.3871
+
+
+async def test_c11_charges_the_capacity_fee_per_kwh_in_its_hours(stored, real_enea_prices):
+    """C11: capacity fee on kWh drawn 7–22 on working days, fixed fee per kW of power.
+
+    The fee shows in its own zone and in the distribution total; the household
+    flat rate stays at zero, and the tariff's own trade fee is charged.
+    """
+    prices = importlib.import_module("custom_components.enea_prices")
+    tariff = prices.build_tariff("C11", None, 10.0)
+    cfg = PricesConfig(tariff, 3, 0, 1, 0.005, contract_power=10.0)
+    stored({
+        CONSUMED: [
+            (_at(date(2026, 11, 4), 10), 100),  # Wednesday, capacity hours
+            (_at(date(2026, 11, 4), 23), 50),   # Wednesday night
+            (_at(date(2026, 11, 7), 12), 20),   # Saturday
+        ]
+    })
+
+    bill = await async_estimate_bill(object(), "PPE", cfg, date(2026, 10, 31), date(2026, 11, 30))
+
+    assert bill is not None
+    assert bill.kwh_by_zone == {"Godziny opłaty mocowej": 100, "Pozostałe godziny": 70}
+    assert bill.capacity_by_zone_netto == {"Godziny opłaty mocowej": 21.94}
+    assert bill.energy_by_zone_netto == {"Godziny opłaty mocowej": 89.30, "Pozostałe godziny": 62.51}
+    assert bill.fixed_network_netto == 74.10
+    assert bill.fixed_capacity_netto == 0.0
+    assert bill.trade_fee_netto == 35.00
+    variable = sum(
+        sum(by_zone.values())
+        for by_zone in (
+            bill.variable_network_by_zone_netto, bill.quality_by_zone_netto,
+            bill.oze_by_zone_netto, bill.cogeneration_by_zone_netto,
+        )
+    )
+    assert bill.distribution_netto == round(variable + 21.94 + 74.10 + 3.84, 2)
+
+    attrs = EneaBillSensor.extra_state_attributes.fget(
+        type("S", (), {"coordinator": type("C", (), {"bill_estimates": {"k": bill}})(), "_bill_key": "k"})()
+    )
+    assert attrs["capacity_godziny_oplaty_mocowej_netto"] == 21.94
+    assert "capacity_pozostale_godziny_netto" not in attrs

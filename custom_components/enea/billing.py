@@ -60,6 +60,12 @@ class PricesConfig:
     annual_kwh: int
     billing_months: int
     akcyza: float
+    contract_power: float | None = None
+    """Contracted power in kW of a group charged per kW (C11), None for the G groups.
+
+    Such a group has no phases nor yearly consumption to check against the
+    meter: its fixed network fee already counts the power, and its capacity
+    fee is per kWh."""
 
 
 @dataclass
@@ -133,6 +139,10 @@ class BillEstimate:
     """Months the fixed distribution fees are charged for (whole for a window
     of whole months, else calendar-day fractions), over priced days only."""
 
+    capacity_by_zone_netto: dict[str, float] = field(default_factory=dict)
+    """Capacity fee netto per zone charged per kWh (opłata mocowa, groups C), PLN.
+    Only zones with such a fee; the G groups pay it monthly (fixed_capacity_netto)."""
+
     returned_kwh_by_zone: dict[str, float] = field(default_factory=dict)
     """Returned kWh per zone; empty without net metering."""
 
@@ -177,6 +187,7 @@ def find_prices_config(hass: HomeAssistant, tariff_name: str | None) -> PricesCo
             annual_kwh=getattr(runtime, "annual_kwh", 1200),
             billing_months=getattr(runtime, "billing_months", 1),
             akcyza=getattr(enea_prices_const, "AKCYZA", 0.0),
+            contract_power=getattr(runtime, "contract_power", None),
         )
     return None
 
@@ -238,6 +249,7 @@ class _ZoneUsage:
     quality: float = 0.0
     oze: float = 0.0
     cogeneration: float = 0.0
+    capacity: float = 0.0
     variable_rate: float = 0.0
     """The zone's variable network rate, which orders where a net-metering surplus goes."""
 
@@ -279,6 +291,8 @@ def _add_hours(
         zone_usage.quality += kwh * pricing.quality
         zone_usage.oze += kwh * pricing.oze
         zone_usage.cogeneration += kwh * pricing.cogeneration
+        # Per-kWh capacity fee of the C groups; enea_prices before C11 has no such field.
+        zone_usage.capacity += kwh * getattr(pricing, "capacity", 0.0)
         zone_usage.variable_rate = pricing.variable_network
     return unpriced
 
@@ -371,6 +385,7 @@ async def async_estimate_bill(
     quality_by_zone_netto: dict[str, float] = {}
     oze_by_zone_netto: dict[str, float] = {}
     cogeneration_by_zone_netto: dict[str, float] = {}
+    capacity_by_zone_netto: dict[str, float] = {}
 
     for zone, zone_usage in usage.items():
         # Net metering leaves part of the zone's kWh to pay for; its hours keep
@@ -385,6 +400,10 @@ async def async_estimate_bill(
         quality_by_zone_netto[zone] = round(zone_usage.quality * share, 2)
         oze_by_zone_netto[zone] = round(zone_usage.oze, 2)
         cogeneration_by_zone_netto[zone] = round(zone_usage.cogeneration, 2)
+        # Opłata mocowa od kWh pobranej z sieci (art. 89a ust. 1 pkt 2 ustawy o rynku
+        # mocy) – jak OZE i kogeneracyjna, opusty jej nie pomniejszają.
+        if zone_usage.capacity:
+            capacity_by_zone_netto[zone] = round(zone_usage.capacity, 2)
 
     # The tariff charges these fees per month of the billing period (pkt 3.1.6,
     # "Pi … w miesiącach") and splits them by days only between old and new
@@ -443,6 +462,7 @@ async def async_estimate_bill(
         + sum(quality_by_zone_netto.values())
         + sum(oze_by_zone_netto.values())
         + sum(cogeneration_by_zone_netto.values())
+        + sum(capacity_by_zone_netto.values())
         + fixed_network_netto
         + fixed_capacity_netto
         + fixed_transition_netto
@@ -460,6 +480,7 @@ async def async_estimate_bill(
         quality_by_zone_netto=quality_by_zone_netto,
         oze_by_zone_netto=oze_by_zone_netto,
         cogeneration_by_zone_netto=cogeneration_by_zone_netto,
+        capacity_by_zone_netto=capacity_by_zone_netto,
         trade_fee_netto=trade_fee_netto,
         energy_netto=energy_netto,
         distribution_netto=distribution_netto,

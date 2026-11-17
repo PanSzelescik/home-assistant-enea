@@ -84,6 +84,7 @@
       }
     },
     "error": {
+      "meter_not_on_account": "The meter this entry is for is not on this account. Log in with the account the meter is assigned to.",
       "invalid_auth": "Invalid email address or password",
       "cannot_connect": "Cannot connect to the Portal Odbiorcy Enea. Please check your internet connection.",
       "unknown": "An unexpected error occurred",
@@ -445,6 +446,11 @@
     "unknown_meter_model": {
       "title": "Unknown meter model: {model}",
       "description": "The integration does not know the number of phases for the **{model}** meter yet (PPE {meter_code}), so the “Installation Type” sensor may be unknown or inferred from the contractual capacity only.\n\nIf you know whether your installation is single-phase or three-phase, [report this model on GitHub]({report_url}) — it will be added in a future release. Do not include your PPE number or address in the report.\n\nYou can ignore this notice."
+    }
+  },
+  "exceptions": {
+    "end_before_start": {
+      "message": "The end date ({end_date}) is before the start date ({start_date})."
     }
   }
 }

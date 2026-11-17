@@ -84,6 +84,7 @@
       }
     },
     "error": {
+      "meter_not_on_account": "Na tym koncie nie ma licznika, którego dotyczy ten wpis. Zaloguj się na konto, do którego licznik jest przypisany.",
       "invalid_auth": "Nieprawidłowy adres e-mail lub hasło",
       "cannot_connect": "Nie można połączyć się z Portalem Odbiorcy Enea. Sprawdź połączenie z internetem.",
       "unknown": "Wystąpił nieoczekiwany błąd",
@@ -445,6 +446,11 @@
     "unknown_meter_model": {
       "title": "Nieznany model licznika: {model}",
       "description": "Integracja nie zna jeszcze liczby faz dla licznika **{model}** (PPE {meter_code}), więc sensor „Typ instalacji” może być nieznany albo wywnioskowany tylko z mocy umownej.\n\nJeśli wiesz, czy Twoja instalacja jest jednofazowa czy trójfazowa, [zgłoś ten model na GitHubie]({report_url}) — zostanie dopisany w kolejnej wersji. Do zgłoszenia nie dołączaj numeru PPE ani adresu.\n\nTo powiadomienie możesz zignorować."
+    }
+  },
+  "exceptions": {
+    "end_before_start": {
+      "message": "Data końcowa ({end_date}) jest wcześniejsza niż początkowa ({start_date})."
     }
   }
 }

@@ -22,6 +22,7 @@ from homeassistant.util import slugify
 
 from .connector import mask_ppe
 from .const import (
+    ANCHOR_SEARCH_WINDOWS_DAYS,
     DOMAIN,
     EPOCH,
     STAT_KEY_ENERGY_CONSUMED,
@@ -121,6 +122,28 @@ async def _stored_between(
     return found.get(statistic_id) or []
 
 
+async def _total_before(hass: HomeAssistant, statistic_id: str, moment: datetime) -> float:
+    """Return the running total of the newest entry stored before moment, 0.0 without one.
+
+    The entry is usually an hour or a day back, so the search starts with a
+    short window and widens it; reading the series from its very beginning to
+    find one row costs tens of thousands of rows for a meter with years of
+    history.  The last window is unbounded on purpose — see
+    write_cumulative_series.
+    """
+    end = moment
+    for days in ANCHOR_SEARCH_WINDOWS_DAYS:
+        start = max(moment - timedelta(days=days), EPOCH)
+        rows = await _stored_between(hass, statistic_id, start, end)
+        if rows:
+            return rows[-1].get("sum") or 0.0
+        if start == EPOCH:
+            return 0.0
+        end = start
+    rows = await _stored_between(hass, statistic_id, EPOCH, end)
+    return (rows[-1].get("sum") or 0.0) if rows else 0.0
+
+
 async def write_cumulative_series(
     hass: HomeAssistant,
     metadata: StatisticMetaData,
@@ -156,14 +179,13 @@ async def write_cumulative_series(
         # on from, and nothing follows the range that could fall out of step.
         opening, closing_before = newest_total, 0.0
     else:
-        # The range is already covered.  One window answers both questions: what
-        # the total was going into the range, and what it was coming out of it.
-        stored = await _stored_between(
-            hass, statistic_id, EPOCH, last + timedelta(hours=1)
+        # The range is already covered: what the total was going into the range,
+        # and what it was coming out of it.
+        opening = await _total_before(hass, statistic_id, first)
+        inside = await _stored_between(
+            hass, statistic_id, first, last + timedelta(hours=1)
         )
-        before = [row for row in stored if row["start"] < first.timestamp()]
-        opening = (before[-1].get("sum") or 0.0) if before else 0.0
-        closing_before = (stored[-1].get("sum") or 0.0) if stored else 0.0
+        closing_before = (inside[-1].get("sum") or 0.0) if inside else opening
 
     total = opening
     rows = []

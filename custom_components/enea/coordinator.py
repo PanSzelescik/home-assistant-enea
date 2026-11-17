@@ -26,6 +26,7 @@ from .connector import (
     agreement_tariffs,
     get_active_meter,
     mask_ppe,
+    masked_traceback,
     tariff_group_name,
 )
 from .const import (
@@ -51,13 +52,13 @@ from .const import (
     Resolution,
 )
 from .costs import (
+    PriceSignatureCache,
     async_cost_days_missing,
     async_get_cost_latest_date,
     async_insert_cost_statistics,
     find_tariff_group,
     find_tariff_history,
     first_repriced_day,
-    price_signatures,
 )
 from .installation import DetectedInstallation, async_detect_installation
 from .issues import (
@@ -114,6 +115,11 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._net_metering_ratio = net_metering_ratio
         self._assembly_datetime: datetime | None = None
         self._backfill_task: asyncio.Task[None] | None = None
+        # One writer of the statistics at a time.  Every write counts its running
+        # total on from what a database read returns, so a refresh, the import in
+        # the background and the enea.backfill action interleaving would each
+        # count on from a total the other is about to change.
+        self._statistics_lock = asyncio.Lock()
         # The task swallows its own failure (it only logs it), so the error is kept
         # here for the diagnostics report.
         self._backfill_error: str | None = None
@@ -128,6 +134,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             f"{COST_PRICES_STORAGE_KEY}.{config_entry.entry_id}",
         )
         self._cost_prices: dict[str, str] | None = None
+        # The tariff's fingerprints, compared on every refresh; see _async_reprice_costs.
+        self._price_signatures = PriceSignatureCache()
         self._cost_prices_loaded = False
         # A refused re-pricing fetch is refused on every refresh, so it is not
         # tried again before the entry is next set up.
@@ -260,10 +268,14 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._statistics_error = None
         # Inject historical statistics — errors are non-fatal (dashboard data stays valid).
         try:
-            await self._async_fetch_and_inject_stats()
-        except Exception as err:
+            # The import in the background holds the lock for as long as it runs
+            # and writes every day up to yesterday itself, so it is not waited for.
+            if not self._backfill_running:
+                async with self._statistics_lock:
+                    await self._async_fetch_and_inject_stats()
+        except Exception as err:  # noqa: BLE001 - logged with its masked traceback
             self._statistics_error = mask_ppe(f"{type(err).__name__}: {err}")
-            _LOGGER.warning("Failed to update historical statistics: %s", err, exc_info=True)
+            _LOGGER.warning("Failed to update historical statistics: %s", masked_traceback(err))
 
         # async_add_external_statistics is non-blocking — it only queues writes in the
         # recorder thread.  Waiting here ensures those writes are committed to the DB
@@ -273,9 +285,9 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await get_instance(self.hass).async_block_till_done()
         try:
             self.statistics_until = await self._async_latest_statistics_date()
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001 - logged with its masked traceback
             self._statistics_error = mask_ppe(f"{type(err).__name__}: {err}")
-            _LOGGER.warning("Failed to read the latest statistics date: %s", err, exc_info=True)
+            _LOGGER.warning("Failed to read the latest statistics date: %s", masked_traceback(err))
 
         # Here rather than with the dashboard data: the yearly consumption is read
         # from the statistics just brought up to date.
@@ -288,8 +300,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.bill_last_reading,
                 self.statistics_until,
             )
-        except Exception as err:
-            _LOGGER.warning("Failed to work out the installation: %s", err, exc_info=True)
+        except Exception as err:  # noqa: BLE001 - logged with its masked traceback
+            _LOGGER.warning("Failed to work out the installation: %s", masked_traceback(err))
         async_update_installation_issues(
             self.hass,
             self._entry_id,
@@ -302,8 +314,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await async_update_prices_setup_issue(
                 self.hass, self._entry_id, self._meter_code, self._tariff_name
             )
-        except Exception as err:
-            _LOGGER.warning("Failed to check the enea_prices setup: %s", err, exc_info=True)
+        except Exception as err:  # noqa: BLE001 - logged with its masked traceback
+            _LOGGER.warning("Failed to check the enea_prices setup: %s", masked_traceback(err))
 
         # Recompute bill estimates if reading dates are configured (new stats may have arrived).
         if self.bill_prev_reading is not None or self.bill_last_reading is not None:
@@ -367,7 +379,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         keys_and_types = self._get_measurement_types()
         if not keys_and_types:
             return
-        if self._backfill_task is not None and not self._backfill_task.done():
+        if self._backfill_running:
             # The backfill writes every day up to yesterday itself, energy and costs.
             return
 
@@ -405,10 +417,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "Re-importing the history of meter %s from the balanced data",
                     mask_ppe(self._meter_code),
                 )
-            self._backfill_task = self.hass.async_create_task(
-                self._async_do_initial_backfill(yesterday),
-                name=f"enea_backfill_{self._meter_code}",
-            )
+            self._start_backfill(yesterday)
             return
 
         # A measurement enabled in the options after the history was imported has
@@ -429,10 +438,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ", ".join(missing),
                 mask_ppe(self._meter_code),
             )
-            self._backfill_task = self.hass.async_create_task(
-                self._async_do_initial_backfill(yesterday, missing),
-                name=f"enea_backfill_{self._meter_code}",
-            )
+            self._start_backfill(yesterday, missing)
             return
 
         if latest_date >= yesterday:
@@ -481,6 +487,27 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 latest_date,
                 yesterday,
             )
+
+    @property
+    def _backfill_running(self) -> bool:
+        """Return True while the import in the background is under way."""
+        return self._backfill_task is not None and not self._backfill_task.done()
+
+    def _start_backfill(self, yesterday: date, keys: list[str] | None = None) -> None:
+        """Start the import of the history in the background.
+
+        As a background task of the config entry: Home Assistant cancels it
+        when the entry is unloaded and does not wait for it when it stops, which
+        a task made with hass.async_create_task would hold up for years of data.
+        """
+        coro = self._async_do_initial_backfill(yesterday, keys)
+        name = f"enea_backfill_{mask_ppe(self._meter_code)}"
+        if self.config_entry is not None:
+            self._backfill_task = self.config_entry.async_create_background_task(
+                self.hass, coro, name
+            )
+        else:
+            self._backfill_task = self.hass.async_create_background_task(coro, name)
 
     async def _async_inject_days(
         self,
@@ -532,9 +559,11 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         reload it.
         """
         try:
-            all_days = await self._fetch_days_backward(yesterday, keys)
+            async with self._statistics_lock:
+                all_days = await self._fetch_days_backward(yesterday, keys)
+                if all_days:
+                    await self._async_inject_days(all_days)
             if all_days:
-                await self._async_inject_days(all_days)
                 self.async_update_listeners()
                 _LOGGER.debug(
                     "Initial backfill complete for meter %s: injected %d day(s)",
@@ -553,13 +582,12 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except asyncio.CancelledError:
             _LOGGER.debug("Initial backfill cancelled for meter %s", mask_ppe(self._meter_code))
             raise
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001 - logged with its masked traceback
             self._backfill_error = mask_ppe(str(err))
             _LOGGER.warning(
                 "Initial backfill failed for meter %s: %s",
                 mask_ppe(self._meter_code),
-                err,
-                exc_info=True,
+                masked_traceback(err),
             )
 
     def diagnostics_state(self) -> dict[str, Any]:
@@ -628,8 +656,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def cancel_backfill(self) -> None:
         """Cancel the background initial-backfill task if it is still running.
 
-        Called on entry unload to prevent the task from running after the
-        integration has been torn down.
+        Unloading the entry cancels it by itself, as a background task of the
+        entry; this is for stopping the import while the entry stays loaded.
         """
         if self._backfill_task is not None and not self._backfill_task.done():
             self._backfill_task.cancel()
@@ -650,7 +678,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not (self._fetch_consumption or self._fetch_generation):
             # Costs are derived from energy data; nothing to do in power-only mode.
             return
-        if self._backfill_task is not None and not self._backfill_task.done():
+        if self._backfill_running:
             # Initial backfill still running; it injects costs (energy + cost) itself.
             return
         tariff = find_tariff_history(self.hass, self._tariff_name, self._dashboard_data)
@@ -674,7 +702,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.hass, self._meter_code, tariff,
             self._fetch_consumption, self._fetch_generation, up_to,
             self._assembly_datetime.date() if self._assembly_datetime else None,
-            checked_until=getattr(self, "_cost_checked_until", None),
+            checked_until=self._cost_checked_until,
         )
         if missing is None:
             _LOGGER.debug("No days left to compute costs for")
@@ -746,7 +774,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
         start = first_repriced_day(
             stored,
-            price_signatures(tariff, first, latest, self._returned_cost_ratio),
+            self._price_signatures.get(tariff, first, latest, self._returned_cost_ratio),
             first,
             latest,
         )
@@ -798,7 +826,7 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         while day <= last:
             prices.pop(day.isoformat(), None)
             day += timedelta(days=1)
-        prices.update(price_signatures(tariff, first, last, self._returned_cost_ratio))
+        prices.update(self._price_signatures.get(tariff, first, last, self._returned_cost_ratio))
         self._cost_prices = prices
         await self._cost_prices_store.async_save({"days": prices})
 
@@ -1042,11 +1070,16 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         Returns the number of days for which data was found and injected.
         """
-        all_days = await self._fetch_days_forward(
-            start_date, end_date, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
-        )
+        async with self._statistics_lock:
+            # A refresh may have queued writes just before; the totals this
+            # counts on from have to be in the database first.
+            await get_instance(self.hass).async_block_till_done()
+            all_days = await self._fetch_days_forward(
+                start_date, end_date, zero_fill_stale=True, grace_days=MISSING_DAY_GRACE_DAYS
+            )
+            if all_days:
+                await self._async_inject_days(all_days, rewrite=True)
         if all_days:
-            await self._async_inject_days(all_days, rewrite=True)
             self.async_update_listeners()
             _LOGGER.info(
                 "Backfill injected %d day(s) for meter %s (%s – %s)",
@@ -1087,8 +1120,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 prev = await async_estimate_bill(
                     self.hass, self._meter_code, cfg, d1, d2, self._net_metering
                 )
-            except Exception as err:
-                _LOGGER.warning("Failed to estimate previous bill: %s", err, exc_info=True)
+            except Exception as err:  # noqa: BLE001 - logged with its masked traceback
+                _LOGGER.warning("Failed to estimate previous bill: %s", masked_traceback(err))
 
         current: BillEstimate | None = None
         if d2 is not None and d2 < yesterday:
@@ -1096,8 +1129,8 @@ class EneaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 current = await async_estimate_bill(
                     self.hass, self._meter_code, cfg, d2, yesterday, self._net_metering
                 )
-            except Exception as err:
-                _LOGGER.warning("Failed to estimate current bill: %s", err, exc_info=True)
+            except Exception as err:  # noqa: BLE001 - logged with its masked traceback
+                _LOGGER.warning("Failed to estimate current bill: %s", masked_traceback(err))
 
         self.bill_estimates[BILL_KEY_PREVIOUS] = prev
         self.bill_estimates[BILL_KEY_CURRENT] = current

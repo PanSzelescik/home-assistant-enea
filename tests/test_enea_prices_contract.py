@@ -222,6 +222,20 @@ async def test_enea_finds_the_real_entry_and_its_settings(hass):
     assert cfg.akcyza == _module("tariffs").AKCYZA
 
 
+async def test_the_excise_comes_with_the_runtime_data(hass):
+    """enea_prices hands the excise out on the entry; enea takes it from there.
+
+    A value put on the entry wins over the constant of the const module, which
+    stays the fallback for an enea_prices too old to hand it out.
+    """
+    prices = await _add(hass, _prices_entry())
+
+    assert prices.runtime_data.akcyza == _module("tariffs").AKCYZA
+    prices.runtime_data.akcyza = 0.0123
+    cfg = find_prices_config(hass, "G12")
+    assert cfg is not None and cfg.akcyza == 0.0123
+
+
 async def test_a_c11_entry_gives_its_power_and_a_fee_per_kw(hass):
     """C11 stores contracted power, not phases: the fixed fee counts it, and the
     power reaches PricesConfig so the issues skip phases and consumption."""

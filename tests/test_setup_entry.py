@@ -10,15 +10,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from datetime import date, datetime, timedelta
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.const import EVENT_HOMEASSISTANT_CLOSE, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
@@ -271,17 +271,98 @@ async def test_actions_only_reach_the_chosen_device(hass, portal):
     assert ("dashboard", FAKE_METER_ID) in portal.requests
 
 
-async def test_unload_removes_the_actions_and_the_shared_client(hass):
-    """The last unloaded entry takes the actions and the account's client with it."""
+async def test_unload_closes_the_account_and_keeps_the_actions(hass, portal):
+    """The last unloaded entry closes the account's session; the actions stay registered."""
     entry = await _set_up(hass)
     assert hass.services.has_service("enea", "refresh")
 
     assert await hass.config_entries.async_unload(entry.entry_id)
 
     assert entry.state is ConfigEntryState.NOT_LOADED
-    assert not hass.services.has_service("enea", "refresh")
-    assert not hass.services.has_service("enea", "backfill")
     assert hass.data["enea"] == {}
+    assert portal.session_closed
+    # Registered by the integration, not by an entry: an automation calling an
+    # action while no meter is loaded does nothing instead of failing.
+    assert hass.services.has_service("enea", "refresh")
+    assert hass.services.has_service("enea", "backfill")
+    portal.requests.clear()
+    await hass.services.async_call("enea", "refresh", {}, blocking=True)
+    await hass.services.async_call("enea", "backfill", {}, blocking=True)
+    assert portal.requests == []
+
+
+@pytest.mark.parametrize("data", [
+    pytest.param({"start_date": "not a date"}, id="start-not-a-date"),
+    pytest.param({"start_date": "2026-03-27", "end_date": "27.03.2026"}, id="end-not-a-date"),
+    pytest.param({"days_back": 0}, id="days-back-zero"),
+    pytest.param({"days_back": 366}, id="days-back-too-many"),
+    pytest.param({"days_back": "week"}, id="days-back-not-a-number"),
+    pytest.param({"device_id": {"id": "x"}}, id="device-not-an-id"),
+    pytest.param({"day": "2026-03-27"}, id="unknown-field"),
+])
+async def test_backfill_action_rejects_invalid_data(hass, portal, data):
+    """Data the action cannot use is refused by its schema before anything is fetched."""
+    await _set_up(hass)
+    portal.requests.clear()
+
+    with pytest.raises(Exception) as raised:
+        await hass.services.async_call("enea", "backfill", data, blocking=True)
+
+    assert type(raised.value).__name__ in ("Invalid", "MultipleInvalid")
+    assert portal.requests == []
+
+
+async def test_backfill_action_rejects_an_end_before_the_start(hass, portal):
+    """A range that ends before it starts is an error, not a silent nothing."""
+    await _set_up(hass)
+    portal.requests.clear()
+
+    with pytest.raises(ServiceValidationError) as raised:
+        await hass.services.async_call(
+            "enea", "backfill", {"start_date": "2026-04-02", "end_date": "2026-03-27"}, blocking=True
+        )
+
+    assert raised.value.translation_key == "end_before_start"
+    assert raised.value.translation_placeholders == {
+        "start_date": "2026-04-02", "end_date": "2026-03-27",
+    }
+    assert portal.requests == []
+
+
+async def test_backfill_action_takes_dates_and_numbers_as_the_ui_sends_them(hass, portal):
+    """A date object, a single day and days_back as a float all reach the portal."""
+    await _set_up(hass)
+    portal.requests.clear()
+
+    await hass.services.async_call(
+        "enea", "backfill", {"start_date": date(2026, 3, 30), "end_date": "2026-03-30"}, blocking=True
+    )
+    assert _ranges(portal)[0] == (date(2026, 3, 30), date(2026, 3, 30), 1, None)
+
+    portal.requests.clear()
+    await hass.services.async_call("enea", "backfill", {"days_back": 3.0}, blocking=True)
+    assert _ranges(portal)[0] == (YESTERDAY - timedelta(days=2), YESTERDAY, 1, None)
+
+    # Without end_date the range runs to yesterday; end_date alone is ignored.
+    portal.requests.clear()
+    await hass.services.async_call(
+        "enea", "backfill", {"start_date": (YESTERDAY - timedelta(days=1)).isoformat()}, blocking=True
+    )
+    assert _ranges(portal)[0] == (YESTERDAY - timedelta(days=1), YESTERDAY, 1, None)
+
+
+async def test_actions_skip_an_entry_that_is_not_loaded(hass, portal):
+    """An entry whose setup failed keeps its coordinator object but is left alone."""
+    portal.fail_with = EneaApiError("offline")
+    entry = await _set_up(hass)
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    portal.fail_with = None
+    portal.requests.clear()
+
+    await hass.services.async_call("enea", "refresh", {}, blocking=True)
+    await hass.services.async_call("enea", "backfill", {}, blocking=True)
+
+    assert portal.requests == []
 
 
 async def test_rejected_login_asks_for_new_credentials(hass, portal):
@@ -343,45 +424,120 @@ async def test_diagnostics_report_of_a_loaded_entry(hass):
     assert report["entities"]["address"]["state"] == "**REDACTED**"
 
 
-async def test_meters_of_one_account_share_the_client(hass, portal, monkeypatch):
-    """A second meter reuses the account's client; the actions stay until the last unload."""
-    factory = Mock(return_value=portal)
-    monkeypatch.setattr(integration, "EneaApiClient", factory)
-    first = await _set_up(hass)
+async def _set_up_second(hass) -> Any:
+    """Add a second meter of the fixture account and wait for its setup."""
     second = make_entry(meter_name="590310600000005678")
     await hass.config_entries.async_add(second)
     await hass.async_block_till_done()
+    return second
+
+
+async def test_meters_of_one_account_share_the_client(hass, portal, monkeypatch):
+    """A second meter reuses the account's client, which lives until the last unload."""
+    factory = Mock(return_value=portal)
+    monkeypatch.setattr(integration, "EneaApiClient", factory)
+    first = await _set_up(hass)
+    second = await _set_up_second(hass)
 
     assert second.state is ConfigEntryState.LOADED
     assert factory.call_count == 1
     assert first.runtime_data.coordinator.client is second.runtime_data.coordinator.client
 
     assert await hass.config_entries.async_unload(first.entry_id)
-    assert hass.services.has_service("enea", "refresh")
     assert "test@example.invalid" in hass.data["enea"]
+    assert not portal.session_closed
 
     assert await hass.config_entries.async_unload(second.entry_id)
-    assert not hass.services.has_service("enea", "refresh")
     assert hass.data["enea"] == {}
+    assert portal.session_closed
 
 
-async def test_closed_session_gets_a_new_client(hass, portal, monkeypatch):
-    """After the account's session was closed the next setup builds a new client."""
+async def test_the_session_is_the_accounts_not_the_first_entrys(hass, portal, monkeypatch):
+    """The session is created without auto_cleanup.
+
+    Home Assistant closes a session created with it together with the config
+    entry whose setup created it — the account's other meters would be left
+    with a dead client the first time that entry is reloaded.
+    """
+    create = Mock(return_value=None)
+    monkeypatch.setattr(integration, "async_create_clientsession", create)
+
+    await _set_up(hass)
+
+    create.assert_called_once_with(hass, auto_cleanup=False)
+
+
+async def test_reloading_one_meter_leaves_the_other_meters_client_alone(
+    hass, portal, monkeypatch
+):
+    """Reloading the entry that created the account does not close the shared session."""
     factory = Mock(return_value=portal)
     monkeypatch.setattr(integration, "EneaApiClient", factory)
-    entry = await _set_up(hass)
-    assert await hass.config_entries.async_unload(entry.entry_id)
-    stale = SimpleNamespace(
-        client=SimpleNamespace(session_closed=True), notifications=Mock()
-    )
-    hass.data["enea"]["test@example.invalid"] = stale
+    first = await _set_up(hass)
+    second = await _set_up_second(hass)
+    account = hass.data["enea"]["test@example.invalid"]
 
-    assert await hass.config_entries.async_setup(entry.entry_id)
+    assert await hass.config_entries.async_reload(first.entry_id)
     await hass.async_block_till_done()
 
-    assert factory.call_count == 2
-    assert hass.data["enea"]["test@example.invalid"].client is portal
-    stale.notifications.unsubscribe.assert_called_once_with()
+    assert first.state is ConfigEntryState.LOADED
+    assert factory.call_count == 1
+    assert not portal.session_closed
+    assert hass.data["enea"]["test@example.invalid"] is account
+    assert first.runtime_data.coordinator.client is second.runtime_data.coordinator.client
+    portal.requests.clear()
+    await second.runtime_data.coordinator.async_refresh()
+    assert second.runtime_data.coordinator.last_update_success
+    assert ("dashboard", FAKE_METER_ID) in portal.requests
+
+
+async def test_failed_setup_keeps_the_account_for_the_retry(hass, portal, monkeypatch):
+    """An entry whose setup fails leaves the account open; removing the entry closes it."""
+    factory = Mock(return_value=portal)
+    monkeypatch.setattr(integration, "EneaApiClient", factory)
+    portal.fail_with = EneaApiError("offline")
+    entry = await _set_up(hass)
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert not portal.session_closed
+
+    portal.fail_with = None
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    assert factory.call_count == 1
+
+    portal.fail_with = EneaApiError("offline")
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.data["enea"] == {}
+    assert portal.session_closed
+
+
+async def test_stopping_home_assistant_lets_go_of_the_session(hass, portal):
+    """Entries are not unloaded when Home Assistant stops, so the account listens for it."""
+    await _set_up(hass)
+    assert not portal.session_closed
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_CLOSE)
+    await hass.async_block_till_done()
+
+    assert portal.session_closed
+
+
+async def test_a_closed_account_no_longer_listens_for_the_stop(hass, portal):
+    """Once its last meter is unloaded the account drops its stop listener."""
+    entry = await _set_up(hass)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    portal.session_closed = False
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_CLOSE)
+    await hass.async_block_till_done()
+
+    assert not portal.session_closed
 
 
 async def test_failed_import_keeps_the_sensors_and_is_reported(hass, portal):
@@ -423,7 +579,7 @@ async def test_refresh_during_the_import_leaves_the_days_to_it(hass, portal):
 
     assert len(_ranges(portal)) == requests
     portal.gate.set()
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert coordinator.diagnostics_state()["initial_backfill"] == "done"
 
 

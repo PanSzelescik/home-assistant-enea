@@ -180,13 +180,18 @@ def find_prices_config(hass: HomeAssistant, tariff_name: str | None) -> PricesCo
         tariff = getattr(runtime, "tariff", None)
         if tariff is None:
             continue
-        enea_prices_const = sys.modules.get("custom_components.enea_prices.const")
+        # enea_prices hands the excise out with its runtime data; versions before
+        # that only had it as a constant of their const module.
+        akcyza = getattr(runtime, "akcyza", None)
+        if akcyza is None:
+            enea_prices_const = sys.modules.get("custom_components.enea_prices.const")
+            akcyza = getattr(enea_prices_const, "AKCYZA", 0.0)
         return PricesConfig(
             tariff=tariff,
             phases=getattr(runtime, "phases", 1),
             annual_kwh=getattr(runtime, "annual_kwh", 1200),
             billing_months=getattr(runtime, "billing_months", 1),
-            akcyza=getattr(enea_prices_const, "AKCYZA", 0.0),
+            akcyza=akcyza,
             contract_power=getattr(runtime, "contract_power", None),
         )
     return None

@@ -11,6 +11,7 @@ from homeassistant.util import dt as dt_util
 
 from conftest import FakeConfigEntry, FakeHass
 from custom_components.enea import diagnostics as diagnostics_module
+from custom_components.enea.costs import PriceSignatureCache
 from custom_components.enea.installation import DetectedInstallation
 
 PPE = "590310600000000001"
@@ -240,6 +241,9 @@ async def test_coordinator_state_reports_failures() -> None:
     from custom_components.enea.coordinator import EneaUpdateCoordinator
 
     coord = object.__new__(EneaUpdateCoordinator)
+    coord._statistics_lock = asyncio.Lock()
+    coord._price_signatures = PriceSignatureCache()
+    coord._cost_checked_until = None
     coord._fetch_consumption = True
     coord._fetch_generation = False
     coord._fetch_power_consumption = False

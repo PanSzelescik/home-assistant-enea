@@ -32,6 +32,7 @@ def _slots(day, value=1.0):
 def coord(monkeypatch):
     """Keep range processing real while replacing network, clock and HA services."""
     result = object.__new__(module.EneaUpdateCoordinator)
+    result._statistics_lock = asyncio.Lock()
     result._prosumer = False
     result._fetch_consumption = True
     result._fetch_generation = False
@@ -46,6 +47,9 @@ def coord(monkeypatch):
     result.client = SimpleNamespace(get_consumption_data_range=AsyncMock())
     result.hass = FakeHass()
     result.async_update_listeners = Mock()
+    monkeypatch.setattr(
+        module, "get_instance", lambda hass: SimpleNamespace(async_block_till_done=AsyncMock())
+    )
     monkeypatch.setattr(module.dt_util, "now", lambda: datetime(2026, 11, 1, 12, tzinfo=dt_util.DEFAULT_TIME_ZONE))
     return result
 

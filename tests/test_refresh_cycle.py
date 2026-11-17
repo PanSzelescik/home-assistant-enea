@@ -1,6 +1,7 @@
 """What one refresh does about cost statistics that are behind."""
 from __future__ import annotations
 
+import asyncio
 import datetime
 
 import pytest
@@ -11,6 +12,7 @@ from custom_components.enea import coordinator as coordinator_module
 from custom_components.enea import costs as costs_module
 from custom_components.enea.connector import EneaApiError
 from custom_components.enea.coordinator import EneaUpdateCoordinator
+from custom_components.enea.costs import PriceSignatureCache
 
 
 @pytest.fixture
@@ -47,6 +49,9 @@ def refresh(monkeypatch: pytest.MonkeyPatch, wire_recorder):
                 raise catch_up_raises
 
         coord = object.__new__(EneaUpdateCoordinator)
+        coord._statistics_lock = asyncio.Lock()
+        coord._price_signatures = PriceSignatureCache()
+        coord._cost_checked_until = None
         coord.hass = object()
         coord._meter_code = "PPE"
         coord._fetch_consumption = True
@@ -217,6 +222,9 @@ def _cost_coordinator(monkeypatch, insert_costs, fetch_raises=None):
         return days
 
     coord = object.__new__(EneaUpdateCoordinator)
+    coord._statistics_lock = asyncio.Lock()
+    coord._price_signatures = PriceSignatureCache()
+    coord._cost_checked_until = None
     coord.hass = object()
     coord._meter_code = "PPE"
     coord._fetch_consumption = True

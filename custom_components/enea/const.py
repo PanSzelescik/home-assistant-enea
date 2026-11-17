@@ -161,6 +161,14 @@ ABORT_RECONFIGURE_SUCCESSFUL = "reconfigure_successful"
 
 SERVICE_REFRESH = "refresh"
 SERVICE_BACKFILL = "backfill"
+# Pola akcji (muszą pasować do services.yaml); device_id to ATTR_DEVICE_ID z HA.
+ATTR_START_DATE = "start_date"
+ATTR_END_DATE = "end_date"
+ATTR_DAYS_BACK = "days_back"
+# Błędy akcji (sekcja "exceptions" w tłumaczeniach)
+ERROR_END_BEFORE_START = "end_before_start"
+# Błędy reauth / reconfigure: konto bez tego licznika
+ERROR_METER_NOT_ON_ACCOUNT = "meter_not_on_account"
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -170,6 +178,14 @@ DEFAULT_UPDATE_INTERVAL_DICT: dict[str, int] = {"hours": 3, "minutes": 30, "seco
 MIN_UPDATE_INTERVAL_MINUTES = 30
 DEFAULT_NET_METERING = "none"
 METERS_CACHE_TTL = timedelta(minutes=5)
+# Limit czasu jednego żądania do Portalu Odbiorcy Enea, z odczytem odpowiedzi.  Bez
+# niego obowiązuje domyślne 300 s aiohttp, a zawieszony portal wstrzymuje odświeżenie
+# (i setup wpisu).  Zakres 180 dni wraca w ~2 s, 3 lata w ~26 s; najwolniejsze są
+# wszystkie wiadomości konta.
+REQUEST_TIMEOUT_SECONDS = 120
+# Akcja enea.backfill bez parametrów i górna granica days_back.
+BACKFILL_DEFAULT_DAYS = 30
+BACKFILL_MAX_DAYS_BACK = 365
 
 # ---------------------------------------------------------------------------
 # Statistics API — measurement types and resolution
@@ -215,6 +231,9 @@ BALANCED_MEASUREMENT_TYPES = frozenset(
 BACKFILL_MAX_CONSECUTIVE_EMPTY = 7  # stop after this many consecutive days with no data
 RANGE_FETCH_CHUNK_DAYS = 180  # max days per single range request (~6 months)
 MISSING_DAY_GRACE_DAYS = 3  # days to keep waiting for a late day before zero-filling it
+# Okna (w dniach wstecz), w których write_cumulative_series szuka ostatniego wpisu serii
+# sprzed nadpisywanego zakresu; po nich — całość, bez dolnej granicy.
+ANCHOR_SEARCH_WINDOWS_DAYS = (2, 30, 365)
 
 EPOCH = dt_util.utc_from_timestamp(0)
 """Lower bound for a statistics lookup that must not miss anything, however old."""

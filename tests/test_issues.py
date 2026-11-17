@@ -1,6 +1,7 @@
 """Repair issues follow the meter data: raised while true, deleted once not."""
 from __future__ import annotations
 
+import asyncio
 import datetime
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ from custom_components.enea import coordinator as coordinator_module
 from custom_components.enea import issues as issues_module
 from custom_components.enea import repairs as repairs_module
 from custom_components.enea.coordinator import EneaUpdateCoordinator
+from custom_components.enea.costs import PriceSignatureCache
 from custom_components.enea.installation import DetectedInstallation
 
 
@@ -294,6 +296,9 @@ async def test_the_fix_aborts_once_enea_prices_is_gone() -> None:
 async def test_latest_statistics_date(wire_recorder) -> None:
     """The statistics date is the local day of the newest stored hour."""
     coord = object.__new__(EneaUpdateCoordinator)
+    coord._statistics_lock = asyncio.Lock()
+    coord._price_signatures = PriceSignatureCache()
+    coord._cost_checked_until = None
     coord.hass = object()  # type: ignore[assignment]
     coord._meter_code = "PPE"
     coord._fetch_consumption = True

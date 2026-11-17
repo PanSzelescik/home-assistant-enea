@@ -242,6 +242,8 @@ Dostępne parametry (wszystkie opcjonalne):
 | Liczba dni wstecz | Alternatywa dla dat — ile dni wstecz od wczoraj |
 | *(brak parametrów)* | Domyślnie importuje ostatnie 30 dni |
 
+Data końcowa wcześniejsza niż początkowa albo liczba dni spoza zakresu 1–365 kończy akcję błędem. Akcja czeka, aż skończy się trwający import historii albo inne wywołanie — statystyki jednego licznika zapisuje naraz tylko jedna operacja.
+
 ### Zmiana danych logowania
 
 Aby zmienić adres e-mail lub hasło bez usuwania integracji:

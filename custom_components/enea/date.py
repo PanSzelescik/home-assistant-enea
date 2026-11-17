@@ -14,6 +14,7 @@ from datetime import date
 from typing import Any
 
 from homeassistant.components.date import DateEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -31,6 +32,10 @@ from .const import (
 )
 from .coordinator import EneaUpdateCoordinator
 from .costs import find_tariff_group
+
+# Home Assistant reads this from the platform module.  The dates are set by the user
+# and kept by Home Assistant, never polled, so nothing has to be throttled.
+PARALLEL_UPDATES = 0
 
 
 def _device_info(meter_code: str, data: dict[str, Any] | None) -> DeviceInfo:
@@ -76,6 +81,11 @@ class EneaBillDateEntity(RestoreEntity, DateEntity):
     """
 
     _attr_has_entity_name = True
+    # A setting of the meter rather than a reading of it.
+    _attr_entity_category = EntityCategory.CONFIG
+    # The value only changes when the user sets it; the default would have Home
+    # Assistant write the unchanged state every 30 seconds.
+    _attr_should_poll = False
 
     def __init__(
         self,

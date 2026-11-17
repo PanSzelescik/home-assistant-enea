@@ -5,6 +5,7 @@ import asyncio
 import logging
 import re
 import time
+import traceback
 from collections.abc import AsyncGenerator, Awaitable
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -23,6 +24,7 @@ from .const import (
     PHASES_SOURCE_METER_MODEL,
     PHASES_THREE,
     PHASES_THREE_MIN_CAPACITY_KW,
+    REQUEST_TIMEOUT_SECONDS,
     TARIFF_GROUP_ALIASES,
     URL_CONSUMPTION_RANGE,
     URL_CONSUMPTION_RANGE_DATA_SOURCE,
@@ -38,6 +40,8 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+_REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
 
 
 class EneaApiError(Exception):
@@ -104,6 +108,14 @@ class EneaApiClient:
         """Return True if the underlying aiohttp session has been closed."""
         return self._session.closed
 
+    async def async_close(self) -> None:
+        """Close the session; the account's last meter was unloaded."""
+        await self._session.close()
+
+    def detach(self) -> None:
+        """Let go of the session's connections without waiting; Home Assistant is stopping."""
+        self._session.detach()
+
     @staticmethod
     async def _parse_response(
         resp: aiohttp.ClientResponse, label: str, started: float, parse: bool = True
@@ -118,7 +130,15 @@ class EneaApiClient:
         portal's meter id in the path is replaced with "…" (logs end up in public
         GitHub issues); measurement type and resolution stay readable.
         """
-        body = await resp.read()
+        try:
+            body = await resp.read()
+        except (TimeoutError, aiohttp.ClientError) as err:
+            # The headers arrived, the body did not: the connection dropped or
+            # the request ran out of time while the portal was still sending.
+            raise EneaApiError(
+                f"Failed to read {label} response: {type(err).__name__}: "
+                f"{hide_meter_id(str(err))}"
+            ) from None
         _LOGGER.debug(
             "%s %s (%s): HTTP %d, %d B in %.2f s",
             resp.method,
@@ -156,6 +176,7 @@ class EneaApiClient:
             self._session.post(
                 URL_LOGIN,
                 json={"username": self._username, "password": self._password},
+                timeout=_REQUEST_TIMEOUT,
             )
         ) as resp:
             if resp.status == 401:
@@ -186,8 +207,8 @@ class EneaApiClient:
         def send() -> Awaitable[aiohttp.ClientResponse]:
             """Issue the request; called again after a fresh login."""
             if body is None and not post:
-                return self._session.get(url)
-            return self._session.post(url, json=body)
+                return self._session.get(url, timeout=_REQUEST_TIMEOUT)
+            return self._session.post(url, json=body, timeout=_REQUEST_TIMEOUT)
 
         auth_gen = self._auth_gen
         started = time.monotonic()
@@ -432,6 +453,18 @@ def hide_meter_id(text: str) -> str:
     left alone: their year is followed by "-", not by the end of the segment.
     """
     return re.sub(r"(?<=/)\d{4,}(?![\w-])", "…", text)
+
+
+def masked_traceback(err: BaseException) -> str:
+    """Return an error with its traceback, safe to log.
+
+    Logging with exc_info prints the traceback as it is, and an error from the
+    recorder quotes the statistic_id — the PPE number — while one from aiohttp
+    quotes the URL with the meter id.  Both are hidden here, in the message and
+    in the traceback alike.
+    """
+    text = "".join(traceback.format_exception(err)).rstrip()
+    return hide_meter_id(mask_ppe(text))
 
 
 def format_address(addr: dict[str, Any] | None) -> str | None:

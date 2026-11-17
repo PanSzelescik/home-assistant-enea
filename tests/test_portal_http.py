@@ -7,6 +7,7 @@ bodies the portal sends when something is wrong.
 """
 from __future__ import annotations
 
+import asyncio
 import ssl
 from datetime import date, timedelta
 from typing import Any
@@ -20,7 +21,12 @@ from aiohttp.test_utils import TestServer
 from conftest import load_portal_fixture
 from custom_components.enea import connector
 from custom_components.enea.connector import EneaApiClient, EneaApiError, EneaAuthError, _fetch
-from custom_components.enea.const import DataSource, MeasurementType, Resolution
+from custom_components.enea.const import (
+    REQUEST_TIMEOUT_SECONDS,
+    DataSource,
+    MeasurementType,
+    Resolution,
+)
 
 USERNAME = "test@example.invalid"
 PASSWORD = "test-password"
@@ -35,6 +41,12 @@ class PortalServer:
         self.sessions: set[str] = set()
         self.requests: list[str] = []
         self.maintenance = False
+        # How the dashboard misbehaves: "hang" never answers, "stall" stops in the
+        # middle of the body, "cut" drops the connection there.
+        self.dashboard_fault: str | None = None
+        self.hang_login = False
+        # Set when the test is over, to let the handlers held above finish.
+        self.release = asyncio.Event()
         app = web.Application()
         app.router.add_post("/portalOdbiorcy/api/auth/login", self.login)
         app.router.add_get("/portalOdbiorcy/api/user/ppes", self.ppes)
@@ -59,6 +71,8 @@ class PortalServer:
     async def login(self, request: web.Request) -> web.Response:
         """Check the credentials and start a session."""
         self.requests.append("login")
+        if self.hang_login:
+            await self.release.wait()
         body = await request.json()
         if body != {"username": USERNAME, "password": PASSWORD}:
             return web.json_response(
@@ -91,6 +105,19 @@ class PortalServer:
             return refused
         if request.match_info["meter_id"] != str(METER_ID):
             return web.json_response({"code": "Brak dostępu"}, status=404)
+        if self.dashboard_fault == "hang":
+            await self.release.wait()
+        if self.dashboard_fault in ("stall", "cut"):
+            response = web.StreamResponse(headers={"Content-Type": "application/json"})
+            response.content_length = 1000
+            await response.prepare(request)
+            await response.write(b'{"tariffGroupName": ')
+            if self.dashboard_fault == "cut":
+                assert request.transport is not None
+                request.transport.close()
+            else:
+                await self.release.wait()
+            return response
         return web.json_response(load_portal_fixture("dashboard"))
 
     async def range(self, request: web.Request) -> web.Response:
@@ -142,6 +169,7 @@ async def portal(monkeypatch: pytest.MonkeyPatch):
         "/{resolution}/{data_source}",
     )
     yield server
+    server.release.set()
     await server.server.close()
 
 
@@ -330,3 +358,96 @@ async def test_tls_failures_say_what_went_wrong(cls, message):
     with pytest.raises(EneaApiError, match=message):
         async with _fetch(request()):
             pass
+
+
+@pytest.fixture
+def short_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give a request a fraction of a second instead of two minutes."""
+    monkeypatch.setattr(connector, "_REQUEST_TIMEOUT", aiohttp.ClientTimeout(total=0.3))
+
+
+def test_requests_have_a_time_limit_well_under_aiohttps_default():
+    """A request is given REQUEST_TIMEOUT_SECONDS in all, not aiohttp's five minutes."""
+    assert connector._REQUEST_TIMEOUT.total == REQUEST_TIMEOUT_SECONDS
+    assert 30 <= REQUEST_TIMEOUT_SECONDS < 300
+
+
+async def test_portal_that_never_answers_is_an_api_error(portal, session, short_timeout):
+    """A request the portal sits on ends as an API error instead of hanging the refresh."""
+    client = EneaApiClient(session, USERNAME, PASSWORD)
+    portal.dashboard_fault = "hang"
+
+    with pytest.raises(EneaApiError, match="Cannot connect to Portal Odbiorcy Enea: TimeoutError"):
+        await client.get_ppe_dashboard(METER_ID)
+
+
+async def test_login_that_never_answers_is_an_api_error(portal, session, short_timeout):
+    """The login has the same time limit as every other request."""
+    client = EneaApiClient(session, USERNAME, PASSWORD)
+    portal.hang_login = True
+
+    with pytest.raises(EneaApiError, match="TimeoutError") as raised:
+        await client.authenticate()
+
+    assert not isinstance(raised.value, EneaAuthError)
+
+
+async def test_body_that_stops_arriving_is_an_api_error(portal, session, short_timeout):
+    """The time limit covers the body too: headers alone do not make a response."""
+    client = EneaApiClient(session, USERNAME, PASSWORD)
+    portal.dashboard_fault = "stall"
+
+    with pytest.raises(EneaApiError, match="Failed to read dashboard response: TimeoutError"):
+        await client.get_ppe_dashboard(METER_ID)
+
+
+async def test_connection_dropped_in_the_body_is_an_api_error(portal, session):
+    """A response cut short is reported as an API error, without the meter id."""
+    client = EneaApiClient(session, USERNAME, PASSWORD)
+    portal.dashboard_fault = "cut"
+
+    with pytest.raises(EneaApiError, match="Failed to read dashboard response") as raised:
+        await client.get_ppe_dashboard(METER_ID)
+
+    assert str(METER_ID) not in str(raised.value)
+    assert raised.value.__cause__ is None
+
+
+async def test_client_works_again_once_the_portal_answers(portal, session, short_timeout):
+    """A request that ran out of time leaves the client usable for the next one."""
+    client = EneaApiClient(session, USERNAME, PASSWORD)
+    portal.dashboard_fault = "hang"
+    with pytest.raises(EneaApiError):
+        await client.get_ppe_dashboard(METER_ID)
+
+    portal.dashboard_fault = None
+    dashboard = await client.get_ppe_dashboard(METER_ID)
+
+    assert dashboard["tariffGroupName"] == "G12"
+    assert portal.requests.count("login") == 1
+
+
+async def test_closing_the_client_closes_its_session(portal, session):
+    """The account closes the session itself once its last meter is unloaded."""
+    client = EneaApiClient(session, USERNAME, PASSWORD)
+    await client.get_meters()
+
+    await client.async_close()
+
+    assert client.session_closed
+    with pytest.raises(EneaApiError, match="Session is closed"):
+        await client.get_ppe_dashboard(METER_ID)
+
+
+async def test_detaching_the_client_lets_go_of_the_session_at_once(portal):
+    """When Home Assistant stops there is no time to wait: the session is detached."""
+    own = aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True))
+    connection = own.connector
+    client = EneaApiClient(own, USERNAME, PASSWORD)
+    await client.get_meters()
+
+    client.detach()
+
+    assert client.session_closed
+    assert connection is not None
+    await connection.close()

@@ -62,6 +62,10 @@ from .const import (
 from .coordinator import EneaUpdateCoordinator
 from .costs import find_tariff_group
 
+# Home Assistant reads this from the platform module.  The entities take their
+# state from the coordinator and are never polled, so nothing has to be throttled.
+PARALLEL_UPDATES = 0
+
 
 def _get_device_info(meter_code: str, data: dict[str, Any] | None) -> DeviceInfo:
     """Build DeviceInfo, enriched with physical meter details when data is available."""

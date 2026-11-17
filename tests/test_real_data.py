@@ -9,6 +9,7 @@ numbers written down here.
 """
 from __future__ import annotations
 
+import asyncio
 import re
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
@@ -36,6 +37,7 @@ from custom_components.enea.const import (
     STAT_KEY_POWER_RETURNED,
     MeasurementType,
 )
+from custom_components.enea.costs import PriceSignatureCache
 from custom_components.enea.diagnostics import _redact_meter_data
 from custom_components.enea.installation import detect_billing_months, latest_reading_day
 from custom_components.enea.parsing import assemble_days, has_data, slot_start_dt, split_range_response
@@ -345,6 +347,9 @@ async def test_coordinator_fetches_the_week_with_one_request_per_type(monkeypatc
         MeasurementType.POWER_RETURNED: SPRING_WEEK[STAT_KEY_POWER_RETURNED],
     }
     coordinator = object.__new__(coordinator_module.EneaUpdateCoordinator)
+    coordinator._statistics_lock = asyncio.Lock()
+    coordinator._price_signatures = PriceSignatureCache()
+    coordinator._cost_checked_until = None
     coordinator._prosumer = False
     coordinator._fetch_consumption = coordinator._fetch_generation = True
     coordinator._fetch_power_consumption = coordinator._fetch_power_generation = True

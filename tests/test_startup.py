@@ -16,6 +16,7 @@ from homeassistant.core import CoreState
 
 from custom_components.enea import coordinator as coordinator_module
 from custom_components.enea.coordinator import EneaUpdateCoordinator
+from custom_components.enea.costs import PriceSignatureCache
 
 
 @pytest.fixture
@@ -40,6 +41,9 @@ def coordinator(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(coordinator_module, "async_update_issues", lambda *args: None)
 
     coord = object.__new__(EneaUpdateCoordinator)
+    coord._statistics_lock = asyncio.Lock()
+    coord._price_signatures = PriceSignatureCache()
+    coord._cost_checked_until = None
     coord.hass = SimpleNamespace(state=CoreState.starting)  # type: ignore[assignment]
     coord.config_entry = SimpleNamespace(  # type: ignore[assignment]
         async_on_unload=lambda unsub: calls["unload"].append(unsub)

@@ -1,6 +1,7 @@
 {
   "domain": "enea",
   "name": "Enea Licznik",
+  "after_dependencies": ["enea_prices"],
   "codeowners": ["@PanSzelescik"],
   "config_flow": true,
   "dependencies": ["recorder"],

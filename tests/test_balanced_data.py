@@ -19,6 +19,7 @@ from custom_components.enea.const import (
     Resolution,
 )
 from custom_components.enea.coordinator import EneaUpdateCoordinator
+from custom_components.enea.costs import PriceSignatureCache
 from custom_components.enea.statistics import get_statistic_id
 
 METER_CODE = "590310600000001234"
@@ -61,6 +62,9 @@ def _coordinator(
 ) -> EneaUpdateCoordinator:
     """Return a coordinator built without __init__, which needs a running Home Assistant."""
     coord = object.__new__(EneaUpdateCoordinator)
+    coord._statistics_lock = asyncio.Lock()
+    coord._price_signatures = PriceSignatureCache()
+    coord._cost_checked_until = None
     coord._prosumer = prosumer
     coord._fetch_consumption = True
     coord._fetch_generation = True
@@ -80,7 +84,10 @@ def _coordinator(
         config_entries=SimpleNamespace(async_update_entry=update_entry),
         async_create_task=lambda coro, name=None: asyncio.ensure_future(coro),
     )
-    coord.config_entry = SimpleNamespace(data=dict(entry_data or {}))  # type: ignore[assignment]
+    coord.config_entry = SimpleNamespace(  # type: ignore[assignment]
+        data=dict(entry_data or {}),
+        async_create_background_task=lambda hass, coro, name: asyncio.ensure_future(coro),
+    )
     return coord
 
 

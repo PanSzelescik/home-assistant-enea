@@ -117,6 +117,88 @@ def price_signatures(
     return signatures
 
 
+class PriceSignatureCache:
+    """The fingerprints of one meter's tariff, computed once per day rather than per refresh.
+
+    Every refresh compares the stored fingerprints with the tariff's over the
+    meter's whole costed history — 24 zone lookups and a hash per day, for
+    years of days, on the event loop.  The tariff rarely changes between two
+    refreshes, so the days already worked out are kept and only new ones are
+    added.  Anything the fingerprints depend on — the price periods, the
+    agreements' tariff groups, the net-metering ratio, the excise — is the
+    key; when it changes, everything is computed again.
+    """
+
+    def __init__(self) -> None:
+        """Start empty."""
+        self._key: tuple[Any, ...] | None = None
+        self._first: date | None = None
+        self._last: date | None = None
+        self._signatures: dict[str, str] = {}
+
+    def get(
+        self, tariff: Any, first: date, last: date, returned_ratio: float = 1.0
+    ) -> dict[str, str]:
+        """Return price_signatures(tariff, first, last, returned_ratio)."""
+        if first > last:
+            return {}
+        akcyza = _akcyza()
+        # The periods are kept themselves, not their ids: an id is free to be
+        # reused once enea_prices is reloaded and the old periods are gone.
+        # Their prices go in by value as well, so a period whose prices were
+        # changed in place still counts as another one.
+        key = (
+            tuple(
+                (
+                    period,
+                    tuple(
+                        (
+                            str(zone),
+                            _kwh_price(pricing, akcyza),
+                            # The credit price only counts under net metering.
+                            _kwh_price(pricing, akcyza, net_metering_return=True)
+                            if returned_ratio != 1.0
+                            else None,
+                        )
+                        for zone, pricing in period.zones.items()
+                    ),
+                )
+                for period in tariff.periods
+            ),
+            tuple(getattr(tariff, "spans", ())),
+            returned_ratio,
+            akcyza,
+        )
+        if (
+            key != self._key
+            or self._first is None
+            or self._last is None
+            # A range apart from the one kept would leave a hole between them.
+            or first > self._last + timedelta(days=1)
+            or last < self._first - timedelta(days=1)
+        ):
+            self._key = key
+            self._first, self._last = first, last
+            self._signatures = price_signatures(tariff, first, last, returned_ratio)
+        else:
+            if first < self._first:
+                self._signatures.update(
+                    price_signatures(
+                        tariff, first, self._first - timedelta(days=1), returned_ratio
+                    )
+                )
+                self._first = first
+            if last > self._last:
+                self._signatures.update(
+                    price_signatures(
+                        tariff, self._last + timedelta(days=1), last, returned_ratio
+                    )
+                )
+                self._last = last
+        low, high = first.isoformat(), last.isoformat()
+        return {day: sig for day, sig in self._signatures.items() if low <= day <= high}
+
+
 def first_repriced_day(
     stored: dict[str, str], current: dict[str, str], first: date, last: date
 ) -> date | None:
@@ -180,6 +262,11 @@ class TariffHistory:
             if tariff is not None and all(tariff is not known for known in tariffs):
                 tariffs.append(tariff)
         self.periods = [period for tariff in tariffs for period in tariff.periods]
+
+    @property
+    def spans(self) -> list[tuple[date, date | None, Any | None, str]]:
+        """Return each agreement's (start, end, tariff, group), oldest first."""
+        return self._spans
 
     def group_for_date(self, day: date) -> str:
         """Return the name of the tariff group the day is billed under."""

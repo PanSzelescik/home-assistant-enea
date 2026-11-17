@@ -29,6 +29,10 @@ from .const import (
 from .coordinator import EneaUpdateCoordinator
 from .sensor import _get_device_info
 
+# Home Assistant reads this from the platform module.  The entities take their
+# state from the coordinator and are never polled, so nothing has to be throttled.
+PARALLEL_UPDATES = 0
+
 
 def _optional_bool(value: Any) -> bool | None:
     """Return the API flag as a bool, keeping None when the field is absent."""

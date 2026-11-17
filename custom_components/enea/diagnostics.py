@@ -17,7 +17,6 @@ from .const import (
     MEASUREMENT_ID_GENERATION,
     SENSOR_KEY_ADDRESS,
 )
-from .installation import DetectedInstallation
 from .statistics import async_statistics_overview
 
 # Dane pozwalające zidentyfikować odbiorcę — raport bywa wklejany w publiczne zgłoszenia,
@@ -143,9 +142,7 @@ async def async_get_config_entry_diagnostics(
             **coordinator.diagnostics_state(),
         },
         "installation": {
-            "detected": getattr(
-                coordinator, "detected_installation", DetectedInstallation()
-            ).as_dict(),
+            "detected": coordinator.detected_installation.as_dict(),
             "enea_prices": None if prices is None else {
                 "phases": prices.phases,
                 "billing_months": prices.billing_months,

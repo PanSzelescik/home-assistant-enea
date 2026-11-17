@@ -44,6 +44,7 @@ from .const import (
     ERROR_CANNOT_CONNECT,
     ERROR_INTERVAL_TOO_SHORT,
     ERROR_INVALID_AUTH,
+    ERROR_METER_NOT_ON_ACCOUNT,
     ERROR_UNKNOWN,
     MIN_UPDATE_INTERVAL_MINUTES,
     NET_METERING_RATIOS,
@@ -307,7 +308,14 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Validate credentials against the API and update the config entry on success.
 
         Returns a dict of errors if validation fails, or None on success.
-        On success, the entry is updated in place and reloaded.
+
+        The account has to list the entry's meter: credentials of another
+        account log in fine and then fail on every request for the meter.
+
+        On success every entry of the same account whose meter the new
+        credentials reach is updated and reloaded, not only this one.  The
+        meters share one client, and an entry left with the old password would
+        hand it back to that client the next time it is set up.
         """
         session = async_create_clientsession(self.hass)
         try:
@@ -316,6 +324,7 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             try:
                 await client.authenticate()
+                meters = await client.get_meters()
             except EneaAuthError:
                 return {"base": ERROR_INVALID_AUTH}
             except EneaApiError:
@@ -326,15 +335,42 @@ class EneaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         finally:
             await session.close()
 
-        self.hass.config_entries.async_update_entry(
-            entry,
-            data={
-                **entry.data,
-                CONF_USERNAME: user_input[CONF_USERNAME],
-                CONF_PASSWORD: user_input[CONF_PASSWORD],
-            },
-        )
-        await self.hass.config_entries.async_reload(entry.entry_id)
+        meter_ids = {meter.get("code"): meter.get("id") for meter in meters}
+        if entry.data[CONF_METER_NAME] not in meter_ids:
+            return {"base": ERROR_METER_NOT_ON_ACCOUNT}
+
+        old_username = entry.data[CONF_USERNAME]
+        updated = [
+            other
+            for other in self.hass.config_entries.async_entries(DOMAIN)
+            if other.data.get(CONF_USERNAME) == old_username
+            and other.data.get(CONF_METER_NAME) in meter_ids
+        ]
+        for other in updated:
+            self.hass.config_entries.async_update_entry(
+                other,
+                data={
+                    **other.data,
+                    CONF_USERNAME: user_input[CONF_USERNAME],
+                    CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    # The portal's id of the meter, as the new account gives it.
+                    CONF_METER_ID: meter_ids[other.data[CONF_METER_NAME]],
+                },
+            )
+        for other in updated:
+            if other.disabled_by is None:
+                await self.hass.config_entries.async_reload(other.entry_id)
+            if other.entry_id == entry.entry_id:
+                continue
+            # The other meters asked for the same credentials; they have them now.
+            for flow in self.hass.config_entries.flow.async_progress_by_handler(
+                DOMAIN,
+                match_context={
+                    "source": config_entries.SOURCE_REAUTH,
+                    "entry_id": other.entry_id,
+                },
+            ):
+                self.hass.config_entries.flow.async_abort(flow["flow_id"])
         return None
 
     async def _async_credentials_step(

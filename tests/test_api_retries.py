@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from yarl import URL
 
-from custom_components.enea.connector import EneaApiClient, EneaApiError, EneaAuthError
+from custom_components.enea.connector import (
+    _REQUEST_TIMEOUT,
+    EneaApiClient,
+    EneaApiError,
+    EneaAuthError,
+)
 from custom_components.enea.const import URL_LOGIN, URL_PPE_DASHBOARD
 
 LOGIN_BODY = {"username": "test@example.invalid", "password": "test-password"}
@@ -38,7 +43,7 @@ async def test_expired_session_reauthenticates_and_retries_only_once(expired_sta
             await client.get_ppe_dashboard(12345)
 
     assert [call.args for call in session.get.await_args_list] == [(URL_PPE_DASHBOARD.format(meter_id=12345),)] * 2
-    session.post.assert_awaited_once_with(URL_LOGIN, json=LOGIN_BODY)
+    session.post.assert_awaited_once_with(URL_LOGIN, json=LOGIN_BODY, timeout=_REQUEST_TIMEOUT)
     for response in (expired, login, retried):
         response.release.assert_called_once_with()
     assert client._meters_cache is None
@@ -84,7 +89,7 @@ async def test_first_request_authenticates_and_reuses_session():
     assert await client.get_ppe_dashboard(12345) == {"tariffGroupName": "G11"}
     assert await client.get_ppe_dashboard(12345) == {"tariffGroupName": "G12"}
 
-    session.post.assert_awaited_once_with(URL_LOGIN, json=LOGIN_BODY)
+    session.post.assert_awaited_once_with(URL_LOGIN, json=LOGIN_BODY, timeout=_REQUEST_TIMEOUT)
     assert session.get.await_count == 2
     for response in [login, *responses]:
         response.release.assert_called_once_with()

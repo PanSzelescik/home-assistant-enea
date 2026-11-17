@@ -180,6 +180,8 @@ class FakePortal:
             for mtype, names in RANGE_FIXTURES.items()
         }
         self.requests: list[tuple[Any, ...]] = []
+        # Every password the account's entries handed over, in order.
+        self.passwords: list[str] = []
         self.fail_with: Exception | None = None
         # Only the range requests fail with this; the dashboard still answers.
         self.fail_ranges_with: Exception | None = None
@@ -208,11 +210,22 @@ class FakePortal:
 
     def update_credentials(self, password: str) -> None:
         """Accept a new password."""
+        self.passwords.append(password)
+
+    async def async_close(self) -> None:
+        """Close the session, as the account does once its last meter is unloaded."""
+        self.session_closed = True
+
+    def detach(self) -> None:
+        """Let go of the session, as the account does when Home Assistant stops."""
+        self.session_closed = True
 
     async def get_meters(self) -> list[dict[str, Any]]:
         """Return /user/ppes."""
         self._check("ppes")
-        return [{**ppe, "type": 2 if self.prosumer else ppe["type"]} for ppe in load_portal_fixture("user_ppes")]
+        return [
+            {**ppe, "type": 2 if self.prosumer else ppe["type"]} for ppe in copy.deepcopy(self.ppes)
+        ]
 
     async def get_ppe_dashboard(self, meter_id: int) -> dict[str, Any]:
         """Return /consumptionDashboard/ppe/{id}."""
@@ -483,7 +496,7 @@ def portal(monkeypatch: pytest.MonkeyPatch, clock: Clock) -> FakePortal:
     """
     fake = FakePortal()
     monkeypatch.setattr(integration, "EneaApiClient", lambda *args: fake)
-    monkeypatch.setattr(integration, "async_create_clientsession", lambda hass: None)
+    monkeypatch.setattr(integration, "async_create_clientsession", lambda hass, **kwargs: None)
     return fake
 
 

@@ -209,11 +209,12 @@ async def test_credential_updates_preserve_meter_and_reload_only_on_success(
     flow_api, monkeypatch, step, error, expected,
 ):
     """Credential changes keep all other entry data and never reload on failure."""
-    entry = SimpleNamespace(entry_id="entry", data={
+    entry = SimpleNamespace(entry_id="entry", disabled_by=None, data={
         "username": "old@example.invalid", "password": "old", "meter_id": 12345,
         "meter_name": "590310600000001234", "tariff": "G12", "balanced_history": True,
     })
     flow = flow_api.flow
+    flow.hass.config_entries.async_entries = Mock(return_value=[entry])
     flow.context = {"source": step}
     monkeypatch.setattr(flow, f"_get_{step}_entry", Mock(return_value=entry))
     flow_api.client.authenticate.side_effect = error
